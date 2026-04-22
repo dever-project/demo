@@ -1,0 +1,141 @@
+{
+  "log": {
+    "level": "info",
+    "development": false,
+    "enabled": true,
+    "output": "file",//file、stdout
+    "successFile": "data/log/access.log",
+    "errorFile": "data/log/error.log"
+  },
+  // 框架观测配置：
+  // 1. enabled=false 时完全关闭
+  // 2. provider 留空 / builtin / self 时，仅使用框架内置自观测
+  // 3. provider=http 或 webhook 时，会额外把观测数据异步 POST 到外部地址
+  "observe": {
+    "enabled": true,
+    "provider": "builtin",
+    "service": "",
+    "slowRequest": "500ms",
+    "slowSQL": "200ms",//记录sql日志时，慢查询的阈值，可以设置为200ms、500ms等，单位可以是us、ms、s等
+    "options": {
+      // provider=http/webhook 时使用
+      "endpoint": "",
+      "timeout": "3s",
+      "buffer": 512,
+      "headers": {
+        "Authorization": ""
+      }
+    }
+  },
+  // http 请求相关配置项
+  "http": {
+    "host": "0.0.0.0",
+    "port": 8085,
+    "shutdownTimeout": "10s",
+    "appName": "测试应用",
+    "cors": {
+      "enabled": true,
+      "allowOrigins": ["*"],
+      "allowMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "allowHeaders": ["*"],
+      "allowCredentials": false,
+      "exposeHeaders": [],
+      "maxAge": 0
+    },
+    "enableTuning": true,
+    "prefork": false,
+    "strictRouting": false,
+    "caseSensitive": false,
+    "reduceMemoryUsage": false,
+    "serverHeader": "work",
+    "bodyLimit": 8388608,
+    "concurrency": 262144,
+    "readTimeout": "0s",
+    "writeTimeout": "0s",
+    "idleTimeout": "0s"
+  },
+  "auth": {
+    "jwtSecret": "shemic2026",
+    // 多 JWT 方案示例：
+    // "jwt": {
+    //   "schemes": {
+    //     "user": {
+    //       "alg": "HS256",
+    //       "secret": "user-secret",
+    //       "header": "Authorization",
+    //       "prefix": "Bearer",
+    //       "claimKeys": ["uid", "sub"]
+    //     },
+    //     "admin": {
+    //       "alg": "HS256",
+    //       "secretEnv": "ADMIN_JWT_SECRET",
+    //       "header": "Authorization",
+    //       "prefix": "Bearer",
+    //       "claimKeys": ["admin_id", "sub"]
+    //     }
+    //   },
+    //   "guards": [
+    //     {
+    //       "scheme": "user",
+    //       "prefixes": ["/front/"],
+    //       "publicPaths": ["/front/auth/login"]
+    //     },
+    //     {
+    //       "scheme": "admin",
+    //       "prefixes": ["/admin/"],
+    //       "publicPaths": ["/admin/auth/login"]
+    //     }
+    //   ]
+    // }
+  },
+  "qiniu": {
+    "accessKey": "111",
+    "secretKey": "222",
+    "bucket": "shemic",
+    "region": "z0",
+    "domain": "http://7ai.shemic.com/",
+    "callbackURL1": "qiniu/callback",
+    "callbackURL": "",
+    "tokenTTL": 3600
+  },
+  "database": {
+    "create": true,
+    "delete": true,
+    "default": {
+      "driver": "postgres",
+      "host": "127.0.0.1:5433",
+      "user": "app",
+      "pwd": "app",
+      "dbname": "shemic",
+      "prefix": "shemic",
+      "maxOpenConns": 20,
+      "maxIdleConns": 10,
+      "connMaxLifetime": "300s",
+      "connMaxIdleTime": "120s",
+      "healthCheckPeriod": "5s"
+    }
+  },
+  "temporal": {
+    "hostPort": "127.0.0.1:7233",
+    "namespace": "default",
+    "workflowQueue": "WORKFLOW_QUEUE",
+    "llmQueue": "LLM_TASK_QUEUE",
+    "toolsQueue": "TOOLS_TASK_QUEUE"
+  },
+  "redis": {
+    "enable": true,
+    "addr": "127.0.0.1:6379",
+    "username": "",
+    "password": "",
+    "db": 0,
+    "prefix": "work",
+    "poolSize": 100,
+    "minIdleConns": 20,
+    "maxRetries": 3,
+    "dialTimeout": "2s",
+    "readTimeout": "10s",
+    "writeTimeout": "1s",
+    "pingTimeout": "1s",
+    "useTLS": false
+  }
+}

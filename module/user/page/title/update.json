@@ -1,0 +1,33 @@
+{
+  "page": {
+    "name": "用户头衔",
+    "parent": "user/list",
+    "sort": 20
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "row-fields": {
+        "type": "container"
+      }
+    }
+  },
+  "nodes": {
+    "row-fields": [
+      {
+        "type": "form-input",
+        "placeholder": "请输入头衔名称",
+        "value": "form.name"
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "sort": 0,
+      "name": ""
+    }
+  },
+  "state": {},
+  "action": {}
+}

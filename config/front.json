@@ -1,0 +1,27 @@
+{
+    "auth": [
+        {
+            "key": "tongyong",
+            "name": "通用",
+            "icon": "layout-grid",
+            "type": 1,
+            "sort":1
+        },
+        {
+            "key": "config",
+            "name": "配置",
+            "icon": "layout-grid",
+            "type": 1,
+            "sort":100,
+            "children": [
+                {
+                    "key": "system-settings",
+                    "name": "系统设置",
+                    "icon": "settings",
+                    "type": 1,
+                    "sort": 1
+                }
+            ]
+        }
+    ]
+}

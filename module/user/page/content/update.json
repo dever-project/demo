@@ -1,0 +1,109 @@
+{
+  "page": {
+    "name": "内容编辑",
+    "parent": "user/content/list",
+    "sort": 10,
+    "auth": [
+      {
+        "key": "user/content/create",
+        "name": "内容新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "user/content/update",
+        "name": "内容编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "name": "用户",
+        "type": "form-select",
+        "placeholder": "请选择用户",
+        "value": "form.user_id",
+        "option": "/front/route/option?type=model&use=user.NewUserModel&labelField=username&searchFields=username,first_name,last_name,email,phone_number&pageSize=10",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "用户不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "remoteOptionSearch": true,
+          "searchPlaceholder": "输入用户名、姓名或邮箱搜索..."
+        }
+      },
+      {
+        "name": "标题",
+        "type": "form-input",
+        "placeholder": "请输入标题",
+        "value": "form.title",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "标题不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "name": "内容",
+        "type": "form-editor",
+        "placeholder": "请输入内容，支持标题、列表、引用等基础排版。",
+        "value": "form.content",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "内容不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "minHeight": 260
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "user_id": "",
+      "title": "",
+      "content": ""
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form"
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "page": {
+    "name": "职业分类列表",
+    "parent": "work/list",
+    "type": 2,
+    "sort": 1
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "category-shell": {
+        "type": "container",
+        "className": "min-w-0"
+      },
+      "feedback-shell": {
+        "type": "container"
+      }
+    }
+  },
+  "nodes": {
+    "category-shell": [
+      {
+        "type": "show-category-list",
+        "id": "work-type-category",
+        "value": "parent.data.search.type_id",
+        "option": "/front/route/option?type=model&use=work.NewWorkTypeModel&extraFields=status",
+        "meta": {
+          "title": "职业分类",
+          "description": "左侧维护职业分类",
+          "statusField": "status",
+          "statusDisplay": "select",
+          "statusChangeAction": {
+            "type": "save",
+            "path": "work/type/update",
+            "params": {
+              "_partial": true,
+              "id": "$row.id",
+              "status": "$value"
+            }
+          },
+          "statusCases": [
+            {
+              "value": 1,
+              "text": "启用",
+              "tone": "success"
+            },
+            {
+              "value": 0,
+              "text": "停用",
+              "tone": "muted"
+            }
+          ],
+          "remote": true,
+          "defaultFirst": true,
+          "createButton": {
+            "name": "新增分类",
+            "icon": "plus",
+            "variant": "outline",
+            "size": "sm",
+            "action": {
+              "click": {
+                "type": "modal",
+                "key": "dialog.create",
+                "value": true
+              }
+            }
+          },
+          "buttons": [
+            {
+              "icon": "square-pen",
+              "variant": "ghost",
+              "size": "sm",
+              "description": "编辑当前分类",
+              "action": {
+                "click": [
+                  {
+                    "type": "data",
+                    "key": "actionTarget.editTypeId",
+                    "value": "$row.id"
+                  },
+                  {
+                    "type": "modal",
+                    "key": "dialog.edit",
+                    "value": true
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "feedback-shell": [
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.create",
+          "pageRoute": "/work/type/update",
+          "title": "新增职业分类",
+          "description": "新增后会立刻出现在左侧分类栏，并可用于职业归类。",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "size": "sm",
+          "bodyClassName": "py-2"
+        }
+      },
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.edit",
+          "pageRoute": "/work/type/update",
+          "title": "编辑职业分类",
+          "description": "修改分类名称后，左侧分类栏和职业编辑表单会同步更新。",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "pageRouteQuery": {
+            "id": "data.actionTarget.editTypeId"
+          },
+          "size": "sm",
+          "bodyClassName": "py-2"
+        }
+      }
+    ]
+  },
+  "data": {
+    "actionTarget": {
+      "editTypeId": ""
+    }
+  },
+  "state": {
+    "dialog": {
+      "create": false,
+      "edit": false
+    }
+  },
+  "action": {}
+}

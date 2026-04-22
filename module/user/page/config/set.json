@@ -1,0 +1,171 @@
+{
+  "page": {
+    "name": "配置管理",
+    "icon": "settings",
+    "parent": "tongyong",
+    "type": 1,
+    "sort": 5
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4",
+        "children": {
+          "header-actions": {
+            "type": "row",
+            "className": "ms-auto shrink-0 flex-nowrap items-center gap-2"
+          }
+        }
+      },
+      "page-main": {
+        "type": "main",
+        "className": "flex flex-1 flex-col gap-5 sm:gap-6",
+        "children": {
+          "settings-shell": {
+            "type": "row",
+            "className": "items-start gap-6",
+            "children": {
+              "settings-tabs": {
+                "type": "container",
+                "className": "w-44 shrink-0"
+              },
+              "form-card": {
+                "type": "container",
+                "className": "min-w-0 flex-1 rounded-md border bg-background p-6"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-rich",
+        "value": "page.titleHtml",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "settings-tabs": [
+      {
+        "type": "nav-tab",
+        "meta": {
+          "target": "state.currentTab",
+          "variant": "sidebar",
+          "tabs": [
+            {
+              "label": "基础配置",
+              "value": "basic"
+            },
+            {
+              "label": "图片配置",
+              "value": "media"
+            }
+          ]
+        }
+      }
+    ],
+    "header-actions": [
+      {
+        "type": "show-button",
+        "name": "保存配置",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "loadingText": "保存中...",
+          "successMessage": "配置已保存"
+        },
+        "action": {
+          "click": "submit"
+        }
+      }
+    ],
+    "form-card": [
+      {
+        "id": "config-name",
+        "name": "名称",
+        "type": "form-input",
+        "placeholder": "请输入配置名称",
+        "value": "form.name",
+        "mode": "form",
+        "className": "form-width-half",
+        "validate": [
+          {
+            "type": "required",
+            "message": "配置名称不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "tab": "basic"
+        }
+      },
+      {
+        "id": "config-content",
+        "name": "内容",
+        "type": "form-editor",
+        "placeholder": "请输入配置内容，支持基础富文本排版。",
+        "value": "form.content",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "tab": "basic",
+          "minHeight": 260
+        }
+      },
+      {
+        "id": "config-pic",
+        "name": "图片",
+        "type": "form-upload",
+        "placeholder": "上传配置图片",
+        "value": "form.pic",
+        "mode": "form",
+        "info": "图片按字符串列表保存，支持多张图片和拖动排序。",
+        "meta": {
+          "formLayout": "horizontal",
+          "tab": "media",
+          "uploadType": "pic",
+          "kind": "image",
+          "saveMode": "url",
+          "ruleId": 1,
+          "maxCount": 6,
+          "bizKey": "user.config.pic",
+          "bizName": "配置图片"
+        }
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "titleHtml": "<div class='flex min-w-0 flex-col gap-0.5'><h1 class='text-xl font-semibold tracking-tight text-foreground'>配置管理</h1><p class='text-sm leading-6 text-muted-foreground'>维护通用模块的单条配置，固定使用 ID=1，保存时会新增或更新这一条记录。</p></div>"
+    },
+    "form": {
+      "id": 1,
+      "_model": "user.NewConfigModel",
+      "name": "默认配置",
+      "content": "",
+      "pic": "[]"
+    }
+  },
+  "state": {
+    "currentTab": "basic"
+  },
+  "action": {
+    "submit": {
+      "type": "save",
+      "use": "user.NewConfigModel",
+      "params": "form",
+      "data": {
+        "id": 1,
+        "name": "$form.name",
+        "content": "$form.content",
+        "pic": "$form.pic"
+      },
+      "upsert": true
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "page": {
+    "name": "职业分类编辑",
+    "parent": "work/list",
+    "sort": 9,
+    "auth": [
+      {
+        "key": "work/type/create",
+        "name": "职业分类新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "work/type/update",
+        "name": "职业分类编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-input",
+        "placeholder": "例如：客服",
+        "value": "form.name",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "分类名称不能为空。"
+          },
+          {
+            "type": "model",
+            "except": "$form.id",
+            "message": "该分类名称已存在，请更换。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-switch",
+        "value": "form.status",
+        "mode": "form",
+        "info": "关闭后仍会保留该分类，但左侧会显示为停用状态。",
+        "meta": {
+          "formLayout": "horizontal",
+          "trueValue": 1,
+          "falseValue": 0
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "name": "",
+      "status": 1
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form"
+    }
+  }
+}

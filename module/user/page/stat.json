@@ -1,0 +1,159 @@
+{
+  "page": {
+    "name": "数据统计",
+    "icon": "chart-column",
+    "parent": "tongyong",
+    "type": 1,
+    "sort": 0
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4"
+      },
+      "page-main": {
+        "type": "main",
+        "className": "stat-page-main",
+        "children": {
+          "summary-grid": {
+            "type": "row",
+            "className": "stat-summary-grid"
+          },
+          "chart-grid": {
+            "type": "row",
+            "className": "stat-chart-grid"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-rich",
+        "value": "page.titleHtml",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "summary-grid": [
+      {
+        "id": "stat-user-total",
+        "type": "show-stat-card",
+        "value": "stat.userTotal",
+        "meta": {
+          "title": "用户总数",
+          "description": "系统内全部用户",
+          "icon": "users",
+          "format": "number"
+        }
+      },
+      {
+        "id": "stat-active-user-total",
+        "type": "show-stat-card",
+        "value": "stat.activeUserTotal",
+        "meta": {
+          "title": "启用用户",
+          "description": "当前可正常访问的用户",
+          "icon": "user-check",
+          "format": "number"
+        }
+      },
+      {
+        "id": "stat-work-total",
+        "type": "show-stat-card",
+        "value": "stat.workTotal",
+        "meta": {
+          "title": "职业数量",
+          "description": "已维护的职业配置",
+          "icon": "briefcase",
+          "format": "number"
+        }
+      },
+      {
+        "id": "stat-work-type-total",
+        "type": "show-stat-card",
+        "value": "stat.workTypeTotal",
+        "meta": {
+          "title": "职业分类",
+          "description": "职业配置的分类数",
+          "icon": "layers",
+          "format": "number"
+        }
+      },
+      {
+        "id": "stat-content-total",
+        "type": "show-stat-card",
+        "value": "stat.contentTotal",
+        "meta": {
+          "title": "内容数量",
+          "description": "用户内容列表记录数",
+          "icon": "file-text",
+          "format": "number"
+        }
+      },
+      {
+        "id": "stat-source-total",
+        "type": "show-stat-card",
+        "value": "stat.sourceTotal",
+        "meta": {
+          "title": "来源数量",
+          "description": "用户来源配置数量",
+          "icon": "database",
+          "format": "number"
+        }
+      }
+    ],
+    "chart-grid": [
+      {
+        "id": "chart-user-status",
+        "type": "show-chart",
+        "value": "stat.statusRows",
+        "meta": {
+          "title": "用户状态分布",
+          "description": "按账户状态统计用户数量。",
+          "type": "pie",
+          "nameKey": "name",
+          "dataKey": "value",
+          "height": 320
+        }
+      },
+      {
+        "id": "chart-work-type",
+        "type": "show-chart",
+        "value": "stat.workTypeRows",
+        "meta": {
+          "title": "职业分类统计",
+          "description": "按职业分类统计职业数量。",
+          "type": "bar",
+          "nameKey": "name",
+          "dataKey": "value",
+          "height": 320
+        }
+      },
+      {
+        "id": "chart-user-role",
+        "type": "show-chart",
+        "value": "stat.roleRows",
+        "className": "stat-chart-wide",
+        "meta": {
+          "title": "角色分布",
+          "description": "按用户角色统计用户数量。",
+          "type": "bar",
+          "nameKey": "name",
+          "dataKey": "value",
+          "height": 300
+        }
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "titleHtml": "<div class='flex min-w-0 flex-col gap-0.5'><h1 class='text-xl font-semibold tracking-tight text-foreground'>数据统计</h1><p class='text-sm leading-6 text-muted-foreground'>汇总通用模块的用户、职业、来源和内容数据，图表只负责展示 Provider 返回的统计结果。</p></div>"
+    },
+    "stat": "{{user.StatService.LoadUserStat}}"
+  },
+  "state": {},
+  "action": {}
+}

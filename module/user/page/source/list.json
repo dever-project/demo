@@ -1,0 +1,175 @@
+{
+  "page": {
+    "name": "来源列表",
+    "icon": "waypoints",
+    "parent": "tongyong",
+    "sort": 3
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4",
+        "children": {
+          "header-actions": {
+            "type": "row",
+            "className": "ms-auto shrink-0 flex-nowrap items-center gap-2"
+          }
+        }
+      },
+      "page-main": {
+        "type": "main",
+        "className": "flex flex-1 flex-col gap-5 sm:gap-6",
+        "children": {
+          "table-row": {
+            "type": "container",
+            "className": "overflow-hidden rounded-md border bg-background"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-rich",
+        "value": "page.titleHtml",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "header-actions": [
+      {
+        "type": "show-button",
+        "name": "新增来源",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "default",
+          "size": "sm"
+        },
+        "action": {
+          "click": {
+            "type": "modal",
+            "key": "dialog.create",
+            "value": true
+          }
+        }
+      }
+    ],
+    "table-row": [
+      {
+        "type": "show-table",
+        "value": "table.list",
+        "meta": {
+          "pagePath": "data.table.page",
+          "pageSizePath": "data.table.pageSize",
+          "totalPath": "data.table.total",
+          "remote": true,
+          "externalPagination": true,
+          "rowKey": "id",
+          "columns": [
+            {
+              "name": "ID",
+              "value": "id",
+              "type": "show-base"
+            },
+            {
+              "value": "name",
+              "type": "show-base"
+            },
+            {
+              "name": "操作",
+              "type": "show-button",
+              "className": "w-[1%] whitespace-nowrap px-3 text-center",
+              "meta": {
+                "buttons": [
+                  {
+                    "icon": "square-pen",
+                    "variant": "outline",
+                    "size": "sm",
+                    "description": "编辑当前来源",
+                    "action": {
+                      "click": [
+                        {
+                          "type": "data",
+                          "key": "actionTarget.editSourceId",
+                          "value": "$row.id"
+                        },
+                        {
+                          "type": "modal",
+                          "key": "dialog.edit",
+                          "value": true
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "show-page"
+      }
+    ],
+    "page-main": [
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.create",
+          "pageRoute": "/user/source/update",
+          "title": "新增来源",
+          "description": "在这里新增用户来源，保存后可直接用于用户表单选择。",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "size": "sm",
+          "bodyClassName": "py-2"
+        }
+      },
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.edit",
+          "pageRoute": "/user/source/update",
+          "title": "编辑来源",
+          "description": "在这里更新来源名称，保存后会同步到用户来源选项。",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "pageRouteQuery": {
+            "id": "data.actionTarget.editSourceId"
+          },
+          "size": "sm",
+          "bodyClassName": "py-2"
+        }
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "titleHtml": "<div class='flex min-w-0 flex-col gap-0.5'><h1 class='text-xl font-semibold tracking-tight text-foreground'>来源列表</h1><p class='text-sm leading-6 text-muted-foreground'>维护用户来源字典，供 demo 用户表单按需异步加载使用。</p></div>"
+    },
+    "table": {
+      "page": 1,
+      "pageSize": 10,
+      "total": 0,
+      "searchFields": [
+        "name"
+      ]
+    },
+    "actionTarget": {
+      "editSourceId": ""
+    }
+  },
+  "state": {
+    "dialog": {
+      "create": false,
+      "edit": false
+    }
+  },
+  "action": {}
+}

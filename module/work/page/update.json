@@ -1,0 +1,89 @@
+{
+  "page": {
+    "name": "职业编辑",
+    "parent": "work/list",
+    "sort": 10,
+    "auth": [
+      {
+        "key": "work/create",
+        "name": "职业新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "work/update",
+        "name": "职业编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-input",
+        "placeholder": "例如：测试工程师",
+        "value": "form.name",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "职业名称不能为空。"
+          },
+          {
+            "type": "model",
+            "except": "$form.id",
+            "message": "该职业名称已存在，请更换。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "请选择职业分类",
+        "value": "form.type_id",
+        "mode": "form",
+        "option": "option.type",
+        "validate": [
+          {
+            "type": "required",
+            "message": "分类不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[240px]"
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {}
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form"
+    }
+  }
+}
