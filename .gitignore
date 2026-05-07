@@ -11,6 +11,8 @@
 # Downloaded/generated packages: keep only the placeholder.
 /package/*
 !/package/readme.txt
+!/package/bot/
+!/package/bot/**
 
 # Local Go workspace files.
 /go.work
