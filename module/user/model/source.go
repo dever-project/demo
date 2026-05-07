@@ -24,5 +24,10 @@ var sourceSeed = []map[string]any{
 }
 
 func NewSourceModel() *orm.Model[Source] {
-	return orm.LoadModel[Source]("source", Source{}, SourceIndex{}, sourceSeed, "id desc", "default")
+	return orm.LoadModel[Source]("来源", "source", orm.ModelConfig{
+		Index:    SourceIndex{},
+		Seeds:    sourceSeed,
+		Order:    "id desc",
+		Database: "default",
+	})
 }

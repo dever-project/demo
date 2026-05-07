@@ -6,9 +6,9 @@ import (
 	"github.com/shemic/dever/server"
 	"github.com/shemic/dever/util"
 
-	frontimporter "github.com/dever-package/front/service/importer"
-	frontrecord "github.com/dever-package/front/service/record"
 	workmodel "my/module/work/model"
+	frontimporter "my/package/front/service/importer"
+	frontrecord "my/package/front/service/record"
 )
 
 type ImportService struct{}

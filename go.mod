@@ -3,7 +3,6 @@ module my
 go 1.25.3
 
 require (
-	github.com/dever-package/front v0.0.0
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
@@ -81,8 +80,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/fileutil v1.0.0 // indirect
 )
-
-// 开发阶段把稳定的 front 模块路径映射到本地源码目录。
-replace github.com/dever-package/front => ./package/front
 
 replace github.com/shemic/dever => ./dever

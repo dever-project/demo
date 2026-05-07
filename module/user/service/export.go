@@ -8,9 +8,9 @@ import (
 	"github.com/shemic/dever/server"
 	"github.com/shemic/dever/util"
 
-	frontmeta "github.com/dever-package/front/service/meta"
-	frontpage "github.com/dever-package/front/service/page"
 	usermodel "my/module/user/model"
+	frontmeta "my/package/front/service/meta"
+	frontpage "my/package/front/service/page"
 )
 
 type ExportService struct{}

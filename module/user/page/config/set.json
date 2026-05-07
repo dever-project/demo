@@ -44,8 +44,8 @@
   "nodes": {
     "page-header": [
       {
-        "type": "show-rich",
-        "value": "page.titleHtml",
+        "type": "show-title",
+        "value": "page",
         "className": "min-w-0 flex-1"
       }
     ],
@@ -111,10 +111,31 @@
         "placeholder": "请输入配置内容，支持基础富文本排版。",
         "value": "form.content",
         "mode": "form",
+        "info": "支持基础富文本排版，并可直接上传图片、视频、音频插入正文。",
         "meta": {
           "formLayout": "horizontal",
           "tab": "basic",
-          "minHeight": 260
+          "minHeight": 260,
+          "uploadRules": [
+            {
+              "ruleId": 1,
+              "kind": "image",
+              "bizKey": "user.config.content.image",
+              "bizName": "配置内容图片"
+            },
+            {
+              "ruleId": 2,
+              "kind": "video",
+              "bizKey": "user.config.content.video",
+              "bizName": "配置内容视频"
+            },
+            {
+              "ruleId": 3,
+              "kind": "audio",
+              "bizKey": "user.config.content.audio",
+              "bizName": "配置内容音频"
+            }
+          ]
         }
       },
       {
@@ -141,7 +162,8 @@
   },
   "data": {
     "page": {
-      "titleHtml": "<div class='flex min-w-0 flex-col gap-0.5'><h1 class='text-xl font-semibold tracking-tight text-foreground'>配置管理</h1><p class='text-sm leading-6 text-muted-foreground'>维护通用模块的单条配置，固定使用 ID=1，保存时会新增或更新这一条记录。</p></div>"
+      "title": "配置管理",
+      "description": "维护通用模块的单条配置，固定使用 ID=1，保存时会新增或更新这一条记录。"
     },
     "form": {
       "id": 1,

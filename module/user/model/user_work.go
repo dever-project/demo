@@ -18,5 +18,9 @@ type UserWorkIndex struct {
 }
 
 func NewUserWorkModel() *orm.Model[UserWork] {
-	return orm.LoadModel[UserWork]("user_work", UserWork{}, UserWorkIndex{}, "id desc", "default")
+	return orm.LoadModel[UserWork]("用户职业关联", "user_work", orm.ModelConfig{
+		Index:    UserWorkIndex{},
+		Order:    "id desc",
+		Database: "default",
+	})
 }

@@ -4,8 +4,6 @@ import (
 	"time"
 
 	"github.com/shemic/dever/orm"
-
-	frontmeta "github.com/dever-package/front/service/meta"
 )
 
 type Work struct {
@@ -26,17 +24,17 @@ var workSeed = []map[string]any{
 	{"name": "运营专员", "type_id": 2},
 }
 
-var workTypeRelation = frontmeta.Relation{
+var workTypeRelation = orm.Relation{
 	Field:  "type_id",
 	Option: "work.NewWorkTypeModel",
 }
 
-func init() {
-	frontmeta.RegisterModelMeta("work.NewWorkModel", frontmeta.ModelMeta{
-		Relations: []frontmeta.Relation{workTypeRelation},
-	})
-}
-
 func NewWorkModel() *orm.Model[Work] {
-	return orm.LoadModel[Work]("work", Work{}, WorkIndex{}, workSeed, "id desc", "default")
+	return orm.LoadModel[Work]("职业", "work", orm.ModelConfig{
+		Index:     WorkIndex{},
+		Seeds:     workSeed,
+		Order:     "id desc",
+		Database:  "default",
+		Relations: []orm.Relation{workTypeRelation},
+	})
 }

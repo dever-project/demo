@@ -19,5 +19,9 @@ type UserTitleIndex struct {
 }
 
 func NewUserTitleModel() *orm.Model[UserTitle] {
-	return orm.LoadModel[UserTitle]("user_title", UserTitle{}, UserTitleIndex{}, "sort asc, id asc", "default")
+	return orm.LoadModel[UserTitle]("用户头衔", "user_title", orm.ModelConfig{
+		Index:    UserTitleIndex{},
+		Order:    "sort asc, id asc",
+		Database: "default",
+	})
 }

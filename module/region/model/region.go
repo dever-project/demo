@@ -33,5 +33,10 @@ var regionSeed = []map[string]any{
 }
 
 func NewRegionModel() *orm.Model[Region] {
-	return orm.LoadModel[Region]("region", Region{}, RegionIndex{}, regionSeed, "sort asc, id asc", "default")
+	return orm.LoadModel[Region]("地区", "region", orm.ModelConfig{
+		Index:    RegionIndex{},
+		Seeds:    regionSeed,
+		Order:    "sort asc, id asc",
+		Database: "default",
+	})
 }

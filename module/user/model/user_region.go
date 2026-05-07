@@ -19,5 +19,9 @@ type UserRegionIndex struct {
 }
 
 func NewUserRegionModel() *orm.Model[UserRegion] {
-	return orm.LoadModel[UserRegion]("user_region", UserRegion{}, UserRegionIndex{}, "sort asc, id asc", "default")
+	return orm.LoadModel[UserRegion]("用户地区关联", "user_region", orm.ModelConfig{
+		Index:    UserRegionIndex{},
+		Order:    "sort asc, id asc",
+		Database: "default",
+	})
 }

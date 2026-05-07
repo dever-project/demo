@@ -21,5 +21,10 @@ var configSeed = []map[string]any{
 }
 
 func NewConfigModel() *orm.Model[Config] {
-	return orm.LoadModel[Config]("user_config", Config{}, ConfigIndex{}, configSeed, "id asc", "default")
+	return orm.LoadModel[Config]("配置", "user_config", orm.ModelConfig{
+		Index:    ConfigIndex{},
+		Seeds:    configSeed,
+		Order:    "id asc",
+		Database: "default",
+	})
 }

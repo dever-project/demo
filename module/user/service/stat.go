@@ -6,9 +6,9 @@ import (
 	"github.com/shemic/dever/server"
 	"github.com/shemic/dever/util"
 
-	frontmeta "github.com/dever-package/front/service/meta"
 	usermodel "my/module/user/model"
 	workmodel "my/module/work/model"
+	frontmeta "my/package/front/service/meta"
 )
 
 type StatService struct{}

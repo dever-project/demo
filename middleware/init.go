@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,7 +11,7 @@ import (
 	coremiddleware "github.com/shemic/dever/middleware"
 	"github.com/shemic/dever/server"
 
-	permissionservice "github.com/dever-package/front/service/permission"
+	permissionservice "my/package/front/service/permission"
 )
 
 var registerOnce sync.Once
@@ -60,6 +59,8 @@ func auth() coremiddleware.ContextFunc {
 			"/front/auth/login",
 			"/auth/register",
 			"/auth/send_code",
+			"/bot/energon/request",
+			"/bot/energon/test",
 			"/site/info",
 			"/qiniu/callback",
 		},
@@ -84,7 +85,7 @@ func frontBootstrap() coremiddleware.ContextFunc {
 
 func abortUnauthorized(c *server.Context, msg string) error {
 	if c != nil {
-		_ = c.Error(msg, http.StatusUnauthorized)
+		return c.Error(msg, http.StatusUnauthorized)
 	}
-	panic(server.Abort{Err: errors.New(msg)})
+	return fmt.Errorf("%s", msg)
 }

@@ -4,8 +4,6 @@ import (
 	"time"
 
 	"github.com/shemic/dever/orm"
-
-	frontmeta "github.com/dever-package/front/service/meta"
 )
 
 type WorkType struct {
@@ -29,14 +27,14 @@ var workTypeStatusOptions = []map[string]any{
 	{"id": 0, "value": "停用", "label": "停用", "color": "#737373"},
 }
 
-func init() {
-	frontmeta.RegisterModelMeta("work.NewWorkTypeModel", frontmeta.ModelMeta{
+func NewWorkTypeModel() *orm.Model[WorkType] {
+	return orm.LoadModel[WorkType]("职业分类", "work_type", orm.ModelConfig{
+		Index:    WorkTypeIndex{},
+		Seeds:    workTypeSeed,
+		Order:    "id asc",
+		Database: "default",
 		Options: map[string]any{
 			"status": workTypeStatusOptions,
 		},
 	})
-}
-
-func NewWorkTypeModel() *orm.Model[WorkType] {
-	return orm.LoadModel[WorkType]("work_type", WorkType{}, WorkTypeIndex{}, workTypeSeed, "id asc", "default")
 }

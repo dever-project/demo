@@ -4,8 +4,6 @@ import (
 	"time"
 
 	"github.com/shemic/dever/orm"
-
-	frontmeta "github.com/dever-package/front/service/meta"
 )
 
 type User struct {
@@ -46,34 +44,34 @@ var (
 		{"id": "Suspended", "value": "已停用", "label": "已停用", "color": "#dc2626"},
 	}
 
-	userWorkRelation = frontmeta.Relation{
+	userWorkRelation = orm.Relation{
 		Field:        "work_ids",
 		Through:      "user.NewUserWorkModel",
 		Option:       "work.NewWorkModel",
 		ThroughOrder: "id asc",
 	}
 
-	userAvatarRelation = frontmeta.Relation{
+	userAvatarRelation = orm.Relation{
 		Field:      "avatar_id",
 		Option:     "front.NewUploadFileModel",
 		EmptyValue: 0,
 		OptionKeys: []string{},
 	}
 
-	userVideoRelation = frontmeta.Relation{
+	userVideoRelation = orm.Relation{
 		Field:      "video_id",
 		Option:     "front.NewUploadFileModel",
 		EmptyValue: 0,
 		OptionKeys: []string{},
 	}
 
-	userSourceRelation = frontmeta.Relation{
+	userSourceRelation = orm.Relation{
 		Field:      "source_id",
 		Option:     "user.NewSourceModel",
 		OptionKeys: []string{},
 	}
 
-	userAttachmentRelation = frontmeta.Relation{
+	userAttachmentRelation = orm.Relation{
 		Field:        "attachment_ids",
 		Through:      "user.NewUserAttachmentModel",
 		Option:       "front.NewUploadFileModel",
@@ -81,7 +79,7 @@ var (
 		OptionKeys:   []string{},
 	}
 
-	userRegionRelation = frontmeta.Relation{
+	userRegionRelation = orm.Relation{
 		Field:        "region_ids",
 		Through:      "user.NewUserRegionModel",
 		Option:       "region.NewRegionModel",
@@ -89,20 +87,23 @@ var (
 		OptionKeys:   []string{},
 	}
 
-	userTitleRelation = frontmeta.Relation{
+	userTitleRelation = orm.Relation{
 		Field:   "titles",
 		Through: "user.NewUserTitleModel",
 		Order:   "sort asc, id asc",
 	}
 )
 
-func init() {
-	frontmeta.RegisterModelMeta("user.NewUserModel", frontmeta.ModelMeta{
+func NewUserModel() *orm.Model[User] {
+	return orm.LoadModel[User]("用户", "user", orm.ModelConfig{
+		Index:    UserIndex{},
+		Order:    "id desc",
+		Database: "default",
 		Options: map[string]any{
 			"role":   userRoleOptions,
 			"status": userStatusOptions,
 		},
-		Relations: []frontmeta.Relation{
+		Relations: []orm.Relation{
 			userWorkRelation,
 			userAvatarRelation,
 			userVideoRelation,
@@ -112,8 +113,4 @@ func init() {
 			userTitleRelation,
 		},
 	})
-}
-
-func NewUserModel() *orm.Model[User] {
-	return orm.LoadModel[User]("user", User{}, UserIndex{}, "id desc", "default")
 }

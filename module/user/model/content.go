@@ -2,8 +2,6 @@ package model
 
 import (
 	"github.com/shemic/dever/orm"
-
-	frontmeta "github.com/dever-package/front/service/meta"
 )
 
 type Content struct {
@@ -17,19 +15,18 @@ type ContentIndex struct {
 	UserID struct{} `index:"user_id,id"`
 }
 
-var contentUserRelation = frontmeta.Relation{
+var contentUserRelation = orm.Relation{
 	Field:            "user_id",
 	Option:           "user.NewUserModel",
 	OptionKeys:       []string{},
 	OptionLabelField: "username",
 }
 
-func init() {
-	frontmeta.RegisterModelMeta("user.NewContentModel", frontmeta.ModelMeta{
-		Relations: []frontmeta.Relation{contentUserRelation},
-	})
-}
-
 func NewContentModel() *orm.Model[Content] {
-	return orm.LoadModel[Content]("user_content", Content{}, ContentIndex{}, "id desc", "default")
+	return orm.LoadModel[Content]("内容", "user_content", orm.ModelConfig{
+		Index:     ContentIndex{},
+		Order:     "id desc",
+		Database:  "default",
+		Relations: []orm.Relation{contentUserRelation},
+	})
 }

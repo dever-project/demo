@@ -19,5 +19,9 @@ type UserAttachmentIndex struct {
 }
 
 func NewUserAttachmentModel() *orm.Model[UserAttachment] {
-	return orm.LoadModel[UserAttachment]("user_attachment", UserAttachment{}, UserAttachmentIndex{}, "id asc", "default")
+	return orm.LoadModel[UserAttachment]("用户附件关联", "user_attachment", orm.ModelConfig{
+		Index:    UserAttachmentIndex{},
+		Order:    "id asc",
+		Database: "default",
+	})
 }
