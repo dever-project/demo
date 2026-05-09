@@ -27,6 +27,13 @@
                             "icon": "cpu",
                             "type": 1,
                             "sort": 1
+                        },
+                        {
+                            "key": "bot-agent",
+                            "name": "智能体",
+                            "icon": "bot",
+                            "type": 1,
+                            "sort": 2
                         }
                     ]
                 },
