@@ -88,24 +88,14 @@
     //   ]
     // }
   },
-  "qiniu": {
-    "accessKey": "111",
-    "secretKey": "222",
-    "bucket": "shemic",
-    "region": "z0",
-    "domain": "http://7ai.shemic.com/",
-    "callbackURL1": "qiniu/callback",
-    "callbackURL": "",
-    "tokenTTL": 3600
-  },
   "database": {
     "create": true,
     "delete": true,
     "default": {
       "driver": "postgres",
-      "host": "127.0.0.1:5433",
+      "host": "127.0.0.1:5432",
       "user": "app",
-      "pwd": "app",
+      "pwd": "dever1683279",
       "dbname": "shemic",
       "prefix": "shemic",
       "maxOpenConns": 20,
@@ -115,20 +105,13 @@
       "healthCheckPeriod": "5s"
     }
   },
-  "temporal": {
-    "hostPort": "127.0.0.1:7233",
-    "namespace": "default",
-    "workflowQueue": "WORKFLOW_QUEUE",
-    "llmQueue": "LLM_TASK_QUEUE",
-    "toolsQueue": "TOOLS_TASK_QUEUE"
-  },
   "redis": {
     "enable": true,
     "addr": "127.0.0.1:6379",
     "username": "",
     "password": "",
     "db": 0,
-    "prefix": "work",
+    "prefix": "shemic",
     "poolSize": 100,
     "minIdleConns": 20,
     "maxRetries": 3,
