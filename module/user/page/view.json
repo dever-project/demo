@@ -30,8 +30,11 @@
   "nodes": {
     "basic-card": [
       {
-        "type": "show-rich",
-        "value": "page.basicTitleHtml"
+        "type": "show-title",
+        "value": "page.basicTitle",
+        "meta": {
+          "variant": "section"
+        }
       },
       {
         "type": "media-image",
@@ -125,8 +128,11 @@
     ],
     "relation-card": [
       {
-        "type": "show-rich",
-        "value": "page.relationTitleHtml"
+        "type": "show-title",
+        "value": "page.relationTitle",
+        "meta": {
+          "variant": "section"
+        }
       },
       {
         "type": "show-tag",
@@ -185,8 +191,11 @@
     ],
     "content-card": [
       {
-        "type": "show-rich",
-        "value": "page.contentTitleHtml"
+        "type": "show-title",
+        "value": "page.contentTitle",
+        "meta": {
+          "variant": "section"
+        }
       },
       {
         "type": "show-base",
@@ -208,9 +217,18 @@
   },
   "data": {
     "page": {
-      "basicTitleHtml": "<div class='mb-4'><h3 class='text-base font-semibold text-foreground'>基础信息</h3><p class='mt-1 text-sm text-muted-foreground'>这里只展示当前用户的基础资料与媒体信息。</p></div>",
-      "relationTitleHtml": "<div class='mb-4'><h3 class='text-base font-semibold text-foreground'>关联信息</h3><p class='mt-1 text-sm text-muted-foreground'>展示来源、地区、职业、头衔以及资源信息。</p></div>",
-      "contentTitleHtml": "<div class='mb-4'><h3 class='text-base font-semibold text-foreground'>补充说明</h3><p class='mt-1 text-sm text-muted-foreground'>介绍和内容都按只读形式展示。</p></div>"
+      "basicTitle": {
+        "title": "基础信息",
+        "description": "这里只展示当前用户的基础资料与媒体信息。"
+      },
+      "relationTitle": {
+        "title": "关联信息",
+        "description": "展示来源、地区、职业、头衔以及资源信息。"
+      },
+      "contentTitle": {
+        "title": "补充说明",
+        "description": "介绍和内容都按只读形式展示。"
+      }
     },
     "form": {}
   },
