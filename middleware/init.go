@@ -60,7 +60,7 @@ func auth() coremiddleware.ContextFunc {
 			"/auth/register",
 			"/auth/send_code",
 			"/bot/energon/request",
-			"/bot/energon/test",
+			"/bot/energon/demo",
 			"/site/info",
 			"/qiniu/callback",
 		},
