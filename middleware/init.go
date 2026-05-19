@@ -12,6 +12,7 @@ import (
 	"github.com/shemic/dever/server"
 
 	permissionservice "my/package/front/service/permission"
+	frontsite "my/package/front/service/site"
 )
 
 var registerOnce sync.Once
@@ -49,7 +50,7 @@ func auth() coremiddleware.ContextFunc {
 	return deverjwt.UseConfigured(deverjwt.Options{
 		Allow: func(c *server.Context) bool {
 			path := strings.TrimSpace(c.Path())
-			return path == "/upload" || strings.HasPrefix(path, "/upload/")
+			return path == "/upload" || strings.HasPrefix(path, "/upload/") || frontsite.Allows(cfg.FrontSite, path)
 		},
 		AllowMissing: func(*server.Context) bool {
 			return false
