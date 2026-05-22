@@ -34,6 +34,13 @@
                             "icon": "bot",
                             "type": 1,
                             "sort": 2
+                        },
+                        {
+                            "key": "bot-brain",
+                            "name": "大脑",
+                            "icon": "brain",
+                            "type": 1,
+                            "sort": 3
                         }
                     ]
                 },
