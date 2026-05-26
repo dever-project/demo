@@ -492,32 +492,6 @@
               }
             },
             {
-              "name": "测试表格",
-              "value": "demo_table",
-              "type": "show-table",
-              "className": "min-w-[240px]",
-              "meta": {
-                "columns": [
-                  {
-                    "name": "测试名",
-                    "value": "label",
-                    "type": "show-base",
-                    "meta": {
-                      "align": "left"
-                    }
-                  },
-                  {
-                    "name": "测试值",
-                    "value": "value",
-                    "type": "show-base",
-                    "meta": {
-                      "align": "left"
-                    }
-                  }
-                ]
-              }
-            },
-            {
               "name": "创建时间",
               "value": "created_at",
               "type": "show-base",
@@ -731,7 +705,6 @@
       "created_at_end": ""
     },
     "table": {
-      "service": "user.UserListService.BuildDemoTable",
       "page": 1,
       "pageSize": 10,
       "total": 0,

@@ -22,6 +22,7 @@ func Register() {
 	registerOnce.Do(func() {
 		coremiddleware.UseGlobal(coremiddleware.Init())
 		coremiddleware.UseGlobalFunc(auth())
+		coremiddleware.UseGlobalFunc(projectScope())
 		coremiddleware.UseGlobalFunc(frontBootstrap())
 		//coremiddleware.UseRouteFunc("GET", "/user/test/user", panicDemo())
 	})
@@ -59,6 +60,8 @@ func auth() coremiddleware.ContextFunc {
 			"/auth/login",
 			"/front/auth/login",
 			"/auth/register",
+			"/project/user/login",
+			"/project/user/register",
 			"/auth/send_code",
 			"/bot/energon/request",
 			"/bot/energon/demo",
@@ -82,6 +85,34 @@ func frontBootstrap() coremiddleware.ContextFunc {
 		}
 		return permissionservice.EnsureBootstrap(c.Context())
 	}
+}
+
+func projectScope() coremiddleware.ContextFunc {
+	return func(ctx any) error {
+		c, ok := ctx.(*server.Context)
+		if !ok || c == nil {
+			return nil
+		}
+		path := strings.TrimSpace(c.Path())
+		if isProjectPublicPath(path) {
+			return nil
+		}
+		scope := strings.TrimSpace(fmt.Sprint(deverjwt.Claims(c.Context())["scope"]))
+		if strings.HasPrefix(path, "/project/") {
+			if scope != "project" {
+				return abortUnauthorized(c, "无权访问项目接口")
+			}
+			return nil
+		}
+		if scope == "project" {
+			return abortUnauthorized(c, "项目用户无权访问后台接口")
+		}
+		return nil
+	}
+}
+
+func isProjectPublicPath(path string) bool {
+	return path == "/project/user/login" || path == "/project/user/register"
 }
 
 func abortUnauthorized(c *server.Context, msg string) error {

@@ -217,7 +217,7 @@
       {
         "type": "form-textarea",
         "placeholder": "输入一句简短介绍，突出当前用户的职责或标签。",
-        "info": "demo：保存前会自动去掉首尾空格；如果介绍留空，保存后会自动生成一条默认介绍。",
+        "info": "保存前会自动去掉首尾空格；如果介绍留空，保存后会自动生成一条默认介绍。",
         "value": "form.intro",
         "mode": "form",
         "meta": {
@@ -321,8 +321,7 @@
         "placeholder": "请选择职业",
         "value": "form.work_ids",
         "mode": "form",
-        "info": "角色不同，职业会自动按类型筛选。",
-        "tip": "当前 demo：经理只显示 IT 类职业，管理员只显示物流类职业。",
+        "info": "可按角色映射筛选职业范围。",
         "option": "option.work",
         "validate": [
           {

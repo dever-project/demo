@@ -152,7 +152,7 @@
   "data": {
     "page": {
       "title": "来源列表",
-      "description": "维护用户来源字典，供 demo 用户表单按需异步加载使用。"
+      "description": "维护用户来源字典，供用户表单按需异步加载使用。"
     },
     "table": {
       "page": 1,
