@@ -25,7 +25,7 @@ func (Project) PostCreate(c *server.Context) error {
 	data, err := projectSvc.Create(
 		c.Context(),
 		bodyText(body, "name"),
-		bodyUint64(body, "team_id", "teamId", "type_id", "typeId"),
+		bodyUint64(body, "team_id", "teamId"),
 		bodyUint64(body, "release_id", "releaseId"),
 	)
 	return projectJSON(c, data, err)
@@ -46,11 +46,6 @@ func (Project) PostDelete(c *server.Context) error {
 }
 
 func (Project) GetTeamList(c *server.Context) error {
-	data, err := projectTeamSvc.TeamList(c.Context())
-	return projectJSON(c, data, err)
-}
-
-func (Project) GetTypeList(c *server.Context) error {
 	data, err := projectTeamSvc.TeamList(c.Context())
 	return projectJSON(c, data, err)
 }

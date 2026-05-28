@@ -6,6 +6,7 @@ import (
 
 	"github.com/shemic/dever/server"
 
+	projectservice "my/module/project/service"
 	teamservice "my/package/bot/service/team"
 	frontstream "my/package/front/service/stream"
 )
@@ -32,6 +33,22 @@ func (Run) PostCanvasPower(c *server.Context) error {
 	return projectJSON(c, data, err)
 }
 
+func (Run) PostCanvasAgent(c *server.Context) error {
+	body, err := bindProjectBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	projectID := bodyUint64(body, "project_id", "projectId")
+	data, err := projectSvc.RunCanvasAgent(c.Context(), projectID, projectservice.CanvasAgentRunRequest{
+		FlowID:   bodyUint64(body, "flow_id", "flowId"),
+		NodeKey:  bodyText(body, "node_key", "nodeKey"),
+		NodeName: bodyText(body, "node_name", "nodeName", "name"),
+		AgentID:  bodyUint64(body, "agent_id", "agentId", "id"),
+		Input:    bodyMap(body, "input"),
+	})
+	return projectJSON(c, data, err)
+}
+
 func (Run) PostFlow(c *server.Context) error {
 	body, err := bindProjectBody(c)
 	if err != nil {
@@ -39,6 +56,8 @@ func (Run) PostFlow(c *server.Context) error {
 	}
 	projectID := bodyUint64(body, "project_id", "projectId")
 	data, err := projectSvc.RunFlow(c.Context(), projectID, teamservice.RunRequest{
+		TeamID:    bodyUint64(body, "team_id", "teamId"),
+		ReleaseID: bodyUint64(body, "release_id", "releaseId"),
 		FlowID:    bodyUint64(body, "flow_id", "flowId", "id"),
 		RequestID: bodyText(body, "request_id", "requestId"),
 		Input:     bodyMap(body, "input"),
@@ -54,9 +73,26 @@ func (Run) PostTeam(c *server.Context) error {
 	}
 	projectID := bodyUint64(body, "project_id", "projectId")
 	data, err := projectSvc.RunTeam(c.Context(), projectID, teamservice.RunRequest{
+		TeamID:    bodyUint64(body, "team_id", "teamId"),
+		ReleaseID: bodyUint64(body, "release_id", "releaseId"),
 		RequestID: bodyText(body, "request_id", "requestId"),
 		Input:     bodyMap(body, "input"),
-		Mode:      "team",
+		Mode:      runModeOrDefault(bodyText(body, "mode"), "team"),
+	})
+	return projectJSON(c, data, err)
+}
+
+func (Run) PostRole(c *server.Context) error {
+	body, err := bindProjectBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	projectID := bodyUint64(body, "project_id", "projectId")
+	data, err := projectSvc.RunRole(c.Context(), projectID, teamservice.RunRequest{
+		RoleID:    bodyUint64(body, "role_id", "roleId", "id"),
+		RequestID: bodyText(body, "request_id", "requestId"),
+		Input:     bodyMap(body, "input"),
+		Mode:      "role",
 	})
 	return projectJSON(c, data, err)
 }
@@ -115,4 +151,13 @@ func (Run) PostApproval(c *server.Context) error {
 		bodyMap(body, "data"),
 	)
 	return projectJSON(c, data, err)
+}
+
+func runModeOrDefault(mode string, fallback string) string {
+	switch mode {
+	case "team", "conversation":
+		return mode
+	default:
+		return fallback
+	}
 }
