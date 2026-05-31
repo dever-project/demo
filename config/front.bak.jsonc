@@ -1,0 +1,135 @@
+{
+  "public": [ // 全局公开接口白名单，命中后不要求登录态或 RBAC 权限
+    "/upload/*", // 上传文件公开访问规则
+    "/bot/energon/request", // Energon 请求入口公开访问
+    "/bot/energon/demo", // Energon 演示入口公开访问
+    "/site/info", // 站点信息接口公开访问
+    "/qiniu/callback" // 七牛回调接口公开访问
+  ],
+  "sites": { // 多站点配置，key 同时决定前端访问路径
+    "admin": { // 管理后台站点，访问路径为 /admin/
+      "name": "管理后台", // 站点主标题，用于浏览器标题、登录页和主框架品牌区
+      "subtitle": "平台配置", // 站点副标题，用于品牌区辅助说明
+      "description": "Dever 管理后台", // 站点描述，用于 meta description 和默认说明
+      "api": "front", // 后端接口前缀，admin 站点请求 /front/... 接口
+      "page": "admin", // 页面目录名，读取 front/page/admin/... 下的 JSON 页面
+      "assets": { // 当前站点可替换静态资源配置
+        "logo": "assets/images/logo.svg", // 站点 logo，相对路径映射到 config/front/assets/admin/images/logo.svg
+        "favicon": "assets/images/favicon.svg" // 浏览器 favicon，相对路径映射到 config/front/assets/admin/images/favicon.svg
+      },
+      "setting": { // 下发给前端 runtime.js 的站点运行时设置
+        "appearance": { // UI 外观默认值
+          "theme": "light", // 默认主题，可选 light/dark/system
+          "sidebar": "floating", // 侧边栏样式，可选 floating/sidebar/inset
+          "layout": "compact", // 布局密度，可选 default/compact/full
+          "direction": "ltr" // 文本方向，默认 ltr，阿语等场景可用 rtl
+        },
+        "runtime": { // 前端运行时行为配置
+          "skin": "default", // 当前皮肤名，给主题扩展或插件识别使用
+          "routerMode": "history" // 前端路由模式，默认 history
+        }
+      },
+      "access": { // 当前站点访问控制策略
+        "mode": "rbac", // rbac 表示按权限表控制页面和动作访问
+        "authProvider": "front" // 登录鉴权 Provider 前缀，admin 走 front/auth/login
+      },
+      "public": [ // 当前站点内公开页面或接口，相对 api 前缀
+        "auth/login" // 登录接口公开访问，最终对应 /front/auth/login
+      ],
+      "auth": [ // 管理后台默认权限种子，用于初始化菜单和权限树
+        {
+          "key": "tongyong", // 权限唯一标识
+          "name": "通用", // 菜单或权限展示名称
+          "icon": "layout-dashboard", // lucide 图标名
+          "type": 1, // 权限类型，1 表示菜单/目录节点
+          "sort": 1 // 排序值，越小越靠前
+        },
+        {
+          "key": "config", // 平台配置权限组唯一标识
+          "name": "平台配置", // 平台配置菜单展示名称
+          "icon": "settings", // 平台配置菜单图标
+          "type": 1, // 菜单/目录节点
+          "sort": 100, // 平台配置排序
+          "children": [ // 下级权限菜单
+            {
+              "key": "bot", // AI 核心权限组唯一标识
+              "name": "AI核心", // AI 核心菜单名称
+              "icon": "bot", // AI 核心菜单图标
+              "type": 1, // 菜单/目录节点
+              "sort": 1, // AI 核心排序
+              "children": [ // AI 核心下级菜单
+                {
+                  "key": "bot-energon", // 能源菜单唯一标识
+                  "name": "能源", // 能源菜单名称
+                  "icon": "cpu", // 能源菜单图标
+                  "type": 1, // 菜单/目录节点
+                  "sort": 1 // 能源菜单排序
+                },
+                {
+                  "key": "bot-agent", // 智能体菜单唯一标识
+                  "name": "智能体", // 智能体菜单名称
+                  "icon": "bot", // 智能体菜单图标
+                  "type": 1, // 菜单/目录节点
+                  "sort": 2 // 智能体菜单排序
+                },
+                {
+                  "key": "bot-team", // 团队菜单唯一标识
+                  "name": "团队", // 团队菜单名称
+                  "icon": "users-round", // 团队菜单图标
+                  "type": 1, // 菜单/目录节点
+                  "sort": 3 // 团队菜单排序
+                },
+                {
+                  "key": "bot-body", // 载体菜单唯一标识
+                  "name": "载体", // 载体菜单名称
+                  "icon": "blocks", // 载体菜单图标
+                  "type": 1, // 菜单/目录节点
+                  "sort": 4 // 载体菜单排序
+                }
+              ]
+            },
+            {
+              "key": "system-settings", // 系统设置菜单唯一标识
+              "name": "系统设置", // 系统设置菜单名称
+              "icon": "settings", // 系统设置菜单图标
+              "type": 1, // 菜单/目录节点
+              "sort": 2 // 系统设置排序
+            }
+          ]
+        }
+      ]
+    },
+    "huabu": {
+      "name": "画布前台",
+      "subtitle": "画布前台",
+      "description": "画布前台",
+      "api": "huabu",
+      "page": "huabu",
+      "assets": {
+        "logo": "assets/images/logo.svg",
+        "favicon": "assets/images/favicon.svg"
+      },
+      "setting": {
+        "appearance": {
+          "theme": "light",
+          "sidebar": "floating",
+          "layout": "compact",
+          "direction": "ltr"
+        },
+        "runtime": {
+          "skin": "default",
+          "routerMode": "history"
+        }
+      },
+      "access": {
+        "mode": "login",
+        "authProvider": "huabu"
+      },
+      "public": [
+        "auth/login",
+        "auth/register"
+      ],
+      "auth": []
+    }
+  }
+}

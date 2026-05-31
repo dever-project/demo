@@ -4,5 +4,5 @@ import "embed"
 
 // FrontFS 内嵌所有模块下的页面 JSON，便于直接打包进二进制。
 //
-//go:embed */front/page
+//go:embed */front/page/*/*.json */front/page/*/*/*.json
 var FrontFS embed.FS

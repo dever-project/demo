@@ -1,64 +1,135 @@
 {
-  "auth": [
-    {
-      "key": "tongyong",
-      "name": "通用",
-      "icon": "layout-dashboard",
-      "type": 1,
-      "sort": 1
-    },
-    {
-      "key": "config",
-      "name": "平台配置",
-      "icon": "settings",
-      "type": 1,
-      "sort": 100,
-      "children": [
+  "public": [
+    "/upload/*",
+    "/bot/energon/request",
+    "/bot/energon/demo",
+    "/site/info",
+    "/qiniu/callback"
+  ],
+  "sites": {
+    "admin": {
+      "name": "管理后台",
+      "subtitle": "平台配置",
+      "description": "Dever 管理后台",
+      "api": "front",
+      "page": "admin",
+      "assets": {
+        "logo": "assets/images/logo.svg",
+        "favicon": "assets/images/favicon.svg"
+      },
+      "setting": {
+        "appearance": {
+          "theme": "light",
+          "sidebar": "floating",
+          "layout": "compact",
+          "direction": "ltr"
+        },
+        "runtime": {
+          "skin": "default",
+          "routerMode": "history"
+        }
+      },
+      "access": {
+        "mode": "rbac",
+        "authProvider": "front"
+      },
+      "public": [
+        "auth/login"
+      ],
+      "auth": [
         {
-          "key": "bot",
-          "name": "AI核心",
-          "icon": "bot",
+          "key": "tongyong",
+          "name": "通用",
+          "icon": "layout-dashboard",
           "type": 1,
-          "sort": 1,
-          "children": [
-            {
-              "key": "bot-energon",
-              "name": "能源",
-              "icon": "cpu",
-              "type": 1,
-              "sort": 1
-            },
-            {
-              "key": "bot-agent",
-              "name": "智能体",
-              "icon": "bot",
-              "type": 1,
-              "sort": 2
-            },
-            {
-              "key": "bot-team",
-              "name": "团队",
-              "icon": "users-round",
-              "type": 1,
-              "sort": 3
-            },
-            {
-              "key": "bot-body",
-              "name": "载体",
-              "icon": "blocks",
-              "type": 1,
-              "sort": 4
-            }
-          ]
+          "sort": 1
         },
         {
-          "key": "system-settings",
-          "name": "系统设置",
+          "key": "config",
+          "name": "平台配置",
           "icon": "settings",
           "type": 1,
-          "sort": 2
+          "sort": 100,
+          "children": [
+            {
+              "key": "bot",
+              "name": "AI核心",
+              "icon": "bot",
+              "type": 1,
+              "sort": 1,
+              "children": [
+                {
+                  "key": "bot-energon",
+                  "name": "能源",
+                  "icon": "cpu",
+                  "type": 1,
+                  "sort": 1
+                },
+                {
+                  "key": "bot-agent",
+                  "name": "智能体",
+                  "icon": "bot",
+                  "type": 1,
+                  "sort": 2
+                },
+                {
+                  "key": "bot-team",
+                  "name": "团队",
+                  "icon": "users-round",
+                  "type": 1,
+                  "sort": 3
+                },
+                {
+                  "key": "bot-body",
+                  "name": "载体",
+                  "icon": "blocks",
+                  "type": 1,
+                  "sort": 4
+                }
+              ]
+            },
+            {
+              "key": "system-settings",
+              "name": "系统设置",
+              "icon": "settings",
+              "type": 1,
+              "sort": 2
+            }
+          ]
         }
       ]
+    },
+    "huabu": {
+      "name": "画布前台",
+      "subtitle": "画布前台",
+      "description": "画布前台",
+      "api": "huabu",
+      "page": "huabu",
+      "assets": {
+        "logo": "assets/images/logo.svg",
+        "favicon": "assets/images/favicon.svg"
+      },
+      "setting": {
+        "appearance": {
+          "theme": "light",
+          "sidebar": "floating",
+          "layout": "compact",
+          "direction": "ltr"
+        },
+        "runtime": {
+          "skin": "default",
+          "routerMode": "history"
+        }
+      },
+      "access": {
+        "mode": "login",
+        "authProvider": "huabu"
+      },
+      "public": [
+        "auth/login",
+        "auth/register"
+      ],
+      "auth": []
     }
-  ]
+  }
 }

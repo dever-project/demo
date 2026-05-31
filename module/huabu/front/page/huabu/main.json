@@ -1,0 +1,34 @@
+{
+  "page": {
+    "name": "主框架",
+    "type": 2
+  },
+  "layout": {
+    "type": "container",
+    "className": "min-h-svh bg-background",
+    "children": {
+      "content": {
+        "type": "container",
+        "className": "min-h-svh"
+      },
+      "assistant": {
+        "type": "container"
+      }
+    }
+  },
+  "nodes": {
+    "content": [
+      {
+        "type": "app-outlet"
+      }
+    ],
+    "assistant": [
+      {
+        "type": "app-assistant"
+      }
+    ]
+  },
+  "data": {},
+  "state": {},
+  "action": {}
+}

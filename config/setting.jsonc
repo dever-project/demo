@@ -56,7 +56,7 @@
   },
   "frontSite": {
     "enabled": true,
-    "path": "/_admin",
+    "path": "/admin",
     "dir": "package/front/html"
   },
   "auth": {

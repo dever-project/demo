@@ -1,0 +1,40 @@
+{
+  "page": {
+    "name": "画布首页",
+    "icon": "palette",
+    "type": 1,
+    "sort": 1
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header"
+      },
+      "page-main": {
+        "type": "main"
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-title",
+        "value": "page"
+      }
+    ],
+    "page-main": [
+      {
+        "type": "show-base",
+        "value": "welcome.message"
+      }
+    ]
+  },
+  "data": {
+    "welcome": {
+      "message": "Hello World"
+    }
+  },
+  "state": {},
+  "action": {}
+}
