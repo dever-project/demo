@@ -1,4 +1,4 @@
-import { defineFrontPlugin, lazyNode } from "@/lib/plugin/types";
+import { defineFrontPlugin, lazyNode } from "@dever/front-plugin";
 
 export default defineFrontPlugin({
   name: "huabu",

@@ -1,20 +1,21 @@
 import { type FormEvent, type ReactNode, useState } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { getSiteConfig } from "@/config/app-config";
-import { SiteLogo } from "@/components/layout/site-logo";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { resolvePostLoginTarget } from "@/lib/auth-redirect";
 import {
+  Button,
+  Card,
+  Input,
+  SiteLogo,
+  getSiteConfig,
   joinFrontApi,
   loadMainInfo,
   request,
   resetFrontRuntimeCache,
-} from "@/lib/request";
-import { useAuthStore } from "@/stores/auth-store";
+  resolvePostLoginTarget,
+  useAuthStore,
+  useNavigate,
+  useSearch,
+} from "@dever/front-plugin";
 
 type AuthMode = "login" | "register";
 type AuthPayload = {

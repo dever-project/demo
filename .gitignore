@@ -21,6 +21,7 @@
 /tmp/
 /dist/
 /build/
+/.vite/
 /app
 *.exe
 *.dll
