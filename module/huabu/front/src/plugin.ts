@@ -8,5 +8,15 @@ export default defineFrontPlugin({
         default: mod.HuabuLoginPage,
       })),
     ),
+    "huabu-home-shell": lazyNode(() =>
+      import("./nodes/home/home-shell").then((mod) => ({
+        default: mod.HuabuHomeShell,
+      })),
+    ),
+    "huabu-project-page": lazyNode(() =>
+      import("./nodes/project/project-page").then((mod) => ({
+        default: mod.HuabuProjectPage,
+      })),
+    ),
   },
 });

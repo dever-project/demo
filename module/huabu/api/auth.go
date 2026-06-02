@@ -53,11 +53,15 @@ func bindBody(c *server.Context) (map[string]any, error) {
 
 func huabuJSON(c *server.Context, data any, err error) error {
 	if err != nil {
-		return c.JSONPayload(200, map[string]any{
+		payload := map[string]any{
 			"status": 2,
 			"data":   map[string]any{},
 			"msg":    err.Error(),
-		})
+		}
+		if huabuservice.IsAuthRequired(err) {
+			payload["code"] = 401
+		}
+		return c.JSONPayload(200, payload)
 	}
 	return c.JSONPayload(200, map[string]any{
 		"status": 1,

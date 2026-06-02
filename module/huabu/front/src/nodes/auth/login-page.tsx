@@ -7,7 +7,7 @@ import {
   Input,
   SiteLogo,
   getSiteConfig,
-  joinFrontApi,
+  joinSiteApi,
   loadMainInfo,
   request,
   resetFrontRuntimeCache,
@@ -52,7 +52,7 @@ export function HuabuLoginPage() {
     setMessage("");
     try {
       const result = await request(
-        joinFrontApi(mode === "login" ? "auth/login" : "auth/register"),
+        joinSiteApi(mode === "login" ? "auth/login" : "auth/register"),
         "post",
         payload.data,
       );

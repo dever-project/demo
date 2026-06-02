@@ -1,11 +1,13 @@
 {
   "page": {
-    "name": "主框架",
-    "type": 2
+    "name": "项目",
+    "icon": "bot",
+    "type": 1,
+    "sort": 2
   },
   "layout": {
     "type": "container",
-    "className": "min-h-svh bg-background",
+    "className": "min-h-svh",
     "children": {
       "content": {
         "type": "container",
@@ -16,7 +18,8 @@
   "nodes": {
     "content": [
       {
-        "type": "app-outlet"
+        "type": "huabu-home-shell",
+        "value": "project"
       }
     ]
   },

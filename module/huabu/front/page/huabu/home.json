@@ -7,34 +7,23 @@
   },
   "layout": {
     "type": "container",
+    "className": "min-h-svh",
     "children": {
-      "page-header": {
-        "type": "header"
-      },
-      "page-main": {
-        "type": "main"
+      "content": {
+        "type": "container",
+        "className": "min-h-svh"
       }
     }
   },
   "nodes": {
-    "page-header": [
+    "content": [
       {
-        "type": "show-title",
-        "value": "page"
-      }
-    ],
-    "page-main": [
-      {
-        "type": "show-base",
-        "value": "welcome.message"
+        "type": "huabu-home-shell",
+        "value": "project"
       }
     ]
   },
-  "data": {
-    "welcome": {
-      "message": "Hello World"
-    }
-  },
+  "data": {},
   "state": {},
   "action": {}
 }

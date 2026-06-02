@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,27 @@ import (
 const tokenScopeHuabu = "huabu"
 
 type AuthService struct{}
+
+type AuthRequiredError struct {
+	Message string
+}
+
+func (e AuthRequiredError) Error() string {
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		return "请先登录"
+	}
+	return message
+}
+
+func NewAuthRequiredError(message string) error {
+	return AuthRequiredError{Message: message}
+}
+
+func IsAuthRequired(err error) bool {
+	var target AuthRequiredError
+	return errors.As(err, &target)
+}
 
 func (AuthService) Register(ctx context.Context, account string, password string, name string) (map[string]any, error) {
 	account = strings.TrimSpace(account)
@@ -78,15 +100,40 @@ func (AuthService) Profile(ctx context.Context) (map[string]any, error) {
 }
 
 func CurrentUserID(ctx context.Context) (uint64, error) {
-	claims := deverjwt.Claims(ctx)
-	if strings.TrimSpace(fmt.Sprint(claims["scope"])) != tokenScopeHuabu {
-		return 0, fmt.Errorf("用户信息不正确")
+	if !hasHuabuTokenScope(ctx) {
+		return 0, NewAuthRequiredError("用户信息不正确")
 	}
 	uid, ok := deverjwt.ActiveInt64(ctx)
 	if !ok || uid <= 0 {
-		return 0, fmt.Errorf("用户信息不正确")
+		return 0, NewAuthRequiredError("用户信息不正确")
 	}
 	return uint64(uid), nil
+}
+
+func hasHuabuTokenScope(ctx context.Context) bool {
+	claims := deverjwt.Claims(ctx)
+	siteKey := cleanTokenClaim(claims["site"])
+	scope := cleanTokenClaim(claims["scope"])
+	if siteKey == tokenScopeHuabu || scope == tokenScopeHuabu {
+		return true
+	}
+
+	site, err := resolveHuabuSite()
+	if err != nil {
+		return false
+	}
+	return siteKey == site.Key || scope == site.Access.AuthProvider
+}
+
+func cleanTokenClaim(value any) string {
+	if value == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
 }
 
 func CurrentUser(ctx context.Context) (*huabumodel.User, error) {
@@ -99,7 +146,7 @@ func CurrentUser(ctx context.Context) (*huabumodel.User, error) {
 		"status": huabumodel.StatusEnabled,
 	})
 	if user == nil {
-		return nil, fmt.Errorf("用户不存在或已停用")
+		return nil, NewAuthRequiredError("用户不存在或已停用")
 	}
 	return user, nil
 }
