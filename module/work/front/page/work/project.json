@@ -18,7 +18,7 @@
   "nodes": {
     "content": [
       {
-        "type": "huabu-home-shell",
+        "type": "work-home-shell",
         "value": "project"
       }
     ]

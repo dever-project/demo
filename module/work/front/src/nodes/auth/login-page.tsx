@@ -24,7 +24,7 @@ type AuthPayload = {
   name?: string;
 };
 
-export function HuabuLoginPage() {
+export function WorkLoginPage() {
   const site = getSiteConfig();
   const navigate = useNavigate();
   const { redirect } = useSearch({ from: "/(auth)/sign-in" });
@@ -100,13 +100,13 @@ export function HuabuLoginPage() {
             AI Creative Workspace
           </p>
           <h1 className="max-w-2xl text-5xl font-semibold leading-tight tracking-tight text-foreground">
-            神创画布工作台
+            神创 Work 工作台
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
-            创建项目画布，编排能力节点和智能体流程，把每一次生成结果沉淀为可复用的项目资产。
+            创建项目，编排能力节点和智能体流程，把每一次生成结果沉淀为可复用的项目资产。
           </p>
           <div className="mt-10 grid max-w-xl grid-cols-3 gap-3 text-sm">
-            {["项目画布", "能力编排", "资产沉淀"].map((item) => (
+            {["项目工作台", "能力编排", "资产沉淀"].map((item) => (
               <div
                 key={item}
                 className="rounded-lg border border-border bg-background/70 px-4 py-3 text-foreground shadow-xs"
@@ -124,7 +124,7 @@ export function HuabuLoginPage() {
             <SiteLogo className="size-8" />
             <div className="min-w-0">
               <p className="truncate text-lg font-semibold">
-                {site.name || "画布前台"}
+                {site.name || "工作台"}
               </p>
               <p className="text-xs text-muted-foreground">AI 工作台</p>
             </div>

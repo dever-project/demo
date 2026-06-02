@@ -13,11 +13,11 @@ import (
 	deverjwt "github.com/shemic/dever/auth/jwt"
 	"github.com/shemic/dever/config"
 
-	huabumodel "my/module/huabu/model"
+	workmodel "my/module/work/model"
 	"my/package/front/service/siteconfig"
 )
 
-const tokenScopeHuabu = "huabu"
+const tokenScopeWork = "work"
 
 type AuthService struct{}
 
@@ -53,7 +53,7 @@ func (AuthService) Register(ctx context.Context, account string, password string
 		return nil, fmt.Errorf("密码不能少于 6 位")
 	}
 
-	model := huabumodel.NewUserModel()
+	model := workmodel.NewUserModel()
 	if row := model.Find(ctx, map[string]any{"account": account}); row != nil {
 		return nil, fmt.Errorf("账号已存在")
 	}
@@ -65,7 +65,7 @@ func (AuthService) Register(ctx context.Context, account string, password string
 		"account":    account,
 		"password":   hashPassword(password),
 		"name":       name,
-		"status":     huabumodel.StatusEnabled,
+		"status":     workmodel.StatusEnabled,
 		"created_at": time.Now(),
 	}))
 	if userID == 0 {
@@ -81,9 +81,9 @@ func (AuthService) Login(ctx context.Context, account string, password string) (
 		return nil, fmt.Errorf("账号和密码不能为空")
 	}
 
-	user := huabumodel.NewUserModel().Find(ctx, map[string]any{
+	user := workmodel.NewUserModel().Find(ctx, map[string]any{
 		"account": account,
-		"status":  huabumodel.StatusEnabled,
+		"status":  workmodel.StatusEnabled,
 	})
 	if user == nil || user.Password != hashPassword(password) {
 		return nil, fmt.Errorf("账号或密码错误")
@@ -100,7 +100,7 @@ func (AuthService) Profile(ctx context.Context) (map[string]any, error) {
 }
 
 func CurrentUserID(ctx context.Context) (uint64, error) {
-	if !hasHuabuTokenScope(ctx) {
+	if !hasWorkTokenScope(ctx) {
 		return 0, NewAuthRequiredError("用户信息不正确")
 	}
 	uid, ok := deverjwt.ActiveInt64(ctx)
@@ -110,15 +110,15 @@ func CurrentUserID(ctx context.Context) (uint64, error) {
 	return uint64(uid), nil
 }
 
-func hasHuabuTokenScope(ctx context.Context) bool {
+func hasWorkTokenScope(ctx context.Context) bool {
 	claims := deverjwt.Claims(ctx)
 	siteKey := cleanTokenClaim(claims["site"])
 	scope := cleanTokenClaim(claims["scope"])
-	if siteKey == tokenScopeHuabu || scope == tokenScopeHuabu {
+	if siteKey == tokenScopeWork || scope == tokenScopeWork {
 		return true
 	}
 
-	site, err := resolveHuabuSite()
+	site, err := resolveWorkSite()
 	if err != nil {
 		return false
 	}
@@ -136,14 +136,14 @@ func cleanTokenClaim(value any) string {
 	return text
 }
 
-func CurrentUser(ctx context.Context) (*huabumodel.User, error) {
+func CurrentUser(ctx context.Context) (*workmodel.User, error) {
 	userID, err := CurrentUserID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	user := huabumodel.NewUserModel().Find(ctx, map[string]any{
+	user := workmodel.NewUserModel().Find(ctx, map[string]any{
 		"id":     userID,
-		"status": huabumodel.StatusEnabled,
+		"status": workmodel.StatusEnabled,
 	})
 	if user == nil {
 		return nil, NewAuthRequiredError("用户不存在或已停用")
@@ -151,17 +151,17 @@ func CurrentUser(ctx context.Context) (*huabumodel.User, error) {
 	return user, nil
 }
 
-func authUserPayload(user *huabumodel.User) (map[string]any, error) {
+func authUserPayload(user *workmodel.User) (map[string]any, error) {
 	if user == nil {
 		return nil, fmt.Errorf("用户不存在")
 	}
 
-	site, err := resolveHuabuSite()
+	site, err := resolveWorkSite()
 	if err != nil {
 		return nil, err
 	}
 	expiredAt := time.Now().Add(7 * 24 * time.Hour)
-	token, err := createHuabuToken(user.ID, expiredAt, site)
+	token, err := createWorkToken(user.ID, expiredAt, site)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func authUserPayload(user *huabumodel.User) (map[string]any, error) {
 	}, nil
 }
 
-func userPayload(user huabumodel.User) map[string]any {
+func userPayload(user workmodel.User) map[string]any {
 	return map[string]any{
 		"id":         user.ID,
 		"account":    user.Account,
@@ -182,7 +182,7 @@ func userPayload(user huabumodel.User) map[string]any {
 	}
 }
 
-func createHuabuToken(userID uint64, expiredAt time.Time, site siteconfig.Site) (string, error) {
+func createWorkToken(userID uint64, expiredAt time.Time, site siteconfig.Site) (string, error) {
 	cfg, err := config.Load("")
 	if err != nil {
 		return "", fmt.Errorf("读取配置失败")
@@ -201,14 +201,14 @@ func createHuabuToken(userID uint64, expiredAt time.Time, site siteconfig.Site) 
 	return token.SignedString([]byte(signer.Secret))
 }
 
-func resolveHuabuSite() (siteconfig.Site, error) {
+func resolveWorkSite() (siteconfig.Site, error) {
 	cfg := siteconfig.MustLoad()
 	for _, site := range cfg.Sites {
-		if strings.TrimSpace(site.Access.AuthProvider) == tokenScopeHuabu {
+		if strings.TrimSpace(site.Access.AuthProvider) == tokenScopeWork {
 			return site, nil
 		}
 	}
-	return siteconfig.Site{}, fmt.Errorf("画布站点未配置")
+	return siteconfig.Site{}, fmt.Errorf("工作台站点未配置")
 }
 
 func hashPassword(password string) string {

@@ -9,7 +9,7 @@
   "nodes": {
     "__root__": [
       {
-        "type": "huabu-login-page"
+        "type": "work-login-page"
       }
     ]
   },

@@ -1,6 +1,6 @@
 {
   "page": {
-    "name": "画布首页",
+    "name": "工作台首页",
     "icon": "palette",
     "type": 1,
     "sort": 1
@@ -18,7 +18,7 @@
   "nodes": {
     "content": [
       {
-        "type": "huabu-home-shell",
+        "type": "work-home-shell",
         "value": "project"
       }
     ]

@@ -62,7 +62,7 @@ const coverGradients = [
   "linear-gradient(135deg, #fce7f3 0%, #fdf2f8 46%, #f8fafc 100%)",
 ];
 
-export function HuabuProjectPage() {
+export function WorkProjectPage() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [teams, setTeams] = useState<TeamItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,9 +111,9 @@ export function HuabuProjectPage() {
 
   return (
     <div className="hb-project-page">
-      <HuabuProjectStyles />
+      <WorkProjectStyles />
 
-      <section className="hb-hero" aria-label="画布项目助手">
+      <section className="hb-hero" aria-label="项目助手">
         <h1 className="hb-hero-title">说吧，今天让我帮你搞定什么？</h1>
 
         <div className="hb-prompt-card">
@@ -336,7 +336,7 @@ function CreateProjectModal({
         <div className="hb-modal-head">
           <div>
             <p>新建项目</p>
-            <h3>创建画布项目</h3>
+            <h3>创建工作台项目</h3>
           </div>
           <button
             type="button"
@@ -425,7 +425,7 @@ function ProjectLoading() {
   );
 }
 
-function HuabuProjectStyles() {
+function WorkProjectStyles() {
   return (
     <style>{`
       .hb-project-page {

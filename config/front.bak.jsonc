@@ -99,12 +99,12 @@
         }
       ]
     },
-    "huabu": {
-      "name": "画布前台",
-      "subtitle": "画布前台",
-      "description": "画布前台",
-      "api": "huabu",
-      "page": "huabu",
+    "work": {
+      "name": "工作台",
+      "subtitle": "AI 工作台",
+      "description": "Dever Work 前台",
+      "api": "work",
+      "page": "work",
       "assets": {
         "logo": "assets/images/logo.svg",
         "favicon": "assets/images/favicon.svg"
@@ -123,7 +123,7 @@
       },
       "access": {
         "mode": "login",
-        "authProvider": "huabu"
+        "authProvider": "work"
       },
       "public": [
         "auth/login",

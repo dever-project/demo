@@ -28,7 +28,7 @@ type ProjectIndex struct {
 
 var projectUserRelation = orm.Relation{
 	Field:      "user_id",
-	Option:     "huabu.NewUserModel",
+	Option:     "work.NewUserModel",
 	OptionKeys: []string{"name", "account"},
 }
 
@@ -51,7 +51,7 @@ var projectReleaseRelation = orm.Relation{
 }
 
 func NewProjectModel() *orm.Model[Project] {
-	return orm.LoadModel[Project]("画布项目", "huabu_project", orm.ModelConfig{
+	return orm.LoadModel[Project]("工作台项目", "work_project", orm.ModelConfig{
 		Index:    ProjectIndex{},
 		Order:    "id desc",
 		Database: "default",

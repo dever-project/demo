@@ -31,7 +31,7 @@ type UserIndex struct {
 }
 
 func NewUserModel() *orm.Model[User] {
-	return orm.LoadModel[User]("画布用户", "huabu_user", orm.ModelConfig{
+	return orm.LoadModel[User]("工作台用户", "work_user", orm.ModelConfig{
 		Index:    UserIndex{},
 		Order:    "id desc",
 		Database: "default",

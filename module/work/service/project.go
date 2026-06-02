@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	huabumodel "my/module/huabu/model"
+	workmodel "my/module/work/model"
 	teammodel "my/package/bot/model/team"
 	bodyservice "my/package/bot/service/body"
 	teamservice "my/package/bot/service/team"
@@ -29,9 +29,9 @@ func (s ProjectService) List(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows := huabumodel.NewProjectModel().Select(ctx, map[string]any{
+	rows := workmodel.NewProjectModel().Select(ctx, map[string]any{
 		"user_id": userID,
-		"status":  huabumodel.StatusEnabled,
+		"status":  workmodel.StatusEnabled,
 	})
 	builder := newProjectPayloadBuilder(ctx)
 	items := make([]map[string]any, 0, len(rows))
@@ -63,12 +63,12 @@ func (s ProjectService) Create(ctx context.Context, name string, teamID uint64, 
 	}
 
 	now := time.Now()
-	projectID := uint64(huabumodel.NewProjectModel().Insert(ctx, map[string]any{
+	projectID := uint64(workmodel.NewProjectModel().Insert(ctx, map[string]any{
 		"user_id":    userID,
 		"team_id":    team.ID,
 		"release_id": release.ID,
 		"name":       name,
-		"status":     huabumodel.StatusEnabled,
+		"status":     workmodel.StatusEnabled,
 		"created_at": now,
 		"updated_at": now,
 	}))
@@ -78,14 +78,14 @@ func (s ProjectService) Create(ctx context.Context, name string, teamID uint64, 
 
 	bodyID, err := s.body.CreateCanvasBody(ctx, projectID, name)
 	if err != nil {
-		huabumodel.NewProjectModel().Update(ctx, map[string]any{"id": projectID}, map[string]any{
-			"status":     huabumodel.StatusDisabled,
+		workmodel.NewProjectModel().Update(ctx, map[string]any{"id": projectID}, map[string]any{
+			"status":     workmodel.StatusDisabled,
 			"updated_at": time.Now(),
 		})
 		return nil, err
 	}
 
-	huabumodel.NewProjectModel().Update(ctx, map[string]any{"id": projectID}, map[string]any{
+	workmodel.NewProjectModel().Update(ctx, map[string]any{"id": projectID}, map[string]any{
 		"body_id":    bodyID,
 		"updated_at": time.Now(),
 	})
@@ -101,7 +101,7 @@ func (s ProjectService) Detail(ctx context.Context, projectID uint64) (map[strin
 	return map[string]any{"project": builder.Project(*project)}, nil
 }
 
-func (ProjectService) RequireProject(ctx context.Context, projectID uint64) (*huabumodel.Project, error) {
+func (ProjectService) RequireProject(ctx context.Context, projectID uint64) (*workmodel.Project, error) {
 	userID, err := CurrentUserID(ctx)
 	if err != nil {
 		return nil, err
@@ -109,10 +109,10 @@ func (ProjectService) RequireProject(ctx context.Context, projectID uint64) (*hu
 	if projectID == 0 {
 		return nil, fmt.Errorf("项目不能为空")
 	}
-	project := huabumodel.NewProjectModel().Find(ctx, map[string]any{
+	project := workmodel.NewProjectModel().Find(ctx, map[string]any{
 		"id":      projectID,
 		"user_id": userID,
-		"status":  huabumodel.StatusEnabled,
+		"status":  workmodel.StatusEnabled,
 	})
 	if project == nil {
 		return nil, fmt.Errorf("项目不存在")
@@ -167,7 +167,7 @@ func newProjectPayloadBuilder(ctx context.Context) projectPayloadBuilder {
 	}
 }
 
-func (b projectPayloadBuilder) Project(project huabumodel.Project) map[string]any {
+func (b projectPayloadBuilder) Project(project workmodel.Project) map[string]any {
 	return map[string]any{
 		"id":          project.ID,
 		"user_id":     project.UserID,
@@ -232,7 +232,7 @@ func (b projectPayloadBuilder) findRelease(releaseID uint64) *teammodel.TeamRele
 	return release
 }
 
-func projectMode(project huabumodel.Project) string {
+func projectMode(project workmodel.Project) string {
 	if project.TeamID > 0 && project.ReleaseID > 0 {
 		return "team"
 	}

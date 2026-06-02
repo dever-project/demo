@@ -1,21 +1,21 @@
 import { defineFrontPlugin, lazyNode } from "@dever/front-plugin";
 
 export default defineFrontPlugin({
-  name: "huabu",
+  name: "work",
   nodes: {
-    "huabu-login-page": lazyNode(() =>
+    "work-login-page": lazyNode(() =>
       import("./nodes/auth/login-page").then((mod) => ({
-        default: mod.HuabuLoginPage,
+        default: mod.WorkLoginPage,
       })),
     ),
-    "huabu-home-shell": lazyNode(() =>
+    "work-home-shell": lazyNode(() =>
       import("./nodes/home/home-shell").then((mod) => ({
-        default: mod.HuabuHomeShell,
+        default: mod.WorkHomeShell,
       })),
     ),
-    "huabu-project-page": lazyNode(() =>
+    "work-project-page": lazyNode(() =>
       import("./nodes/project/project-page").then((mod) => ({
-        default: mod.HuabuProjectPage,
+        default: mod.WorkProjectPage,
       })),
     ),
   },

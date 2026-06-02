@@ -6,7 +6,7 @@ import (
 
 	"github.com/shemic/dever/server"
 
-	huabuservice "my/module/huabu/service"
+	workservice "my/module/work/service"
 )
 
 type Auth struct{}
@@ -16,13 +16,13 @@ func (Auth) PostRegister(c *server.Context) error {
 	if err != nil {
 		return c.Error(err)
 	}
-	data, err := (huabuservice.AuthService{}).Register(
+	data, err := (workservice.AuthService{}).Register(
 		c.Context(),
 		bodyText(body, "account", "username"),
 		bodyText(body, "password"),
 		bodyText(body, "name", "nickname"),
 	)
-	return huabuJSON(c, data, err)
+	return workJSON(c, data, err)
 }
 
 func (Auth) PostLogin(c *server.Context) error {
@@ -30,17 +30,17 @@ func (Auth) PostLogin(c *server.Context) error {
 	if err != nil {
 		return c.Error(err)
 	}
-	data, err := (huabuservice.AuthService{}).Login(
+	data, err := (workservice.AuthService{}).Login(
 		c.Context(),
 		bodyText(body, "account", "username"),
 		bodyText(body, "password"),
 	)
-	return huabuJSON(c, data, err)
+	return workJSON(c, data, err)
 }
 
 func (Auth) GetProfile(c *server.Context) error {
-	data, err := (huabuservice.AuthService{}).Profile(c.Context())
-	return huabuJSON(c, data, err)
+	data, err := (workservice.AuthService{}).Profile(c.Context())
+	return workJSON(c, data, err)
 }
 
 func bindBody(c *server.Context) (map[string]any, error) {
@@ -51,14 +51,14 @@ func bindBody(c *server.Context) (map[string]any, error) {
 	return body, nil
 }
 
-func huabuJSON(c *server.Context, data any, err error) error {
+func workJSON(c *server.Context, data any, err error) error {
 	if err != nil {
 		payload := map[string]any{
 			"status": 2,
 			"data":   map[string]any{},
 			"msg":    err.Error(),
 		}
-		if huabuservice.IsAuthRequired(err) {
+		if workservice.IsAuthRequired(err) {
 			payload["code"] = 401
 		}
 		return c.JSONPayload(200, payload)

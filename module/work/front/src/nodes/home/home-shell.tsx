@@ -9,12 +9,12 @@ import {
   Sun,
 } from "lucide-react";
 import { SiteLogo, getSiteConfig } from "@dever/front-plugin";
-import { HuabuProjectPage } from "../project/project-page";
+import { WorkProjectPage } from "../project/project-page";
 
-type HuabuPageKey = "project" | "tools" | "assets" | "skills";
+type WorkPageKey = "project" | "tools" | "assets" | "skills";
 
 type NavItem = {
-  key: HuabuPageKey;
+  key: WorkPageKey;
   label: string;
   icon: typeof Bot;
 };
@@ -26,7 +26,7 @@ const navItems: NavItem[] = [
   { key: "skills", label: "技能", icon: Puzzle },
 ];
 
-export function HuabuHomeShell({ item }: { item?: any }) {
+export function WorkHomeShell({ item }: { item?: any }) {
   const site = getSiteConfig();
   const pageValue =
     typeof item?.value === "string" ? item.value : item?.value?.page;
@@ -34,24 +34,24 @@ export function HuabuHomeShell({ item }: { item?: any }) {
     pageValue === "assets" || pageValue === "tools" || pageValue === "skills"
       ? pageValue
       : "project";
-  const [activePage, setActivePage] = useState<HuabuPageKey>(initialPage);
+  const [activePage, setActivePage] = useState<WorkPageKey>(initialPage);
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
-    setDark(window.localStorage.getItem("huabu-theme") === "dark");
+    setDark(window.localStorage.getItem("work-theme") === "dark");
   }, []);
 
   function toggleTheme() {
     setDark((current) => {
       const next = !current;
-      window.localStorage.setItem("huabu-theme", next ? "dark" : "light");
+      window.localStorage.setItem("work-theme", next ? "dark" : "light");
       return next;
     });
   }
 
   const content = useMemo(() => {
     if (activePage === "project") {
-      return <HuabuProjectPage />;
+      return <WorkProjectPage />;
     }
     return (
       <ComingSoon
@@ -68,13 +68,13 @@ export function HuabuHomeShell({ item }: { item?: any }) {
 
   return (
     <main className={cx("hb-app", dark && "is-dark")}>
-      <HuabuHomeStyles />
+      <WorkHomeStyles />
       <aside className="hb-rail">
         <div className="hb-rail-top">
-          <div className="hb-logo" aria-label={site.name || "画布前台"}>
+          <div className="hb-logo" aria-label={site.name || "工作台"}>
             <SiteLogo className="hb-logo-mark" />
           </div>
-          <nav className="hb-nav" aria-label="画布导航">
+          <nav className="hb-nav" aria-label="工作台导航">
             {navItems.map((nav) => (
               <RailButton
                 key={nav.key}
@@ -147,7 +147,7 @@ function ComingSoon({ title }: { title: string }) {
   );
 }
 
-function HuabuHomeStyles() {
+function WorkHomeStyles() {
   return (
     <style>{`
       .hb-app {
