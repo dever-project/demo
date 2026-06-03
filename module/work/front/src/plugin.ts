@@ -18,5 +18,10 @@ export default defineFrontPlugin({
         default: mod.WorkProjectPage,
       })),
     ),
+    "work-space-page": lazyNode(() =>
+      import("./nodes/space/space-page").then((mod) => ({
+        default: mod.WorkSpacePage,
+      })),
+    ),
   },
 });

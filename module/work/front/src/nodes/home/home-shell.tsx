@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Bot,
-  FolderOpen,
-  Grid3X3,
+  Folder,
+  LayoutGrid,
   Moon,
-  Puzzle,
   Sparkles,
   Sun,
+  Wand2,
+  Zap,
 } from "lucide-react";
 import { SiteLogo, getSiteConfig } from "@dever/front-plugin";
 import { WorkProjectPage } from "../project/project-page";
@@ -20,10 +21,10 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { key: "project", label: "项目", icon: Bot },
-  { key: "tools", label: "工具", icon: Grid3X3 },
-  { key: "assets", label: "资产", icon: FolderOpen },
-  { key: "skills", label: "技能", icon: Puzzle },
+  { key: "project", label: "创作", icon: Sparkles },
+  { key: "tools", label: "工具", icon: LayoutGrid },
+  { key: "assets", label: "资产", icon: Folder },
+  { key: "skills", label: "技能", icon: Zap },
 ];
 
 export function WorkHomeShell({ item }: { item?: any }) {
@@ -128,8 +129,11 @@ function RailButton({
       className={cx("hb-nav-item", active && "is-active")}
       onClick={onClick}
     >
-      <Icon size={20} strokeWidth={active ? 2.8 : 2.2} />
-      {label === "项目" ? <b className="hb-beta">Beta</b> : null}
+      <Icon
+        size={20}
+        strokeWidth={active ? 2.5 : 1.8}
+        fill={active ? "currentColor" : "none"}
+      />
       <span>{label}</span>
     </button>
   );
@@ -260,7 +264,7 @@ function WorkHomeStyles() {
         border: 1px solid transparent;
         border-radius: 16px;
         background: transparent;
-        color: #7b8594;
+        color: #94a3b8;
         font: inherit;
         font-size: 11px;
         font-weight: 760;
@@ -269,24 +273,27 @@ function WorkHomeStyles() {
       }
 
       .hb-nav-item:hover {
-        color: #111827;
+        color: #475569;
         transform: translateY(-1px);
       }
 
       .hb-nav-item.is-active {
         border-color: transparent;
         background: transparent;
-        color: #050711;
+        color: #090f22;
         font-weight: 900;
       }
 
       .hb-app.is-dark .hb-nav-item {
-        color: #8f99aa;
+        color: #64748b;
       }
 
-      .hb-app.is-dark .hb-nav-item:hover,
+      .hb-app.is-dark .hb-nav-item:hover {
+        color: #94a3b8;
+      }
+
       .hb-app.is-dark .hb-nav-item.is-active {
-        color: #f6f8fb;
+        color: #f8fafc;
       }
 
       .hb-beta {

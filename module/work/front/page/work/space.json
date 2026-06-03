@@ -1,0 +1,19 @@
+{
+  "page": {
+    "name": "创作空间",
+    "type": 2
+  },
+  "layout": {
+    "type": "container"
+  },
+  "nodes": {
+    "__root__": [
+      {
+        "type": "work-space-page"
+      }
+    ]
+  },
+  "data": {},
+  "state": {},
+  "action": {}
+}
