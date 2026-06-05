@@ -23,6 +23,18 @@ func (Space) GetBootstrap(c *server.Context) error {
 	return workJSON(c, data, err)
 }
 
+func (Space) GetPowers(c *server.Context) error {
+	projectID := util.ToUint64(c.Input("project_id"))
+	if projectID == 0 {
+		projectID = util.ToUint64(c.Input("projectId"))
+	}
+	if projectID == 0 {
+		projectID = util.ToUint64(c.Input("id"))
+	}
+	data, err := spaceSvc.PowerCatalog(c.Context(), projectID)
+	return workJSON(c, data, err)
+}
+
 func (Space) PostChat(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {

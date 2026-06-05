@@ -1,6 +1,6 @@
 import { joinSiteApi, request } from "@dever/front-plugin";
-import { normalizeSpaceBootstrap } from "./space-model";
-import type { SpaceBootstrap, TeamFlow } from "./types";
+import { normalizePowerCatalog, normalizeSpaceBootstrap } from "./space-model";
+import type { PowerKindOption, PowerOption, SpaceBootstrap, TeamFlow } from "./types";
 
 export async function fetchSpaceBootstrap(projectId: number): Promise<SpaceBootstrap> {
   const result = await request(joinSiteApi("space/bootstrap"), "get", {
@@ -22,6 +22,18 @@ export async function sendSpaceMessage(projectId: number, assetCateId: number, m
     throw new Error(result.message || "发送失败");
   }
   return result.data;
+}
+export async function fetchSpacePowers(projectId: number): Promise<{
+  powers: PowerOption[];
+  powerKinds: PowerKindOption[];
+}> {
+  const result = await request(joinSiteApi("space/powers"), "get", {
+    project_id: projectId,
+  });
+  if (result.code !== 0) {
+    throw new Error(result.message || "加载能力列表失败");
+  }
+  return normalizePowerCatalog(result.data);
 }
 
 export async function runSpaceFlow(

@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/qiniu/go-sdk/v7 v7.25.6
 	github.com/redis/go-redis/v9 v9.5.1
+	github.com/robfig/cron v1.2.0
 	github.com/shemic/dever v0.1.1-0.20260226085347-0877fc4a3259
 	github.com/swaggo/swag v1.16.6
 	github.com/xuri/excelize/v2 v2.8.1
@@ -55,7 +56,6 @@ require (
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.3 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
-	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

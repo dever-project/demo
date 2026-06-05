@@ -120,6 +120,34 @@ func (ProjectService) RequireProject(ctx context.Context, projectID uint64) (*wo
 	return project, nil
 }
 
+func (s ProjectService) SyncProjectTeamRelease(ctx context.Context, project *workmodel.Project) (*workmodel.Project, error) {
+	if project == nil || project.TeamID == 0 {
+		return project, nil
+	}
+	team := teammodel.NewTeamModel().Find(ctx, map[string]any{
+		"id":     project.TeamID,
+		"status": teammodel.StatusEnabled,
+	})
+	if team == nil {
+		return nil, fmt.Errorf("团队不存在")
+	}
+	release := teammodel.NewTeamReleaseModel().Find(ctx, map[string]any{
+		"id": team.CurrentReleaseID,
+	})
+	if release == nil || release.TeamID != team.ID {
+		return nil, fmt.Errorf("团队尚未发布")
+	}
+	if project.ReleaseID == release.ID {
+		return project, nil
+	}
+	workmodel.NewProjectModel().Update(ctx, map[string]any{"id": project.ID}, map[string]any{
+		"release_id": release.ID,
+	})
+	next := *project
+	next.ReleaseID = release.ID
+	return &next, nil
+}
+
 func requirePublishedTeamRelease(ctx context.Context, teamID uint64, releaseID uint64) (teammodel.Team, teammodel.TeamRelease, error) {
 	if teamID == 0 && releaseID == 0 {
 		return teammodel.Team{}, teammodel.TeamRelease{}, fmt.Errorf("请选择团队")

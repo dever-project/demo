@@ -98,7 +98,7 @@ func (s ProjectService) Detail(ctx context.Context, projectID uint64) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -118,23 +118,12 @@ func (s ProjectService) Detail(ctx context.Context, projectID uint64) (map[strin
 	}, nil
 }
 
-func (s ProjectService) Delete(ctx context.Context, projectID uint64) (map[string]any, error) {
-	project, err := s.RequireProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	projectmodel.NewProjectModel().Update(ctx, map[string]any{"id": project.ID}, map[string]any{
-		"status": projectmodel.StatusDisabled,
-	})
-	return map[string]any{"id": project.ID}, nil
-}
-
 func (s ProjectService) RunCanvasPower(ctx context.Context, projectID uint64, req teamservice.CanvasPowerRunRequest) (map[string]any, error) {
 	project, err := s.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +135,17 @@ func (s ProjectService) RunCanvasPower(ctx context.Context, projectID uint64, re
 	req.TeamID = project.TeamID
 	req.ReleaseID = project.ReleaseID
 	return s.team.RunCanvasPower(ctx, req)
+}
+
+func (s ProjectService) Delete(ctx context.Context, projectID uint64) (map[string]any, error) {
+	project, err := s.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	projectmodel.NewProjectModel().Update(ctx, map[string]any{"id": project.ID}, map[string]any{
+		"status": projectmodel.StatusDisabled,
+	})
+	return map[string]any{"id": project.ID}, nil
 }
 
 func (s ProjectService) RunCanvasAgent(ctx context.Context, projectID uint64, req CanvasAgentRunRequest) (map[string]any, error) {
@@ -211,7 +211,7 @@ func (s ProjectService) RunFlow(ctx context.Context, projectID uint64, req teams
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (s ProjectService) RunTeam(ctx context.Context, projectID uint64, req teams
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func (s ProjectService) RunRole(ctx context.Context, projectID uint64, req teams
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +284,7 @@ func (s ProjectService) CanvasConfig(ctx context.Context, projectID uint64, flow
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (s ProjectService) CanvasPowerForm(ctx context.Context, projectID uint64, f
 	if err != nil {
 		return nil, err
 	}
-	project, err = s.syncProjectTeamRelease(ctx, project)
+	project, err = s.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +470,7 @@ func (ProjectService) RequireProject(ctx context.Context, projectID uint64) (*pr
 	return project, nil
 }
 
-func (s ProjectService) syncProjectTeamRelease(ctx context.Context, project *projectmodel.Project) (*projectmodel.Project, error) {
+func (s ProjectService) SyncProjectTeamRelease(ctx context.Context, project *projectmodel.Project) (*projectmodel.Project, error) {
 	if project == nil || project.TeamID == 0 {
 		return project, nil
 	}

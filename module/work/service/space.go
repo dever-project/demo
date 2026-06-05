@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	teamservice "my/package/bot/service/team"
@@ -22,6 +23,10 @@ func NewSpaceService() SpaceService {
 
 func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[string]any, error) {
 	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err = s.project.SyncProjectTeamRelease(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +64,27 @@ func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[stri
 		payload["assets"] = items
 	}
 
+	powerCatalog, err := s.powerCatalog(ctx, project.ReleaseID)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range powerCatalog {
+		payload[key] = value
+	}
+
 	return payload, nil
+}
+
+func (s SpaceService) PowerCatalog(ctx context.Context, projectID uint64) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err = s.project.SyncProjectTeamRelease(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	return s.powerCatalog(ctx, project.ReleaseID)
 }
 
 func (s SpaceService) Chat(ctx context.Context, projectID uint64, message string, assetCateID uint64) (map[string]any, error) {
@@ -99,4 +124,53 @@ func (s SpaceService) RunFlow(ctx context.Context, projectID uint64, flowID uint
 		Input:     input,
 		Mode:      "flow",
 	})
+}
+
+func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64) (map[string]any, error) {
+	config, err := s.team.CanvasConfig(ctx, releaseID, 0)
+	if err != nil {
+		return nil, err
+	}
+	powers, _ := config["powers"].([]teamservice.PowerOption)
+	return map[string]any{
+		"powers":      powers,
+		"power_kinds": powerKindOptions(powers),
+	}, nil
+}
+
+func powerKindOptions(powers []teamservice.PowerOption) []teamservice.PowerKindOption {
+	labels := map[string]string{
+		"text":       "文本",
+		"image":      "图片",
+		"video":      "视频",
+		"audio":      "音频",
+		"role":       "角色",
+		"multi":      "多模态",
+		"embeddings": "向量",
+		"workflow":   "工作流",
+	}
+	order := []string{"text", "image", "video", "audio", "role", "multi", "embeddings", "workflow"}
+	seen := map[string]bool{}
+	for _, power := range powers {
+		if power.Kind != "" {
+			seen[power.Kind] = true
+		}
+	}
+	result := make([]teamservice.PowerKindOption, 0, len(seen))
+	for _, kind := range order {
+		if !seen[kind] {
+			continue
+		}
+		result = append(result, teamservice.PowerKindOption{ID: kind, Value: labels[kind]})
+		delete(seen, kind)
+	}
+	extra := make([]string, 0, len(seen))
+	for kind := range seen {
+		extra = append(extra, kind)
+	}
+	sort.Strings(extra)
+	for _, kind := range extra {
+		result = append(result, teamservice.PowerKindOption{ID: kind, Value: kind})
+	}
+	return result
 }

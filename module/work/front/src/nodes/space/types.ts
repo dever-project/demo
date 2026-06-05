@@ -76,6 +76,26 @@ export type TeamFlowNode = {
   config: Record<string, unknown>;
 };
 
+export type PowerOption = {
+  id: number;
+  cate_id: number;
+  name: string;
+  key: string;
+  icon: string;
+  kind: string;
+};
+
+export type PowerKindOption = {
+  id: string;
+  value: string;
+};
+
+export type CanvasFunctionOption = {
+  key: string;
+  label: string;
+  description: string;
+};
+
 export type AssetVersion = {
   id: number;
   asset_id: number;
@@ -108,6 +128,8 @@ export type SpaceBootstrap = {
   flows: TeamFlow[];
   nodesByFlow: Record<string, TeamFlowNode[]>;
   assets: ProjectAsset[];
+  powers: PowerOption[];
+  powerKinds: PowerKindOption[];
 };
 
 export type SpaceCanvasNode = {
@@ -128,6 +150,8 @@ export type SpaceCanvasNode = {
   flow?: TeamFlow;
   role?: TeamRole;
   asset?: ProjectAsset;
+  power?: PowerOption;
+  functionOption?: CanvasFunctionOption;
   local?: boolean;
 };
 

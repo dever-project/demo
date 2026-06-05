@@ -2,6 +2,9 @@ import type {
   AssetCardinality,
   AssetCate,
   AssetKind,
+  CanvasFunctionOption,
+  PowerKindOption,
+  PowerOption,
   ProjectAsset,
   SpaceBootstrap,
   SpaceCanvasEdge,
@@ -36,6 +39,19 @@ export function normalizeSpaceBootstrap(value: unknown): SpaceBootstrap {
     flows: asRecords(row.flows).map(normalizeFlow),
     nodesByFlow: normalizeNodesByFlow(row.nodes_by_flow),
     assets: asRecords(row.assets).map(normalizeAsset),
+    powers: asRecords(row.powers).map(normalizePower),
+    powerKinds: asRecords(row.power_kinds).map(normalizePowerKind),
+  };
+}
+
+export function normalizePowerCatalog(value: unknown): {
+  powers: PowerOption[];
+  powerKinds: PowerKindOption[];
+} {
+  const row = asRecord(value);
+  return {
+    powers: asRecords(row.powers).map(normalizePower),
+    powerKinds: asRecords(row.power_kinds).map(normalizePowerKind),
   };
 }
 
@@ -66,13 +82,12 @@ export function relatedFlows(space: SpaceBootstrap, assetCateId: number) {
   return matched.length > 0 ? matched.slice(0, 4) : space.flows.slice(0, 3);
 }
 
-export function communicationRole(space: SpaceBootstrap) {
-  return (
-    space.roles.find((role) => role.role_type === "chat") ||
-    space.roles.find((role) => role.role_type === "default_chat") ||
-    space.roles[0] ||
-    null
-  );
+export function isExecutionRole(role: TeamRole) {
+  return role.role_type === "worker" || role.role_type === "default_worker";
+}
+
+export function executionRole(space: SpaceBootstrap) {
+  return space.roles.find(isExecutionRole) || null;
 }
 
 export function buildCanvasModel(
@@ -83,7 +98,7 @@ export function buildCanvasModel(
   const assetCate = assetCateById(space, assetCateId);
   const assets = assetsForCate(space, assetCate.id);
   const flows = relatedFlows(space, assetCate.id);
-  const role = communicationRole(space);
+  const role = executionRole(space);
   const nodes: SpaceCanvasNode[] = [
     {
       id: "asset-focus",
@@ -136,11 +151,11 @@ export function buildCanvasModel(
 
   if (role) {
     nodes.push({
-      id: "role-chat",
+      id: "role-worker",
       type: "agent",
-      title: role.name || "沟通角色",
-      subtitle: "沟通",
-      description: role.assignment || "理解你的目标，并把任务交给规划、执行和审查角色。",
+      title: role.name || "执行助理",
+      subtitle: "执行助理",
+      description: role.assignment || "执行当前资产的生产、处理和落地任务。",
       x: 760,
       y: 205,
       width: 154,
@@ -180,8 +195,8 @@ export function buildCanvasModel(
   });
 
   const edges: SpaceCanvasEdge[] = [
-    { id: "edge-focus-chat", from: "asset-focus", to: "role-chat" },
-    { id: "edge-chat-flow", from: "role-chat", to: nodes.find((node) => node.type === "flow")?.id || "save-node" },
+    { id: "edge-focus-worker", from: "asset-focus", to: "role-worker" },
+    { id: "edge-worker-flow", from: "role-worker", to: nodes.find((node) => node.type === "flow")?.id || "save-node" },
     { id: "edge-power-save", from: firstAsset ? `asset-${firstAsset.id}` : "power-seed", to: "save-node" },
   ].filter((edge) => nodes.some((node) => node.id === edge.from) && nodes.some((node) => node.id === edge.to));
 
@@ -196,15 +211,49 @@ export function createLocalNode(
   assetCate: AssetCate,
   index: number,
   position?: { x: number; y: number },
+  options?: {
+    asset?: ProjectAsset;
+    flow?: TeamFlow;
+    functionOption?: CanvasFunctionOption;
+    power?: PowerOption;
+    role?: TeamRole;
+  },
 ): SpaceCanvasNode {
   const baseX = position?.x ?? 420 + (index % 3) * 190;
   const baseY = position?.y ?? 610 + Math.floor(index / 3) * 170;
+  const selectedAsset = options?.asset;
+  const selectedFlow = options?.flow;
+  const selectedFunction = options?.functionOption;
+  const selectedPower = options?.power;
+  const selectedRole = options?.role;
   const labels: Record<SpaceCanvasNode["type"], [string, string, string]> = {
-    asset: ["资产引用", assetKindLabel(assetCate.kind), "引用已有资产，作为其他节点的上下文。"],
-    power: [defaultPowerName(assetCate.kind), "能力节点", "输入提示词和参数，直接生成文本、图片、视频或音频。"],
-    agent: ["智能体节点", "角色执行", "调用团队角色或指定智能体完成一段任务。"],
-    flow: ["流程节点", "团队流程", "执行一组团队预设流程。"],
-    function: ["保存节点", "功能", "保存、条件、上下文、人工确认等控制节点。"],
+    asset: [
+      selectedAsset?.name || "资产引用",
+      selectedAsset ? assetKindLabel(selectedAsset.kind) : assetKindLabel(assetCate.kind),
+      selectedAsset
+        ? documentPreview(selectedAsset.version?.content) || "引用已有资产，作为其他节点的上下文。"
+        : "引用已有资产，作为其他节点的上下文。",
+    ],
+    power: [
+      selectedPower?.name || defaultPowerName(assetCate.kind),
+      selectedPower ? powerKindLabel(selectedPower.kind) : "能力节点",
+      selectedPower ? `调用 ${selectedPower.name} 能力，按参数生成内容。` : "输入提示词和参数，直接生成文本、图片、视频或音频。",
+    ],
+    agent: [
+      selectedRole?.name || "智能体节点",
+      selectedRole?.role_type || "角色执行",
+      selectedRole?.assignment || "调用团队角色或指定智能体完成一段任务。",
+    ],
+    flow: [
+      selectedFlow?.name || "流程节点",
+      "团队流程",
+      selectedFlow?.goal || "执行一组团队预设流程。",
+    ],
+    function: [
+      selectedFunction?.label || "保存节点",
+      "功能",
+      selectedFunction?.description || "保存、条件、上下文、人工确认等控制节点。",
+    ],
   };
   const [title, subtitle, description] = labels[type];
   const size = nodeDefaultSize(type);
@@ -221,6 +270,11 @@ export function createLocalNode(
     assetCateId: assetCate.id,
     kind: assetCate.kind,
     cardinality: assetCate.cardinality,
+    asset: selectedAsset,
+    flow: selectedFlow,
+    functionOption: selectedFunction,
+    power: selectedPower,
+    role: selectedRole,
     local: true,
   };
 }
@@ -237,6 +291,27 @@ export function assetKindLabel(kind: AssetKind) {
       return "文件";
     case "mixed":
       return "富文本";
+    default:
+      return "文本";
+  }
+}
+
+export function powerKindLabel(kind: string) {
+  switch (kind) {
+    case "image":
+      return "图片";
+    case "audio":
+      return "音频";
+    case "video":
+      return "视频";
+    case "role":
+      return "角色";
+    case "multi":
+      return "多模态";
+    case "embeddings":
+      return "向量";
+    case "workflow":
+      return "工作流";
     default:
       return "文本";
   }
@@ -349,6 +424,24 @@ function normalizeFlowNode(value: Record<string, unknown>): TeamFlowNode {
     sub_team_id: numberValue(value.sub_team_id),
     asset_cate_id: numberValue(value.asset_cate_id),
     config: asRecord(value.config),
+  };
+}
+
+function normalizePower(value: Record<string, unknown>): PowerOption {
+  return {
+    id: numberValue(value.id),
+    cate_id: numberValue(value.cate_id),
+    name: stringValue(value.name) || stringValue(value.key) || "未命名能力",
+    key: stringValue(value.key),
+    icon: stringValue(value.icon),
+    kind: stringValue(value.kind) || "text",
+  };
+}
+
+function normalizePowerKind(value: Record<string, unknown>): PowerKindOption {
+  return {
+    id: stringValue(value.id),
+    value: stringValue(value.value) || stringValue(value.name) || stringValue(value.id),
   };
 }
 
