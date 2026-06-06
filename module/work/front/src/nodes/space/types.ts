@@ -90,6 +90,52 @@ export type PowerKindOption = {
   value: string;
 };
 
+export type PowerParamOption = {
+  id: number;
+  name: string;
+  value: string;
+  native_value?: string;
+  sort?: number;
+};
+
+export type PowerParam = {
+  id: number;
+  power_param_id?: number;
+  name: string;
+  key: string;
+  type: "input" | "textarea" | "switch" | "option" | "multi_option" | "file" | "files" | "hidden" | "description" | string;
+  usage?: number;
+  value_type?: "string" | "number" | string;
+  default_value?: string;
+  required?: boolean;
+  upload_rule_id?: number;
+  max_files?: number;
+  sort?: number;
+  options?: PowerParamOption[];
+};
+
+export type PowerParamSource = {
+  id: number;
+  target_id: number;
+  service_id: number;
+  service_name: string;
+  provider_id?: number;
+  provider_name?: string;
+  name: string;
+  sort?: number;
+};
+
+export type PowerForm = {
+  release_id?: number;
+  flow?: TeamFlow | Record<string, unknown>;
+  power?: PowerOption;
+  source_rule?: number;
+  selected_target_id?: number;
+  sources: PowerParamSource[];
+  params: PowerParam[];
+  primary_param_key?: string;
+};
+
 export type CanvasFunctionOption = {
   key: string;
   label: string;

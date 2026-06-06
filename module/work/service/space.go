@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	bodyservice "my/package/bot/service/body"
 	teamservice "my/package/bot/service/team"
 )
 
@@ -64,7 +65,7 @@ func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[stri
 		payload["assets"] = items
 	}
 
-	powerCatalog, err := s.powerCatalog(ctx, project.ReleaseID)
+	powerCatalog, err := s.powerCatalog(ctx, project.ReleaseID, project.BodyID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +85,7 @@ func (s SpaceService) PowerCatalog(ctx context.Context, projectID uint64) (map[s
 	if err != nil {
 		return nil, err
 	}
-	return s.powerCatalog(ctx, project.ReleaseID)
+	return s.powerCatalog(ctx, project.ReleaseID, project.BodyID)
 }
 
 func (s SpaceService) Chat(ctx context.Context, projectID uint64, message string, assetCateID uint64) (map[string]any, error) {
@@ -126,16 +127,80 @@ func (s SpaceService) RunFlow(ctx context.Context, projectID uint64, flowID uint
 	})
 }
 
-func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64) (map[string]any, error) {
+func (s SpaceService) CanvasPowerForm(ctx context.Context, projectID uint64, flowID uint64, powerID uint64, powerKey string, targetID uint64) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err = s.project.SyncProjectTeamRelease(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireBodyPower(ctx, s.project.body, project.BodyID, powerID); err != nil {
+		return nil, err
+	}
+	return s.team.CanvasPowerForm(ctx, project.ReleaseID, flowID, powerID, powerKey, targetID)
+}
+
+func (s SpaceService) RunCanvasPower(ctx context.Context, projectID uint64, req teamservice.CanvasPowerRunRequest) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err = s.project.SyncProjectTeamRelease(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireBodyPower(ctx, s.project.body, project.BodyID, req.PowerID); err != nil {
+		return nil, err
+	}
+	req.ProjectID = project.ID
+	req.BodyID = project.BodyID
+	req.TeamID = project.TeamID
+	req.ReleaseID = project.ReleaseID
+	return s.team.RunCanvasPower(ctx, req)
+}
+
+func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64, bodyID uint64) (map[string]any, error) {
 	config, err := s.team.CanvasConfig(ctx, releaseID, 0)
 	if err != nil {
 		return nil, err
 	}
 	powers, _ := config["powers"].([]teamservice.PowerOption)
+	powers = filterBodyPowerOptions(ctx, s.project.body, bodyID, powers)
 	return map[string]any{
 		"powers":      powers,
 		"power_kinds": powerKindOptions(powers),
 	}, nil
+}
+
+func filterBodyPowerOptions(ctx context.Context, body bodyservice.Service, bodyID uint64, powers []teamservice.PowerOption) []teamservice.PowerOption {
+	powerOrder, restricted := body.AllowedPowerOrder(ctx, bodyID)
+	if !restricted {
+		return powers
+	}
+	byID := make(map[uint64]teamservice.PowerOption, len(powers))
+	for _, power := range powers {
+		byID[power.ID] = power
+	}
+	result := make([]teamservice.PowerOption, 0, len(powerOrder))
+	for _, powerID := range powerOrder {
+		if power, ok := byID[powerID]; ok {
+			result = append(result, power)
+		}
+	}
+	return result
+}
+
+func requireBodyPower(ctx context.Context, body bodyservice.Service, bodyID uint64, powerID uint64) error {
+	allowed, restricted := body.AllowedPowerIDs(ctx, bodyID)
+	if !restricted {
+		return nil
+	}
+	if powerID == 0 || !allowed[powerID] {
+		return fmt.Errorf("当前画布不允许使用该能力")
+	}
+	return nil
 }
 
 func powerKindOptions(powers []teamservice.PowerOption) []teamservice.PowerKindOption {

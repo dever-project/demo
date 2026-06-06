@@ -5,19 +5,19 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type Dispatch,
+  type DragEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
-  type DragEvent,
+  type SetStateAction,
 } from "react";
+import * as LucideIcons from "lucide-react";
 import {
   Background,
-  Controls,
-  ControlButton,
   Handle,
   MiniMap,
   Position,
   ReactFlow,
-  addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   type Edge,
@@ -37,6 +37,7 @@ import {
   ChevronDown,
   Columns3,
   Compass,
+  Copy,
   Cpu,
   Crop,
   Download,
@@ -50,11 +51,14 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
+  Map as MapIcon,
   Maximize2,
   MessageSquare,
+  Minus,
   Moon,
   MoreHorizontal,
   MousePointer2,
+  Music,
   PenTool,
   Play,
   Plus,
@@ -65,6 +69,7 @@ import {
   Send,
   Sparkles,
   Sun,
+  Trash2,
   Type,
   Tv,
   Users,
@@ -76,10 +81,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { request, useNavigate } from "@dever/front-plugin";
+import { getCompatModule, request, useNavigate } from "@dever/front-plugin";
 import {
   fetchSpaceBootstrap,
+  fetchSpacePowerForm,
   fetchSpacePowers,
+  runSpacePower,
   runSpaceFlow,
   sendSpaceMessage,
 } from "./space-api";
@@ -100,8 +107,10 @@ import { WorkSpaceStyles } from "./space-styles";
 import type {
   AssetCate,
   CanvasFunctionOption,
+  PowerForm,
   PowerKindOption,
   PowerOption,
+  PowerParam,
   ProjectAsset,
   SpaceBootstrap,
   SpaceCanvasNode,
@@ -109,15 +118,58 @@ import type {
   TeamRole,
 } from "./types";
 import { SpaceAnimatedEdge } from "./space-edge";
+import {
+  PromptComposer,
+  defaultPowerParamValue,
+  isPromptPowerParam,
+  isToolbarPowerParam,
+  isUploadPowerParam,
+} from "./space-prompt-composer";
 
 type PanelMode = "assets" | "flows" | "chat" | null;
 type WorkSpaceTheme = "dark" | "light";
+type RunningNodeState = {
+  nodeId: string;
+  title: string;
+  startedAt: number;
+  progress: number;
+  status: "running" | "success" | "error";
+};
+type RunningNodeSetter = Dispatch<SetStateAction<RunningNodeState | null>>;
+type NodeResultSetter = (nodeId: string, patch: Partial<SpaceCanvasNode>) => void;
 type CanvasPoint = { x: number; y: number };
+type GeneratedNodePreview = {
+  text: string;
+  imageUrl: string;
+  videoUrl: string;
+  audioUrl: string;
+  fileUrl: string;
+};
+type NodeInputContext = {
+  text: string;
+  sources: Array<{
+    nodeId: string;
+    title: string;
+    type: SpaceCanvasNode["type"];
+    output: unknown;
+    preview: GeneratedNodePreview;
+  }>;
+};
+type PendingNodeConnection = {
+  nodeId: string;
+  handleId?: string | null;
+  handleType?: string | null;
+};
+type NodeFocusRequest = {
+  nodeId: string;
+  nonce: number;
+};
 type AddNodeMenuState = {
   x: number;
   y: number;
   position: CanvasPoint;
   view: "types" | "assets" | "powers" | "agents" | "flows" | "functions";
+  connection?: PendingNodeConnection;
 };
 
 type PaletteItem = {
@@ -149,6 +201,18 @@ const functionOptions: CanvasFunctionOption[] = [
   { key: "context", label: "合并", description: "合并整合多个资产或节点结果作为统一上下文。" },
 ];
 
+const agentComposerParams: PowerParam[] = [
+  {
+    id: 0,
+    name: "上传",
+    key: "files",
+    type: "files",
+    usage: 2,
+    max_files: 6,
+  },
+];
+const powerFormCache = new Map<string, PowerForm>();
+
 const flowNodeTypes = {
   workSpace: SpaceNodeView,
 };
@@ -164,6 +228,8 @@ export function WorkSpacePage() {
   const [activeCateId, setActiveCateId] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [localNodes, setLocalNodes] = useState<SpaceCanvasNode[]>([]);
+  const [userEdges, setUserEdges] = useState<Edge[]>([]);
+  const [hiddenNodeIds, setHiddenNodeIds] = useState<Set<string>>(() => new Set());
   const [prompt, setPrompt] = useState("");
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [theme, setTheme] = useState<WorkSpaceTheme>(() => readStoredTheme());
@@ -173,6 +239,10 @@ export function WorkSpacePage() {
   const [powersLoading, setPowersLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [runningNode, setRunningNode] = useState<RunningNodeState | null>(null);
+  const [nodeResultOverrides, setNodeResultOverrides] = useState<Record<string, Partial<SpaceCanvasNode>>>({});
+  const [nodeDetail, setNodeDetail] = useState<SpaceCanvasNode | null>(null);
+  const [focusNodeRequest, setFocusNodeRequest] = useState<NodeFocusRequest | null>(null);
   const [error, setError] = useState("");
   const [runStatus, setRunStatus] = useState("");
 
@@ -237,14 +307,43 @@ export function WorkSpacePage() {
     const currentLocalNodes = localNodes.filter(
       (node: SpaceCanvasNode) => node.assetCateId === activeCate.id || activeCate.id === 0,
     );
-    return buildCanvasModel(space, activeCate.id, currentLocalNodes);
-  }, [activeCate, localNodes, space]);
+    const model = applyNodeResultOverrides(
+      buildCanvasModel(space, activeCate.id, currentLocalNodes),
+      nodeResultOverrides,
+    );
+    if (hiddenNodeIds.size === 0) {
+      return model;
+    }
+    const visibleNodeIds = new Set(model.nodes.filter((node) => !hiddenNodeIds.has(node.id)).map((node) => node.id));
+    return {
+      nodes: model.nodes.filter((node) => visibleNodeIds.has(node.id)),
+      edges: model.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to)),
+    };
+  }, [activeCate, hiddenNodeIds, localNodes, nodeResultOverrides, space]);
+
+  const updateNodeResult = useCallback<NodeResultSetter>((nodeId, patch) => {
+    setNodeResultOverrides((current) => ({
+      ...current,
+      [nodeId]: {
+        ...(current[nodeId] || {}),
+        ...patch,
+      },
+    }));
+  }, []);
   function switchCate(cateId: number) {
     setActiveCateId(cateId);
     setSelectedNodeId("");
+    setFocusNodeRequest(null);
     setPanelMode(null);
     setNodeMenu(null);
     setRunStatus("");
+  }
+
+  function focusCanvasNode(nodeId: string) {
+    setFocusNodeRequest((current) => ({
+      nodeId,
+      nonce: (current?.nonce || 0) + 1,
+    }));
   }
 
   function addConfiguredNode(
@@ -263,9 +362,56 @@ export function WorkSpacePage() {
     }
     const node = createLocalNode(type, activeCate, localNodes.length, position, options);
     setLocalNodes((items: SpaceCanvasNode[]) => [...items, node]);
+    const connection = nodeMenu?.connection;
+    if (connection) {
+      const endpoints = connectedNodeEdgeEndpoints(connection, node.id);
+      const hasBaseEdge = canvasModel.edges.some((edge) => edge.from === endpoints.source && edge.to === endpoints.target);
+      if (!hasBaseEdge) {
+        setUserEdges((current) => appendUserEdge(current, endpoints.source, endpoints.target));
+      }
+    }
     setSelectedNodeId(node.id);
+    focusCanvasNode(node.id);
     setPanelMode(null);
     setNodeMenu(null);
+  }
+
+  function copyCanvasNode(node: SpaceCanvasNode, position?: CanvasPoint) {
+    if (!activeCate) {
+      return;
+    }
+    const clone = cloneCanvasNode(node, activeCate.id, localNodes.length, position);
+    setLocalNodes((items: SpaceCanvasNode[]) => [...items, clone]);
+    setNodeResultOverrides((current) => {
+      const patch = current[node.id];
+      return patch ? { ...current, [clone.id]: patch } : current;
+    });
+    setSelectedNodeId(clone.id);
+    focusCanvasNode(clone.id);
+    setNodeMenu(null);
+    toast.success("已复制节点");
+  }
+
+  function deleteCanvasNode(node: SpaceCanvasNode) {
+    setLocalNodes((items: SpaceCanvasNode[]) => items.filter((item) => item.id !== node.id));
+    setUserEdges((items) => items.filter((edge) => edge.source !== node.id && edge.target !== node.id));
+    setHiddenNodeIds((current) => {
+      const next = new Set(current);
+      next.add(node.id);
+      return next;
+    });
+    setNodeResultOverrides((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, node.id)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[node.id];
+      return next;
+    });
+    setSelectedNodeId("");
+    setFocusNodeRequest((current) => (current?.nodeId === node.id ? null : current));
+    setNodeDetail((current) => (current?.id === node.id ? null : current));
+    toast.success("已删除节点");
   }
 
   function addAssetNode(asset: ProjectAsset, position?: CanvasPoint) {
@@ -288,13 +434,14 @@ export function WorkSpacePage() {
     addConfiguredNode("function", position, { functionOption });
   }
 
-  function openNodeMenu(screen: CanvasPoint, position: CanvasPoint) {
+  function openNodeMenu(screen: CanvasPoint, position: CanvasPoint, connection?: PendingNodeConnection) {
     setPanelMode(null);
     setNodeMenu({
       x: screen.x,
       y: screen.y,
       position,
       view: "types",
+      connection,
     });
     void loadPowerCatalog();
   }
@@ -428,9 +575,17 @@ export function WorkSpacePage() {
         }}
         onOpenNodeMenu={openNodeMenu}
         onAddConfiguredNode={addConfiguredNode}
+        onCopyNode={copyCanvasNode}
+        onDeleteNode={deleteCanvasNode}
+        onShowNodeDetail={setNodeDetail}
+        userEdges={userEdges}
+        setUserEdges={setUserEdges}
+        focusNodeRequest={focusNodeRequest}
         projectId={projectId}
         space={space}
-        loadSpace={loadSpace}
+        runningNode={runningNode}
+        setRunningNode={setRunningNode}
+        onNodeResult={updateNodeResult}
       />
 
       <TopCanvasToolbar
@@ -510,6 +665,10 @@ export function WorkSpacePage() {
           onSelectRole={(role) => addAgentNode(role, nodeMenu.position)}
           onSelectPower={(power) => addPowerNode(power, nodeMenu.position)}
         />
+      ) : null}
+
+      {nodeDetail ? (
+        <NodeDetailDialog node={nodeDetail} onClose={() => setNodeDetail(null)} />
       ) : null}
     </main>
   );
@@ -624,7 +783,6 @@ function AddNodeMenu({
         <div className="ws-add-section-title">能力</div>
         <div className="ws-add-menu-list">
           {safePowers.map((power) => {
-            const Icon = powerIcon(power.kind);
             return (
               <button
                 key={power.key || power.id}
@@ -633,7 +791,7 @@ function AddNodeMenu({
                 onClick={() => onSelectPower(power)}
               >
                 <span className="ws-add-icon">
-                  <Icon size={16} />
+                  <PowerIcon power={power} size={16} />
                 </span>
                 <span className="ws-add-label">{power.name}</span>
               </button>
@@ -732,7 +890,7 @@ function AddNodeMenu({
         onMouseDown={(event: any) => event.stopPropagation()}
       >
         <div className="ws-add-menu-head">
-          <strong>添加节点</strong>
+          <strong>{menu.connection ? "引用该节点生成" : "添加节点"}</strong>
         </div>
         <div className="ws-add-menu-body">
           {visibleSections.map((sec, index) => (
@@ -1020,9 +1178,17 @@ function CanvasWorkbench({
   onSelectNode,
   onOpenNodeMenu,
   onAddConfiguredNode,
+  onCopyNode,
+  onDeleteNode,
+  onShowNodeDetail,
+  userEdges,
+  setUserEdges,
+  focusNodeRequest,
   projectId,
   space,
-  loadSpace,
+  runningNode,
+  setRunningNode,
+  onNodeResult,
 }: {
   activeCate: AssetCate;
   assetsCount: number;
@@ -1030,7 +1196,7 @@ function CanvasWorkbench({
   edges: { id: string; from: string; to: string }[];
   selectedNodeId: string;
   onSelectNode: (id: string) => void;
-  onOpenNodeMenu: (screen: CanvasPoint, position: CanvasPoint) => void;
+  onOpenNodeMenu: (screen: CanvasPoint, position: CanvasPoint, connection?: PendingNodeConnection) => void;
   onAddConfiguredNode?: (
     type: SpaceCanvasNode["type"],
     position?: CanvasPoint,
@@ -1042,18 +1208,34 @@ function CanvasWorkbench({
       role?: TeamRole;
     },
   ) => void;
+  onCopyNode: (node: SpaceCanvasNode, position?: CanvasPoint) => void;
+  onDeleteNode: (node: SpaceCanvasNode) => void;
+  onShowNodeDetail: (node: SpaceCanvasNode) => void;
+  userEdges: Edge[];
+  setUserEdges: Dispatch<SetStateAction<Edge[]>>;
+  focusNodeRequest: NodeFocusRequest | null;
   projectId: number;
   space: SpaceBootstrap;
-  loadSpace: () => Promise<void>;
+  runningNode: RunningNodeState | null;
+  setRunningNode: RunningNodeSetter;
+  onNodeResult: NodeResultSetter;
 }) {
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [userEdges, setUserEdges] = useState<Edge[]>([]);
   const [flowInstance, setFlowInstance] = useState<FlowViewport | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [draggingNodeId, setDraggingNodeId] = useState("");
   const [proximityEdge, setProximityEdge] = useState<Edge | null>(null);
-  const [showGrid, setShowGrid] = useState(true);
+  const [nodeActionMenu, setNodeActionMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState("");
+  const [hiddenEdgeIds, setHiddenEdgeIds] = useState<Set<string>>(() => new Set());
+  const [showMiniMap, setShowMiniMap] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [viewportZoom, setViewportZoom] = useState(1);
   const flowNodeCache = useRef<Map<string, Node>>(new Map());
+  const pendingConnectionRef = useRef<PendingNodeConnection | null>(null);
+  const connectionCompletedRef = useRef(false);
+  const skipNextPaneClickRef = useRef(false);
+  const skipNextNodeClickRef = useRef(false);
   const fitKey = useMemo(() => {
     if (nodes.length === 0) {
       return "";
@@ -1063,15 +1245,27 @@ function CanvasWorkbench({
 
   const flowNodes = useMemo<Node[]>(() => {
     const activeIds = new Set<string>();
+    const visibleBaseEdges = edges.filter((edge) => !hiddenEdgeIds.has(edge.id));
+    const contextEdges = [
+      ...visibleBaseEdges.map((edge) => ({ source: edge.from, target: edge.to })),
+      ...userEdges.map((edge) => ({ source: edge.source, target: edge.target })),
+    ];
     const nextNodes = nodes.map((node) => {
       activeIds.add(node.id);
       const position = nodePositions[node.id] || { x: node.x, y: node.y };
       const selected = node.id === selectedNodeId;
 
-      // Attach outer project context to node data
-      (node as any).projectId = projectId;
-      (node as any).space = space;
-      (node as any).loadSpace = loadSpace;
+      const nodeData = {
+        ...node,
+        projectId,
+        space,
+        runningNode: runningNode?.nodeId === node.id ? runningNode : null,
+        setRunningNode,
+        onNodeResult,
+        onShowNodeDetail,
+        viewportZoom,
+        inputContext: buildNodeInputContext(node.id, nodes, contextEdges),
+      };
 
       const cached = flowNodeCache.current.get(node.id);
       const cachedStyle = cached?.style as CSSProperties | undefined;
@@ -1079,7 +1273,7 @@ function CanvasWorkbench({
         cached &&
         cached.position.x === position.x &&
         cached.position.y === position.y &&
-        cached.data === node &&
+        cached.data === nodeData &&
         cached.selected === selected &&
         cachedStyle?.width === node.width &&
         cachedStyle?.height === node.height
@@ -1091,7 +1285,7 @@ function CanvasWorkbench({
         id: node.id,
         type: "workSpace",
         position,
-        data: node,
+        data: nodeData,
         selected,
         style: {
           ...cached?.style,
@@ -1108,26 +1302,41 @@ function CanvasWorkbench({
       }
     }
     return nextNodes;
-  }, [nodePositions, nodes, selectedNodeId]);
+  }, [edges, hiddenEdgeIds, nodePositions, nodes, onNodeResult, onShowNodeDetail, projectId, runningNode, selectedNodeId, setRunningNode, space, userEdges, viewportZoom]);
+
+  const deleteEdge = useCallback((edgeId: string) => {
+    setSelectedEdgeId("");
+    setUserEdges((current) => current.filter((edge) => edge.id !== edgeId));
+    setHiddenEdgeIds((current) => {
+      if (current.has(edgeId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(edgeId);
+      return next;
+    });
+  }, [setUserEdges]);
 
   const flowEdges = useMemo<Edge[]>(() => {
     const nodeIds = new Set(nodes.map((node) => node.id));
     const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-    const baseEdges: Edge[] = edges.map((edge) => ({
-      id: edge.id,
-      source: edge.from,
-      sourceHandle: "output-0",
-      target: edge.to,
-      targetHandle: "input-0",
-      type: "animated",
-      animated: false,
-    }));
+    const baseEdges: Edge[] = edges
+      .filter((edge) => !hiddenEdgeIds.has(edge.id))
+      .map((edge) => ({
+        id: edge.id,
+        source: edge.from,
+        sourceHandle: "output-0",
+        target: edge.to,
+        targetHandle: "input-0",
+        type: "animated",
+        animated: false,
+      }));
     const activeEdges = [
       ...baseEdges,
       ...userEdges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
     ];
-    return activeEdges.map((edge) => decorateFlowEdge(edge, nodeMap, hoveredNodeId, selectedNodeId));
-  }, [edges, hoveredNodeId, nodes, selectedNodeId, userEdges]);
+    return activeEdges.map((edge) => decorateFlowEdge(edge, nodeMap, hoveredNodeId, selectedNodeId, selectedEdgeId, deleteEdge));
+  }, [deleteEdge, edges, hiddenEdgeIds, hoveredNodeId, nodes, selectedEdgeId, selectedNodeId, userEdges]);
 
   const renderedEdges = useMemo(
     () => (proximityEdge ? [...flowEdges, proximityEdge] : flowEdges),
@@ -1135,14 +1344,35 @@ function CanvasWorkbench({
   );
 
   useEffect(() => {
-    if (!flowInstance || !fitKey || typeof window === "undefined") {
+    if (!flowInstance || !fitKey || focusNodeRequest || typeof window === "undefined") {
       return;
     }
     const timer = setTimeout(() => {
       flowInstance.fitView?.({ padding: 0.32, duration: 250, maxZoom: 0.72 });
     }, 150);
     return () => clearTimeout(timer);
-  }, [fitKey, flowInstance]);
+  }, [fitKey, flowInstance, focusNodeRequest]);
+
+  useEffect(() => {
+    if (!flowInstance || !focusNodeRequest || typeof window === "undefined") {
+      return;
+    }
+    const node = nodes.find((item) => item.id === focusNodeRequest.nodeId);
+    if (!node) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const position = nodePositions[node.id] || { x: node.x, y: node.y };
+      const nextZoom = node.type === "power" ? 1.02 : 0.96;
+      flowInstance.setCenter?.(
+        position.x + (node.width || 180) / 2,
+        position.y + (node.height || 180) / 2,
+        { zoom: nextZoom, duration: 320 },
+      );
+      setViewportZoom(nextZoom);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [flowInstance, focusNodeRequest, nodePositions, nodes]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -1186,21 +1416,100 @@ function CanvasWorkbench({
   );
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    let nextSelectedEdgeId = "";
+    let hasSelectionChange = false;
+    for (const change of changes) {
+      if (change.type === "select") {
+        hasSelectionChange = true;
+        if (change.selected) {
+          nextSelectedEdgeId = change.id;
+        }
+      }
+    }
+    if (hasSelectionChange) {
+      setSelectedEdgeId(nextSelectedEdgeId);
+    }
     setUserEdges((current: Edge[]) => applyEdgeChanges(changes, current));
-  }, []);
+  }, [setUserEdges]);
 
   const handleConnect = useCallback<OnConnect>((connection) => {
-    setUserEdges((current: Edge[]) =>
-      addEdge(
-        {
-          ...connection,
-          type: "animated",
-          animated: false,
-        },
-        current,
-      ),
-    );
-  }, []);
+    connectionCompletedRef.current = true;
+    if (!connection.source || !connection.target || connection.source === connection.target) {
+      return;
+    }
+    const hasBaseEdge = edges.some((edge) => edge.from === connection.source && edge.to === connection.target);
+    if (hasBaseEdge) {
+      return;
+    }
+    setUserEdges((current: Edge[]) => appendUserEdge(current, connection.source || "", connection.target || ""));
+  }, [edges, setUserEdges]);
+
+  const handleConnectStart = useCallback((_event: unknown, params: any) => {
+    const nodeId = String(params?.nodeId || "");
+    if (nodeId) {
+      skipNextNodeClickRef.current = true;
+      onSelectNode("");
+      setNodeActionMenu(null);
+    }
+    pendingConnectionRef.current = nodeId
+      ? {
+        nodeId,
+        handleId: params?.handleId || null,
+        handleType: params?.handleType || null,
+      }
+      : null;
+    connectionCompletedRef.current = false;
+    setSelectedEdgeId("");
+  }, [onSelectNode]);
+
+  const handleConnectEnd = useCallback((event: any) => {
+    const pendingConnection = pendingConnectionRef.current;
+    pendingConnectionRef.current = null;
+    if (pendingConnection?.nodeId && typeof window !== "undefined") {
+      window.setTimeout(() => {
+        skipNextNodeClickRef.current = false;
+      }, 0);
+    }
+    if (connectionCompletedRef.current) {
+      connectionCompletedRef.current = false;
+      return;
+    }
+    if (!pendingConnection?.nodeId) {
+      return;
+    }
+    const screen = pointerFromConnectEndEvent(event);
+    if (!screen) {
+      return;
+    }
+    skipNextPaneClickRef.current = true;
+    onOpenNodeMenu(screen, flowPositionFromScreen(flowInstance, screen), pendingConnection);
+  }, [flowInstance, onOpenNodeMenu]);
+
+  const handleEdgeClick = useCallback((event: ReactMouseEvent | MouseEvent, edge: Edge) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setNodeActionMenu(null);
+    onSelectNode("");
+    setSelectedEdgeId(edge.id);
+  }, [onSelectNode]);
+
+  useEffect(() => {
+    if (!selectedEdgeId || typeof window === "undefined") {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Delete" && event.key !== "Backspace") {
+        return;
+      }
+      if (isEditableEventTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      deleteEdge(selectedEdgeId);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deleteEdge, selectedEdgeId]);
 
   const updateProximityEdge = useCallback((nextEdge: Edge | null) => {
     setProximityEdge((current: Edge | null) => (isSamePreviewEdge(current, nextEdge) ? current : nextEdge));
@@ -1251,25 +1560,20 @@ function CanvasWorkbench({
       (edge) => edge.source === proximityEdge.source && edge.target === proximityEdge.target,
     );
     if (!exists) {
-      setUserEdges((current: Edge[]) => [
-        ...current,
-        {
-          id: `edge-${proximityEdge.source}-${proximityEdge.target}-${Date.now()}`,
-          source: proximityEdge.source,
-          sourceHandle: proximityEdge.sourceHandle,
-          target: proximityEdge.target,
-          targetHandle: proximityEdge.targetHandle,
-          type: "animated",
-          animated: false,
-        },
-      ]);
+      setUserEdges((current: Edge[]) => appendUserEdge(current, proximityEdge.source, proximityEdge.target));
     }
     updateProximityEdge(null);
-  }, [flowEdges, proximityEdge, updateProximityEdge]);
+  }, [flowEdges, proximityEdge, setUserEdges, updateProximityEdge]);
 
   const handlePaneClick = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
+      if (skipNextPaneClickRef.current) {
+        skipNextPaneClickRef.current = false;
+        return;
+      }
       onSelectNode("");
+      setSelectedEdgeId("");
+      setNodeActionMenu(null);
       if (!("detail" in event) || event.detail !== 2) {
         return;
       }
@@ -1290,6 +1594,53 @@ function CanvasWorkbench({
     },
     [flowInstance, onOpenNodeMenu],
   );
+
+  const handleNodeContextMenu = useCallback(
+    (event: ReactMouseEvent | MouseEvent, node: Node) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectedEdgeId("");
+      onSelectNode(node.id);
+      setNodeActionMenu({ nodeId: node.id, x: event.clientX, y: event.clientY });
+    },
+    [onSelectNode],
+  );
+
+  const actionNode = nodeActionMenu ? nodes.find((node) => node.id === nodeActionMenu.nodeId) || null : null;
+  const actionNodePosition = actionNode ? nodePositions[actionNode.id] || { x: actionNode.x, y: actionNode.y } : undefined;
+
+  function closeNodeActionMenu() {
+    setNodeActionMenu(null);
+  }
+
+  function copyActionNode() {
+    if (!actionNode) {
+      return;
+    }
+    onCopyNode(actionNode, actionNodePosition ? { x: actionNodePosition.x + 34, y: actionNodePosition.y + 34 } : undefined);
+    closeNodeActionMenu();
+  }
+
+  function deleteActionNode() {
+    if (!actionNode) {
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm(`确定删除「${actionNode.title}」吗？`)) {
+      return;
+    }
+    setUserEdges((current) => current.filter((edge) => edge.source !== actionNode.id && edge.target !== actionNode.id));
+    setSelectedEdgeId("");
+    onDeleteNode(actionNode);
+    closeNodeActionMenu();
+  }
+
+  function detailActionNode() {
+    if (!actionNode) {
+      return;
+    }
+    onShowNodeDetail(actionNode);
+    closeNodeActionMenu();
+  }
 
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();
@@ -1333,6 +1684,28 @@ function CanvasWorkbench({
     }
   }, [flowInstance, onAddConfiguredNode]);
 
+  const resetCanvasView = useCallback(() => {
+    flowInstance?.fitView?.({ padding: 0.32, duration: 260, maxZoom: 0.9 });
+  }, [flowInstance]);
+
+  const zoomCanvasTo = useCallback((zoom: number) => {
+    const nextZoom = Math.max(0.35, Math.min(1.45, zoom));
+    setViewportZoom(nextZoom);
+    flowInstance?.zoomTo?.(nextZoom, { duration: 120 });
+  }, [flowInstance]);
+
+  const zoomCanvasIn = useCallback(() => {
+    const nextZoom = Math.min(1.45, viewportZoom + 0.12);
+    setViewportZoom(nextZoom);
+    flowInstance?.zoomIn?.({ duration: 140 });
+  }, [flowInstance, viewportZoom]);
+
+  const zoomCanvasOut = useCallback(() => {
+    const nextZoom = Math.max(0.35, viewportZoom - 0.12);
+    setViewportZoom(nextZoom);
+    flowInstance?.zoomOut?.({ duration: 140 });
+  }, [flowInstance, viewportZoom]);
+
   return (
     <section className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""}`}>
       <ReactFlow
@@ -1343,8 +1716,20 @@ function CanvasWorkbench({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onConnectStart={handleConnectStart}
+        onConnectEnd={handleConnectEnd}
         isValidConnection={checkValidConnection}
-        onNodeClick={(_, node: Node) => onSelectNode(node.id)}
+        onEdgeClick={handleEdgeClick}
+        onNodeClick={(_, node: Node) => {
+          if (skipNextNodeClickRef.current) {
+            skipNextNodeClickRef.current = false;
+            return;
+          }
+          setSelectedEdgeId("");
+          setNodeActionMenu(null);
+          onSelectNode(node.id);
+        }}
+        onNodeContextMenu={handleNodeContextMenu}
         onNodeDragStart={(_, node: Node) => setDraggingNodeId(node.id)}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
@@ -1352,9 +1737,18 @@ function CanvasWorkbench({
         onDrop={onDrop}
         onNodeMouseEnter={(_, node: Node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId("")}
-        onInit={(instance) => setFlowInstance(instance as FlowViewport)}
+        onInit={(instance) => {
+          const nextInstance = instance as FlowViewport;
+          setFlowInstance(nextInstance);
+          setViewportZoom(nextInstance.getZoom?.() || 1);
+        }}
+        onMove={(_, viewport) => {
+          setViewportZoom((current) => (Math.abs(current - viewport.zoom) > 0.005 ? viewport.zoom : current));
+        }}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
+        snapToGrid={snapToGrid}
+        snapGrid={[18, 18]}
         zoomOnDoubleClick={false}
         minZoom={0.35}
         maxZoom={1.45}
@@ -1365,21 +1759,28 @@ function CanvasWorkbench({
         fitView
         fitViewOptions={{ padding: 0.32, maxZoom: 0.72 }}
       >
-        {showGrid ? (
-          <Background variant="dots" color="var(--ws-flow-dot)" gap={18} size={1.5} />
+        <Background variant="dots" color="var(--ws-flow-dot)" gap={18} size={1.5} />
+        {showMiniMap ? (
+          <MiniMap
+            position="bottom-left"
+            pannable
+            zoomable
+            nodeColor={(node: Node) => miniMapNodeColor(node.data as SpaceCanvasNode)}
+          />
         ) : null}
-        <MiniMap
-          position="bottom-left"
-          pannable
-          zoomable
-          nodeColor={(node: Node) => miniMapNodeColor(node.data as SpaceCanvasNode)}
-        />
-        <Controls position="bottom-left" showInteractive={false}>
-          <ControlButton onClick={() => setShowGrid((g: boolean) => !g)} title="切换网格">
-            <Grid size={15} />
-          </ControlButton>
-        </Controls>
       </ReactFlow>
+
+      <CanvasViewControls
+        showMiniMap={showMiniMap}
+        snapToGrid={snapToGrid}
+        zoom={viewportZoom}
+        onToggleMiniMap={() => setShowMiniMap((value) => !value)}
+        onToggleSnap={() => setSnapToGrid((value) => !value)}
+        onReset={resetCanvasView}
+        onZoomIn={zoomCanvasIn}
+        onZoomOut={zoomCanvasOut}
+        onZoomChange={zoomCanvasTo}
+      />
 
       {assetsCount === 0 ? (
         <div className="ws-empty-note">
@@ -1387,15 +1788,415 @@ function CanvasWorkbench({
           空的{activeCate.name}工作区。可以和沟通角色说目标，也可以直接添加节点或运行流程。
         </div>
       ) : null}
+
+      {nodeActionMenu && actionNode ? (
+        <NodeActionMenu
+          point={nodeActionMenu}
+          canShowDetail={nodeHasResultContent(actionNode)}
+          onClose={closeNodeActionMenu}
+          onCopy={copyActionNode}
+          onDelete={deleteActionNode}
+          onDetail={detailActionNode}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function NodeActionMenu({
+  point,
+  canShowDetail,
+  onClose,
+  onCopy,
+  onDelete,
+  onDetail,
+}: {
+  point: CanvasPoint;
+  canShowDetail: boolean;
+  onClose: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
+  onDetail: () => void;
+}) {
+  return (
+    <>
+      <div className="ws-node-action-backdrop" onMouseDown={onClose} />
+      <section
+        className="ws-node-action-menu"
+        style={{ left: point.x, top: point.y }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        {canShowDetail ? (
+          <button type="button" onClick={onDetail}>
+            <Eye size={15} />
+            <span>详情</span>
+          </button>
+        ) : null}
+        <button type="button" onClick={onCopy}>
+          <Copy size={15} />
+          <span>复制</span>
+        </button>
+        <button type="button" className="is-danger" onClick={onDelete}>
+          <Trash2 size={15} />
+          <span>删除</span>
+        </button>
+      </section>
+    </>
+  );
+}
+
+function CanvasViewControls({
+  showMiniMap,
+  snapToGrid,
+  zoom,
+  onToggleMiniMap,
+  onToggleSnap,
+  onReset,
+  onZoomIn,
+  onZoomOut,
+  onZoomChange,
+}: {
+  showMiniMap: boolean;
+  snapToGrid: boolean;
+  zoom: number;
+  onToggleMiniMap: () => void;
+  onToggleSnap: () => void;
+  onReset: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onZoomChange: (zoom: number) => void;
+}) {
+  return (
+    <div className="ws-view-controls nodrag nopan">
+      <button
+        type="button"
+        className={showMiniMap ? "is-active" : ""}
+        onClick={onToggleMiniMap}
+        aria-label={showMiniMap ? "隐藏小地图" : "显示小地图"}
+        title={showMiniMap ? "隐藏小地图" : "显示小地图"}
+      >
+        <MapIcon size={16} />
+      </button>
+      <button
+        type="button"
+        className={snapToGrid ? "is-active" : ""}
+        onClick={onToggleSnap}
+        aria-label={snapToGrid ? "关闭网格吸附" : "开启网格吸附"}
+        title={snapToGrid ? "关闭网格吸附" : "开启网格吸附"}
+      >
+        <MousePointer2 size={16} />
+      </button>
+      <button type="button" onClick={onReset} aria-label="重置视图" title="重置视图">
+        <Maximize2 size={15} />
+      </button>
+      <div className="ws-view-zoom">
+        <button type="button" onClick={onZoomOut} aria-label="缩小" title="缩小">
+          <Minus size={15} />
+        </button>
+        <input
+          type="range"
+          min="0.35"
+          max="1.45"
+          step="0.01"
+          value={Math.max(0.35, Math.min(1.45, zoom))}
+          onChange={(event) => onZoomChange(Number(event.target.value))}
+          aria-label="画布缩放"
+        />
+        <button type="button" onClick={onZoomIn} aria-label="放大" title="放大">
+          <Plus size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NodeDetailDialog({ node, onClose }: { node: SpaceCanvasNode; onClose: () => void }) {
+  const preview = nodeDetailPreview(node);
+  const typeLabel = node.subtitle || powerKindLabel(String(node.kind || node.type));
+  const downloadUrl = preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl;
+
+  return (
+    <div className="ws-node-detail-backdrop" onMouseDown={onClose}>
+      <section className="ws-node-detail-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="ws-node-detail-head">
+          <div className="ws-node-detail-meta">
+            <span>名称:</span>
+            <strong>{node.title}</strong>
+            <span>类型:</span>
+            <strong>{typeLabel}</strong>
+            <span>节点:</span>
+            <strong>{node.local ? "本地节点" : "画布节点"}</strong>
+          </div>
+          <div className="ws-node-detail-actions">
+            {downloadUrl ? (
+              <a href={downloadUrl} download aria-label="下载内容">
+                <Download size={20} />
+              </a>
+            ) : null}
+            <button type="button" onClick={onClose} aria-label="关闭详情">
+              <X size={22} />
+            </button>
+          </div>
+        </header>
+        <div className="ws-node-detail-body">
+          {preview.imageUrl ? (
+            <img src={preview.imageUrl} alt={preview.text || node.title} />
+          ) : preview.videoUrl ? (
+            <video src={preview.videoUrl} controls playsInline />
+          ) : preview.audioUrl ? (
+            <audio src={preview.audioUrl} controls />
+          ) : preview.fileUrl ? (
+            <div className="ws-node-detail-file">
+              <FileText size={46} />
+              <strong>{preview.text || node.title}</strong>
+              <span>{preview.fileUrl}</span>
+              <a href={preview.fileUrl} download>
+                <Download size={16} />
+                下载文件
+              </a>
+            </div>
+          ) : (
+            <pre>{preview.text || node.description || "暂无详情"}</pre>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
 type FlowViewport = {
   screenToFlowPosition?: (position: CanvasPoint) => CanvasPoint;
   project?: (position: CanvasPoint) => CanvasPoint;
-  fitView?: (options?: { padding?: number; duration?: number }) => void;
+  fitView?: (options?: { padding?: number; duration?: number; maxZoom?: number }) => void;
+  setCenter?: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+  zoomIn?: (options?: { duration?: number }) => void;
+  zoomOut?: (options?: { duration?: number }) => void;
+  zoomTo?: (zoom: number, options?: { duration?: number }) => void;
+  getZoom?: () => number;
 };
+
+function applyNodeResultOverrides(
+  model: { nodes: SpaceCanvasNode[]; edges: { id: string; from: string; to: string }[] },
+  overrides: Record<string, Partial<SpaceCanvasNode>>,
+) {
+  if (Object.keys(overrides).length === 0) {
+    return model;
+  }
+  return {
+    ...model,
+    nodes: model.nodes.map((node) => {
+      const patch = overrides[node.id];
+      return patch ? { ...node, ...patch } : node;
+    }),
+  };
+}
+
+function buildGeneratedNodeResultPatch(
+  node: SpaceCanvasNode,
+  result: any,
+  fallbackPrompt: string,
+): Partial<SpaceCanvasNode> {
+  const output = firstDefined(
+    result?.output,
+    result?.version?.content,
+    result?.asset?.version?.content,
+    result?.data?.output,
+    result?.data?.content,
+    result?.data?.result,
+    result?.data,
+  );
+  const preview = generatedPreviewFromValue(output, String(node.power?.kind || node.kind || ""));
+  const summary =
+    preview.text ||
+    preview.imageUrl ||
+    preview.videoUrl ||
+    preview.audioUrl ||
+    preview.fileUrl ||
+    (fallbackPrompt ? `已按提示生成：${fallbackPrompt}` : "生成完成");
+
+  return {
+    description: summary,
+    status: "已生成",
+    hasResult: true,
+    generatedOutput: output,
+    generatedPreview: preview,
+    result,
+    asset: result?.asset || node.asset,
+    kind: result?.asset?.kind || node.power?.kind || node.kind,
+  };
+}
+
+function generatedNodePreview(node: SpaceCanvasNode): GeneratedNodePreview {
+  const stored = (node as any).generatedPreview;
+  if (stored && typeof stored === "object") {
+    return {
+      text: String(stored.text || ""),
+      imageUrl: String(stored.imageUrl || ""),
+      videoUrl: String(stored.videoUrl || ""),
+      audioUrl: String(stored.audioUrl || ""),
+      fileUrl: String(stored.fileUrl || ""),
+    };
+  }
+  const output = firstDefined(
+    (node as any).generatedOutput,
+    (node as any).output,
+    (node as any).result?.output,
+    (node as any).version?.content,
+    (node as any).asset?.version?.content,
+  );
+  const preview = generatedPreviewFromValue(output, String(node.power?.kind || node.kind || ""));
+  if (!hasGeneratedPreview(preview) && (node.hasResult === true || node.status === "已生成")) {
+    preview.text = node.description;
+  }
+  return preview;
+}
+
+function nodeDetailPreview(node: SpaceCanvasNode): GeneratedNodePreview {
+  const preview = generatedNodePreview(node);
+  if (hasGeneratedPreview(preview)) {
+    return preview;
+  }
+  const assetPreview = generatedPreviewFromValue(nodeContextOutput(node), String(node.kind || node.power?.kind || ""));
+  if (!hasGeneratedPreview(assetPreview)) {
+    assetPreview.text = node.description || stringifyContextValue(nodeContextOutput(node));
+  }
+  return assetPreview;
+}
+
+function generatedPreviewFromValue(value: any, kind: string): GeneratedNodePreview {
+  const preview: GeneratedNodePreview = {
+    text: "",
+    imageUrl: "",
+    videoUrl: "",
+    audioUrl: "",
+    fileUrl: "",
+  };
+  fillGeneratedPreview(preview, value, kind);
+  return preview;
+}
+
+function fillGeneratedPreview(preview: GeneratedNodePreview, value: any, kind: string) {
+  if (value == null) {
+    return;
+  }
+  if (typeof value === "string") {
+    setPreviewString(preview, value, kind);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      fillGeneratedPreview(preview, item, kind);
+      if (hasGeneratedPreview(preview)) {
+        return;
+      }
+    }
+    return;
+  }
+  if (typeof value !== "object") {
+    preview.text = String(value);
+    return;
+  }
+
+  const row = value as Record<string, any>;
+  preview.text ||= firstText(
+    row.text,
+    row.content,
+    row.body,
+    row.result,
+    row.finalOutput,
+    row.message,
+    row.prompt,
+    row.choices?.[0]?.message?.content,
+    row.choices?.[0]?.text,
+  );
+  preview.imageUrl ||= firstMediaText(row.image, row.url, firstArrayValue(row.images));
+  preview.videoUrl ||= firstMediaText(row.video, firstArrayValue(row.videos));
+  preview.audioUrl ||= firstMediaText(row.audio, firstArrayValue(row.audios));
+  preview.fileUrl ||= firstMediaText(row.file, firstArrayValue(row.files));
+
+  if (!hasGeneratedPreview(preview)) {
+    for (const key of ["output", "result", "content", "body", "data"]) {
+      if (row[key] && typeof row[key] === "object") {
+        fillGeneratedPreview(preview, row[key], kind);
+        if (hasGeneratedPreview(preview)) {
+          return;
+        }
+      }
+    }
+  }
+  if (!preview.text && !hasGeneratedPreview(preview)) {
+    try {
+      preview.text = JSON.stringify(value, null, 2);
+    } catch {
+      preview.text = String(value);
+    }
+  }
+}
+
+function setPreviewString(preview: GeneratedNodePreview, value: string, kind: string) {
+  const text = value.trim();
+  if (!text) {
+    return;
+  }
+  if (looksLikeURL(text)) {
+    const normalizedKind = kind.toLowerCase();
+    if (normalizedKind === "image" || /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(text)) {
+      preview.imageUrl ||= text;
+      return;
+    }
+    if (normalizedKind === "video" || /\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(text)) {
+      preview.videoUrl ||= text;
+      return;
+    }
+    if (normalizedKind === "audio" || normalizedKind === "music" || /\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i.test(text)) {
+      preview.audioUrl ||= text;
+      return;
+    }
+    preview.fileUrl ||= text;
+    return;
+  }
+  preview.text ||= text;
+}
+
+function hasGeneratedPreview(preview: GeneratedNodePreview) {
+  return Boolean(preview.text || preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl);
+}
+
+function firstDefined(...values: any[]) {
+  return values.find((value) => value !== undefined && value !== null);
+}
+
+function firstText(...values: any[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function firstMediaText(...values: any[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (value && typeof value === "object") {
+      const text = firstText(value.url, value.src, value.path, value.file, value.image, value.video, value.audio);
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return "";
+}
+
+function firstArrayValue(value: any) {
+  return Array.isArray(value) ? value[0] : undefined;
+}
+
+function looksLikeURL(text: string) {
+  return /^(https?:\/\/|\/|data:|blob:)/i.test(text);
+}
 
 function flowPositionFromScreen(flow: FlowViewport | null, screen: CanvasPoint) {
   if (flow?.screenToFlowPosition) {
@@ -1414,6 +2215,85 @@ function defaultNodePosition(index: number): CanvasPoint {
   };
 }
 
+function cloneCanvasNode(node: SpaceCanvasNode, assetCateId: number, index: number, position?: CanvasPoint): SpaceCanvasNode {
+  const x = position?.x ?? node.x + 34;
+  const y = position?.y ?? node.y + 34;
+  return {
+    ...node,
+    id: `local-${node.type}-${Date.now()}-${index}`,
+    title: `${node.title} 副本`,
+    x,
+    y,
+    assetCateId: node.assetCateId || assetCateId,
+    local: true,
+  };
+}
+
+function buildNodeInputContext(
+  nodeId: string,
+  nodes: SpaceCanvasNode[],
+  edges: Array<{ source: string; target: string }>,
+): NodeInputContext | null {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const sources = edges
+    .filter((edge) => edge.target === nodeId)
+    .map((edge) => nodeMap.get(edge.source))
+    .filter((node): node is SpaceCanvasNode => Boolean(node))
+    .map((node) => {
+      const output = nodeContextOutput(node);
+      const preview = generatedPreviewFromValue(output, String(node.power?.kind || node.kind || ""));
+      if (!hasGeneratedPreview(preview)) {
+        preview.text = node.description || node.title;
+      }
+      return {
+        nodeId: node.id,
+        title: node.title,
+        type: node.type,
+        output,
+        preview,
+      };
+    });
+  if (sources.length === 0) {
+    return null;
+  }
+  return {
+    sources,
+    text: sources.map(nodeInputContextLine).join("\n\n"),
+  };
+}
+
+function nodeInputContextLine(source: NodeInputContext["sources"][number]) {
+  const preview = source.preview;
+  const text = preview.text || preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl || stringifyContextValue(source.output);
+  return `[${source.title}]\n${text}`;
+}
+
+function nodeContextOutput(node: SpaceCanvasNode) {
+  return firstDefined(
+    (node as any).generatedOutput,
+    (node as any).output,
+    (node as any).result?.output,
+    (node as any).version?.content,
+    (node as any).asset?.version?.content,
+    node.asset?.version?.content,
+    node.description,
+  );
+}
+
+function stringifyContextValue(value: unknown) {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function nodeMenuViewForType(type: SpaceCanvasNode["type"]): AddNodeMenuState["view"] {
   if (type === "asset") return "assets";
   if (type === "power") return "powers";
@@ -1422,19 +2302,49 @@ function nodeMenuViewForType(type: SpaceCanvasNode["type"]): AddNodeMenuState["v
   return "functions";
 }
 
-const connectionRules: Record<SpaceCanvasNode["type"], SpaceCanvasNode["type"][]> = {
-  asset: ["power", "agent", "flow"],
-  power: ["asset", "function"],
-  agent: ["function"],
-  flow: ["function"],
-  function: ["asset"],
-};
-
 function canConnectNodes(sourceNode?: SpaceCanvasNode, targetNode?: SpaceCanvasNode) {
   if (!sourceNode || !targetNode) {
     return false;
   }
-  return connectionRules[sourceNode.type]?.includes(targetNode.type) || false;
+  if (sourceNode.id === targetNode.id) {
+    return false;
+  }
+  return true;
+}
+
+function connectedNodeEdgeEndpoints(connection: PendingNodeConnection, newNodeId: string) {
+  if (connection.handleType === "target") {
+    return {
+      source: newNodeId,
+      target: connection.nodeId,
+    };
+  }
+  return {
+    source: connection.nodeId,
+    target: newNodeId,
+  };
+}
+
+function appendUserEdge(current: Edge[], source: string, target: string) {
+  if (!source || !target || source === target) {
+    return current;
+  }
+  const edgeExists = current.some((edge) => edge.source === source && edge.target === target);
+  if (edgeExists) {
+    return current;
+  }
+  return [
+    ...current,
+    {
+      id: `edge-${source}-${target}-${Date.now()}`,
+      source,
+      sourceHandle: "output-0",
+      target,
+      targetHandle: "input-0",
+      type: "animated",
+      animated: false,
+    },
+  ];
 }
 
 function resolveProximityConnection(sourceNode: SpaceCanvasNode, targetNode: SpaceCanvasNode) {
@@ -1511,8 +2421,12 @@ function decorateFlowEdge(
   nodeMap: Map<string, SpaceCanvasNode>,
   hoveredNodeId: string,
   selectedNodeId: string,
+  selectedEdgeId: string,
+  onDeleteEdge: (edgeId: string) => void,
 ): Edge {
+  const selected = edge.id === selectedEdgeId;
   const highlighted =
+    selected ||
     edge.source === hoveredNodeId ||
     edge.target === hoveredNodeId ||
     edge.source === selectedNodeId ||
@@ -1523,6 +2437,8 @@ function decorateFlowEdge(
     data: {
       ...edge.data,
       isHighlighted: highlighted,
+      isSelected: selected,
+      onDelete: onDeleteEdge,
       highlightColor: highlighted ? nodeHighlightColor(nodeMap.get(activeNodeId)) : "var(--ws-edge)",
     },
   };
@@ -1535,6 +2451,24 @@ function nodeHighlightColor(node?: SpaceCanvasNode) {
   if (node?.type === "flow") return "#3b82f6";
   if (node?.type === "function") return "#f43f5e";
   return "#3b82f6";
+}
+
+function pointerFromConnectEndEvent(event: any): CanvasPoint | null {
+  const touch = event?.changedTouches?.[0] || event?.touches?.[0];
+  if (touch) {
+    return { x: touch.clientX, y: touch.clientY };
+  }
+  if (typeof event?.clientX === "number" && typeof event?.clientY === "number") {
+    return { x: event.clientX, y: event.clientY };
+  }
+  return null;
+}
+
+function isEditableEventTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
 function groupedAssets(assets: ProjectAsset[], assetCates: AssetCate[]) {
@@ -1609,18 +2543,66 @@ function NodeSelectionOverlays({ node, selected }: { node: SpaceCanvasNode; sele
   if (!selected) {
     return null;
   }
-  const { projectId, space, loadSpace } = node as any;
+  const { projectId, runningNode, setRunningNode } = node as any;
+  const onNodeResult = (node as any).onNodeResult as NodeResultSetter | undefined;
   return (
     <>
       <NodeBottomSettings
         key={node.id}
         node={node}
         projectId={projectId}
-        space={space}
-        loadSpace={loadSpace}
+        runningNode={runningNode}
+        setRunningNode={setRunningNode}
+        onNodeResult={onNodeResult || (() => undefined)}
       />
     </>
   );
+}
+
+function NodeQuickDetailButton({
+  node,
+  onShowNodeDetail,
+}: {
+  node: SpaceCanvasNode;
+  onShowNodeDetail?: (node: SpaceCanvasNode) => void;
+}) {
+  if (!onShowNodeDetail || !nodeHasResultContent(node)) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className="ws-node-quick-view nodrag nopan"
+      aria-label="查看详情"
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onShowNodeDetail(node);
+      }}
+    >
+      <Eye size={14} />
+    </button>
+  );
+}
+
+function nodeHasResultContent(node: SpaceCanvasNode) {
+  if (node.hasResult === true || node.status === "已生成") {
+    return true;
+  }
+  const output = firstDefined(
+    (node as any).generatedOutput,
+    (node as any).output,
+    (node as any).result?.output,
+    (node as any).version?.content,
+    (node as any).asset?.version?.content,
+    node.asset?.version?.content,
+  );
+  if (output == null) {
+    return false;
+  }
+  const preview = generatedPreviewFromValue(output, String(node.kind || node.power?.kind || ""));
+  return hasGeneratedPreview(preview) || stringifyContextValue(output).trim() !== "";
 }
 
 function NodeTopToolbar() {
@@ -1675,23 +2657,118 @@ function NodeTopToolbar() {
   );
 }
 
+function defaultPowerParamValues(params: PowerParam[]) {
+  const values: Record<string, unknown> = {};
+  for (const param of params) {
+    if (!param.key || param.type === "description") {
+      continue;
+    }
+    values[param.key] = defaultPowerParamValue(param);
+  }
+  return values;
+}
+
+function mergePowerParamValues(
+  params: PowerParam[],
+  current: Record<string, unknown>,
+  previousParams: PowerParam[] = [],
+) {
+  const values = defaultPowerParamValues(params);
+  const previousByKey = new Map(previousParams.map((param) => [param.key, param]));
+  for (const param of params) {
+    const previousParam = previousByKey.get(param.key);
+    if (
+      param.key &&
+      previousParam &&
+      Object.prototype.hasOwnProperty.call(current, param.key) &&
+      canPreservePowerParamValue(param, previousParam, current[param.key])
+    ) {
+      values[param.key] = current[param.key];
+    }
+  }
+  return values;
+}
+
+function canPreservePowerParamValue(param: PowerParam, previousParam: PowerParam, value: unknown) {
+  if (param.type !== previousParam.type || param.value_type !== previousParam.value_type) {
+    return false;
+  }
+  if (param.type === "option" || param.type === "select") {
+    const optionValues = new Set((param.options || []).map((option) => option.value));
+    return optionValues.size === 0 || optionValues.has(String(value ?? ""));
+  }
+  if (param.type === "multi_option") {
+    const optionValues = new Set((param.options || []).map((option) => option.value));
+    return optionValues.size === 0 || valueAsParamList(value).every((item) => optionValues.has(item));
+  }
+  if (param.value_type === "number") {
+    return value === "" || Number.isFinite(Number(value));
+  }
+  return true;
+}
+
+function valueAsParamList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value ? [value] : [];
+  }
+  return value == null ? [] : [String(value)];
+}
+
+function powerRunParams(values: Record<string, unknown>, promptParam: PowerParam | null, prompt: string) {
+  if (!promptParam?.key) {
+    return values;
+  }
+  return {
+    ...values,
+    [promptParam.key]: prompt,
+  };
+}
+
+function withNodeInputContext(values: Record<string, unknown>, inputContext: NodeInputContext | null) {
+  if (!inputContext?.sources.length) {
+    return values;
+  }
+  const nextValues: Record<string, unknown> = {
+    ...values,
+    input_context: inputContext.sources,
+    upstream_context: inputContext.text,
+  };
+  if (nextValues.context == null) {
+    nextValues.context = inputContext.text;
+  }
+  return nextValues;
+}
+
+function promptWithInputContext(prompt: string, inputContext: NodeInputContext | null) {
+  if (!inputContext?.text) {
+    return prompt;
+  }
+  return `${prompt || "继续处理上游内容"}\n\n上游上下文:\n${inputContext.text}`;
+}
+
 function NodeBottomSettings({
   node,
   projectId,
-  space,
-  loadSpace,
+  runningNode,
+  setRunningNode,
+  onNodeResult,
 }: {
   node: SpaceCanvasNode;
   projectId: number;
-  space: SpaceBootstrap;
-  loadSpace: () => Promise<void>;
+  runningNode: RunningNodeState | null;
+  setRunningNode: RunningNodeSetter;
+  onNodeResult: NodeResultSetter;
 }) {
   const [prompt, setPrompt] = useState("");
   const [running, setRunning] = useState(false);
-  const [powerForm, setPowerForm] = useState<any>(null);
+  const [powerForm, setPowerForm] = useState<PowerForm | null>(null);
   const [powerFormLoading, setPowerFormLoading] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<number>(0);
-  const [paramValues, setParamValues] = useState<Record<string, any>>({});
+  const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
+  const inputContext = ((node as any).inputContext || null) as NodeInputContext | null;
 
   // Control node states
   const [conditionText, setConditionText] = useState(() => {
@@ -1702,94 +2779,167 @@ function NodeBottomSettings({
   });
   const [saveAssetId, setSaveAssetId] = useState("");
   const [mergeLimit, setMergeLimit] = useState(10);
-
-  // File Upload state for agent
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const nodeRunning = running || (runningNode?.nodeId === node.id && runningNode.status === "running");
+  const selectedNodeType = node.type;
+  const selectedNodeId = node.id;
+  const selectedFlowId = node.flow?.id || 0;
+  const selectedPowerId = node.type === "power" ? node.power?.id || 0 : 0;
+  const selectedPowerKey = node.type === "power" ? node.power?.key || "" : "";
+  const overlayStyle = stableNodeOverlayStyle(Number((node as any).viewportZoom) || 1);
 
   useEffect(() => {
-    if (node.type === "power" && node.power) {
+    if (selectedNodeType === "power" && (selectedPowerId || selectedPowerKey)) {
+      const cacheKey = powerFormCacheKey(projectId, selectedFlowId, selectedPowerId, selectedPowerKey, 0);
+      const cachedForm = powerFormCache.get(cacheKey);
+      if (cachedForm) {
+        setPowerForm(cachedForm);
+        setSelectedTargetId(cachedForm.selected_target_id || 0);
+        setParamValues(defaultPowerParamValues(cachedForm.params || []));
+        setPrompt("");
+        setPowerFormLoading(false);
+        return;
+      }
       setPowerFormLoading(true);
-      request("/project/project/canvas_power_form", "get", {
-        project_id: projectId,
-        flow_id: node.flow?.id || 0,
-        power_id: node.power.id,
-        power_key: node.power.key,
-        target_id: 0,
+      fetchSpacePowerForm({
+        projectId,
+        flowId: selectedFlowId,
+        powerId: selectedPowerId,
+        powerKey: selectedPowerKey,
       })
-        .then((res) => {
-          if (res.code === 0) {
-            setPowerForm(res.data);
-            setSelectedTargetId(res.data.selected_target_id || 0);
-            const defaults: Record<string, any> = {};
-            res.data.params?.forEach((p: any) => {
-              if (p.default_value) {
-                defaults[p.key] = p.default_value;
-              }
-            });
-            setParamValues(defaults);
-          }
+        .then((form) => {
+          powerFormCache.set(cacheKey, form);
+          setPowerForm(form);
+          setSelectedTargetId(form.selected_target_id || 0);
+          setParamValues(defaultPowerParamValues(form.params || []));
+          setPrompt("");
         })
         .catch((err) => {
-          console.error("加载能力参数失败:", err);
+          toast.error(err instanceof Error ? err.message : "加载能力参数失败");
         })
         .finally(() => {
           setPowerFormLoading(false);
         });
+      return;
     }
-  }, [node, projectId]);
+    setPowerForm(null);
+    setParamValues({});
+    setSelectedTargetId(0);
+    setPrompt("");
+  }, [projectId, selectedFlowId, selectedNodeId, selectedNodeType, selectedPowerId, selectedPowerKey]);
+
+  const powerParams = powerForm?.params || [];
+  const promptParam = useMemo(
+    () => powerParams.find((param) => isPromptPowerParam(param, powerForm?.primary_param_key)) || null,
+    [powerForm?.primary_param_key, powerParams],
+  );
+  const composerParams = useMemo(
+    () => powerParams.filter((param) => param.key !== promptParam?.key && (isUploadPowerParam(param) || isToolbarPowerParam(param))),
+    [powerParams, promptParam?.key],
+  );
+  const powerPrompt = promptParam ? String(paramValues[promptParam.key] ?? "") : prompt;
+
+  function setPowerPrompt(nextPrompt: string) {
+    setPrompt(nextPrompt);
+    if (!promptParam) {
+      return;
+    }
+    setParamValues((current) => ({
+      ...current,
+      [promptParam.key]: nextPrompt,
+    }));
+  }
+
+  function setParamValue(key: string, value: unknown) {
+    setParamValues((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function selectPowerSource(targetId: number) {
+    if (nodeRunning) {
+      return;
+    }
+    setSelectedTargetId(targetId);
+    if (node.type !== "power" || !node.power) {
+      return;
+    }
+    try {
+      const cacheKey = powerFormCacheKey(projectId, node.flow?.id || 0, node.power.id, node.power.key, targetId);
+      const cachedForm = powerFormCache.get(cacheKey);
+      if (cachedForm) {
+        setPowerForm(cachedForm);
+        setSelectedTargetId(cachedForm.selected_target_id || targetId);
+        setParamValues((current) => mergePowerParamValues(cachedForm.params || [], current, powerForm?.params || []));
+        return;
+      }
+      const form = await fetchSpacePowerForm({
+        projectId,
+        flowId: node.flow?.id || 0,
+        powerId: node.power.id,
+        powerKey: node.power.key,
+        targetId,
+      });
+      powerFormCache.set(cacheKey, form);
+      setPowerForm(form);
+      setSelectedTargetId(form.selected_target_id || targetId);
+      setParamValues((current) => mergePowerParamValues(form.params || [], current, powerForm?.params || []));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "加载能力参数失败");
+    }
+  }
 
   const handleRun = async () => {
     setRunning(true);
+    setRunningNode({
+      nodeId: node.id,
+      title: node.title,
+      startedAt: Date.now(),
+      progress: 0,
+      status: "running",
+    });
+    let completed = false;
     try {
       if (node.type === "power" && node.power) {
-        const result = await request("/project/run/canvas_power", "post", {
-          project_id: projectId,
-          flow_id: node.flow?.id || 0,
-          node_key: node.id,
-          node_name: node.title,
+        const runPrompt = promptWithInputContext(powerPrompt, inputContext);
+        const result = await runSpacePower({
+          projectId,
+          flowId: node.flow?.id || 0,
+          nodeKey: node.id,
+          nodeName: node.title,
           kind: node.power.kind,
-          power_id: node.power.id,
-          power_key: node.power.key,
-          source_target_id: selectedTargetId,
-          input: { prompt },
-          params: paramValues,
+          powerId: node.power.id,
+          powerKey: node.power.key,
+          sourceTargetId: selectedTargetId,
+          prompt: runPrompt,
+          params: withNodeInputContext(powerRunParams(paramValues, promptParam, runPrompt), inputContext),
         });
-        if (result.code === 0) {
-          toast.success("能力节点执行成功");
-          await loadSpace();
-        } else {
-          toast.error(result.message || "能力节点执行失败");
-        }
+        onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, runPrompt));
+        toast.success("能力节点执行成功");
+        completed = true;
       } else if (node.type === "agent" && node.role) {
+        const runPrompt = promptWithInputContext(prompt, inputContext);
         const result = await request("/project/run/canvas_agent", "post", {
           project_id: projectId,
           flow_id: node.flow?.id || 0,
           node_key: node.id,
           node_name: node.title,
           agent_id: node.role.id,
-          input: { prompt },
+          input: { prompt: runPrompt, files: paramValues.files || [], context: inputContext?.sources || [] },
         });
         if (result.code === 0) {
+          onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, runPrompt));
           toast.success("智能体任务执行成功");
-          await loadSpace();
+          completed = true;
         } else {
           toast.error(result.message || "智能体任务执行失败");
         }
       } else if (node.type === "flow" && node.flow) {
-        const result = await request("/project/run/flow", "post", {
-          project_id: projectId,
-          team_id: space.team.id,
-          release_id: space.release.id,
-          flow_id: node.flow.id,
-          input: { prompt },
-        });
-        if (result.code === 0) {
-          toast.success("流程已启动");
-          await loadSpace();
-        } else {
-          toast.error(result.message || "流程启动失败");
-        }
+        const runPrompt = promptWithInputContext(prompt, inputContext);
+        const result = await runSpaceFlow(projectId, Number(node.assetCateId || 0), node.flow, runPrompt);
+        onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, runPrompt));
+        toast.success("流程已启动");
+        completed = true;
       } else if (node.type === "function") {
         const optionKey = node.functionOption?.key || "";
         if (optionKey === "confirm") {
@@ -1800,26 +2950,112 @@ function NodeBottomSettings({
             comment: "人工确认通过",
           });
           if (result.code === 0) {
+            onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, "人工确认通过"));
             toast.success("确认成功");
-            await loadSpace();
+            completed = true;
           } else {
             toast.error(result.message || "确认失败");
           }
         } else if (optionKey === "save") {
+          onNodeResult(node.id, buildGeneratedNodeResultPatch(node, { output: "资产已保存" }, "资产已保存"));
           toast.success("资产已保存");
+          completed = true;
         } else {
+          onNodeResult(node.id, buildGeneratedNodeResultPatch(node, { output: "操作已应用" }, "操作已应用"));
           toast.success("操作已应用");
+          completed = true;
         }
       }
     } catch (err) {
+      setRunningNode((current) => (
+        current?.nodeId === node.id
+          ? { ...current, status: "error", progress: Math.max(current.progress, 92) }
+          : current
+      ));
       toast.error(err instanceof Error ? err.message : "执行出错");
     } finally {
       setRunning(false);
+      setRunningNode((current) => {
+        if (current?.nodeId !== node.id) {
+          return current;
+        }
+        return {
+          ...current,
+          status: completed ? "success" : "error",
+          progress: completed ? 100 : Math.max(current.progress, 92),
+        };
+      });
+      window.setTimeout(() => {
+        setRunningNode((current) => (current?.nodeId === node.id ? null : current));
+      }, completed ? 650 : 1200);
     }
   };
 
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setRunningNode((current) => {
+        if (current?.nodeId !== node.id || current.status !== "running") {
+          return current;
+        }
+        return {
+          ...current,
+          progress: Math.min(94, current.progress + 7),
+        };
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [node.id, running, setRunningNode]);
+
+  if (node.type === "power") {
+    return (
+      <div className="ws-node-bottom-settings is-composer nodrag" onClick={(event) => event.stopPropagation()} style={overlayStyle}>
+        {powerFormLoading && !nodeRunning && !powerForm ? (
+          <div className="ws-prompt-loading">
+            <Loader2 size={16} className="ws-spin" />
+            <span>正在加载能力参数...</span>
+          </div>
+        ) : (
+          <PromptComposer
+            value={powerPrompt}
+            placeholder="在此处为该能力输入生成提示词或逻辑控制文本..."
+            running={nodeRunning}
+            sourceOptions={powerForm?.sources || []}
+            selectedSourceId={selectedTargetId}
+            params={composerParams}
+            paramValues={paramValues}
+            disabled={powerFormLoading}
+            onChange={setPowerPrompt}
+            onParamChange={setParamValue}
+            onSourceChange={(targetId) => void selectPowerSource(targetId)}
+            onSubmit={handleRun}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (node.type === "agent") {
+    return (
+      <div className="ws-node-bottom-settings is-composer nodrag" onClick={(event) => event.stopPropagation()} style={overlayStyle}>
+        <PromptComposer
+          value={prompt}
+          placeholder="向智能体发送任务指令..."
+          running={nodeRunning}
+          params={agentComposerParams}
+          paramValues={paramValues}
+          onChange={setPrompt}
+          onParamChange={setParamValue}
+          onSubmit={handleRun}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="ws-node-bottom-settings nodrag" onClick={(event) => event.stopPropagation()} style={{ zIndex: 999 }}>
+    <div className="ws-node-bottom-settings nodrag" onClick={(event) => event.stopPropagation()} style={overlayStyle}>
       <div className="ws-node-settings-head">
         <div className="ws-node-settings-icon">
           <Plus size={16} />
@@ -1846,222 +3082,6 @@ function NodeBottomSettings({
             </div>
             <span className="ws-node-settings-state">资产就绪</span>
           </div>
-        )}
-
-        {node.type === "power" && (
-          <>
-            {powerFormLoading ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--ws-muted)", fontSize: "12px", padding: "10px" }}>
-                <Loader2 size={14} className="ws-spin" />
-                <span>正在加载参数...</span>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "11px", fontWeight: "bold", color: "var(--ws-muted)" }}>提示词 *</label>
-                  <textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="在此处为该能力输入生成提示词或逻辑控制文本..."
-                    style={{
-                      width: "100%",
-                      height: "60px",
-                      resize: "none",
-                      border: "1px solid var(--ws-card-border)",
-                      borderRadius: "10px",
-                      background: "var(--ws-card-muted)",
-                      color: "var(--ws-toolbar-text)",
-                      padding: "8px 10px",
-                      font: "inherit",
-                      fontSize: "12px",
-                      lineHeight: "1.45",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                {powerForm?.sources && powerForm.sources.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "11px", color: "var(--ws-muted)", width: "70px", textAlign: "right" }}>模型/来源:</span>
-                    <select
-                      value={selectedTargetId}
-                      onChange={(e) => setSelectedTargetId(Number(e.target.value))}
-                      style={{
-                        flex: 1,
-                        background: "var(--ws-card-muted)",
-                        border: "1px solid var(--ws-card-border)",
-                        borderRadius: "6px",
-                        padding: "4px 8px",
-                        color: "var(--ws-toolbar-text)",
-                        fontSize: "11px",
-                        outline: "none",
-                      }}
-                    >
-                      {powerForm.sources.map((src: any) => (
-                        <option key={src.id} value={src.id}>
-                          {src.name || src.key}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {powerForm?.params && powerForm.params.length > 0 && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", padding: "4px 0" }}>
-                    {powerForm.params.map((param: any) => {
-                      const val = paramValues[param.key] ?? param.default_value ?? "";
-                      const onChange = (newVal: any) => {
-                        setParamValues((prev) => ({ ...prev, [param.key]: newVal }));
-                      };
-
-                      return (
-                        <div key={param.key} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <span style={{ fontSize: "11px", color: "var(--ws-muted)", width: "70px", textAlign: "right", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={param.name}>
-                            {param.name}:
-                          </span>
-                          {param.type === "select" ? (
-                            <select
-                              value={val}
-                              onChange={(e) => onChange(e.target.value)}
-                              style={{
-                                flex: 1,
-                                background: "var(--ws-card-muted)",
-                                border: "1px solid var(--ws-card-border)",
-                                borderRadius: "6px",
-                                padding: "4px 8px",
-                                color: "var(--ws-toolbar-text)",
-                                fontSize: "11px",
-                                outline: "none",
-                              }}
-                            >
-                              {param.options?.map((opt: any) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.name || opt.value}
-                                </option>
-                              ))}
-                            </select>
-                          ) : param.type === "switch" ? (
-                            <input
-                              type="checkbox"
-                              checked={Boolean(val === "true" || val === true)}
-                              onChange={(e) => onChange(e.target.checked)}
-                              style={{ cursor: "pointer" }}
-                            />
-                          ) : param.type === "number" || param.type === "slider" ? (
-                            <input
-                              type="number"
-                              value={val}
-                              onChange={(e) => onChange(Number(e.target.value))}
-                              style={{
-                                flex: 1,
-                                background: "var(--ws-card-muted)",
-                                border: "1px solid var(--ws-card-border)",
-                                borderRadius: "6px",
-                                padding: "4px 8px",
-                                color: "var(--ws-toolbar-text)",
-                                fontSize: "11px",
-                                outline: "none",
-                              }}
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              value={val}
-                              onChange={(e) => onChange(e.target.value)}
-                              style={{
-                                flex: 1,
-                                background: "var(--ws-card-muted)",
-                                border: "1px solid var(--ws-card-border)",
-                                borderRadius: "6px",
-                                padding: "4px 8px",
-                                color: "var(--ws-toolbar-text)",
-                                fontSize: "11px",
-                                outline: "none",
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="ws-node-settings-row" style={{ marginTop: "4px" }}>
-                  <div className="ws-node-settings-actions">
-                    <NodeSettingButton icon={Cpu} label={String(node.power?.name || "AI 能力")} accent="green" />
-                  </div>
-                  <span className="ws-node-run-cluster">
-                    <b>¥ 0.1</b>
-                    <button type="button" className="ws-node-run-button" disabled={running} onClick={handleRun} style={{ cursor: "pointer" }}>
-                      {running ? <Loader2 size={16} className="ws-spin" /> : <ArrowUp size={16} />}
-                    </button>
-                  </span>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {node.type === "agent" && (
-          <>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "11px", fontWeight: "bold", color: "var(--ws-muted)" }}>提示词</label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="向智能体发送任务指令..."
-                style={{
-                  width: "100%",
-                  height: "52px",
-                  resize: "none",
-                  border: "1px solid var(--ws-card-border)",
-                  borderRadius: "10px",
-                  background: "var(--ws-card-muted)",
-                  color: "var(--ws-toolbar-text)",
-                  padding: "8px 10px",
-                  font: "inherit",
-                  fontSize: "12px",
-                  lineHeight: "1.45",
-                  outline: "none",
-                }}
-              />
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                className="ws-node-setting-button"
-                onClick={() => fileInputRef.current?.click()}
-                style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
-              >
-                <Download size={12} style={{ transform: "rotate(180deg)" }} />
-                <span>{uploadedFile ? uploadedFile.name : "上传文件..."}</span>
-              </button>
-              {uploadedFile && (
-                <button
-                  type="button"
-                  onClick={() => setUploadedFile(null)}
-                  style={{ border: 0, background: "transparent", color: "var(--ws-rose)", cursor: "pointer" }}
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-
-            <div className="ws-node-settings-row">
-              <span className="ws-node-settings-state">智能体身份: {node.title || "工作助理"}</span>
-              <button type="button" className="ws-node-agent-run" disabled={running} onClick={handleRun} style={{ cursor: "pointer" }}>
-                {running ? <Loader2 size={12} className="ws-spin" /> : <ArrowUp size={12} />}
-                <span>执行任务</span>
-              </button>
-            </div>
-          </>
         )}
 
         {node.type === "flow" && (
@@ -2204,7 +3224,6 @@ function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
             <NodeSettingButton icon={Video} label="摄影机控制" />
           </div>
           <span className="ws-node-run-cluster">
-            <b>¥ 0.1</b>
             <button type="button" className="ws-node-run-button">
               <ArrowUp size={16} />
             </button>
@@ -2258,6 +3277,19 @@ function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
   );
 }
 
+function stableNodeOverlayStyle(zoom: number): CSSProperties {
+  const safeZoom = Math.max(0.35, Math.min(1.45, Number.isFinite(zoom) ? zoom : 1));
+  return {
+    zIndex: 999,
+    "--ws-node-overlay-scale": String(1 / safeZoom),
+    "--ws-node-overlay-gap": `${16 / safeZoom}px`,
+  } as CSSProperties;
+}
+
+function powerFormCacheKey(projectId: number, flowId: number, powerId: number, powerKey: string, targetId: number) {
+  return [projectId || 0, flowId || 0, powerId || 0, powerKey || "", targetId || 0].join(":");
+}
+
 function NodeSettingButton({
   icon: Icon,
   label,
@@ -2280,6 +3312,9 @@ function NodeSettingButton({
 
 function SpaceNodeView({ data, selected }: NodeProps<any>) {
   const node = data as SpaceCanvasNode;
+  const runningNode = (data as any).runningNode as RunningNodeState | null;
+  const onShowNodeDetail = (data as any).onShowNodeDetail as ((node: SpaceCanvasNode) => void) | undefined;
+  const onNodeResult = (data as any).onNodeResult as NodeResultSetter | undefined;
 
   // 1. circular agent representation
   if (node.type === "agent") {
@@ -2307,6 +3342,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
             <p className="ws-result-text">{node.description}</p>
           </div>
         ) : null}
+        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -2334,6 +3370,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
         </div>
         <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" style={{ left: "11px" }} />
         <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" style={{ right: "11px" }} />
+        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -2364,6 +3401,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
         </div>
         <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" style={{ left: "29px" }} />
         <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" style={{ right: "29px" }} />
+        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -2384,6 +3422,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           </div>
           <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
           <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
+          <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
           <NodeSelectionOverlays node={node} selected={selected} />
         </div>
       );
@@ -2407,6 +3446,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           </div>
           <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
           <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
+          <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
           <NodeSelectionOverlays node={node} selected={selected} />
         </div>
       );
@@ -2424,6 +3464,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
         </div>
         <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
         <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
+        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -2431,21 +3472,69 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
 
   // 5. Power Nodes
   if (node.type === "power") {
+    const showRunFrame = runningNode?.status === "running" || runningNode?.status === "success";
+    const preview = generatedNodePreview(node);
+    const hasPowerContent = node.hasResult === true || node.status === "已生成" || hasGeneratedPreview(preview);
+    const hasPowerMedia = Boolean(preview.imageUrl || preview.videoUrl);
     return (
-      <div className={`ws-node-power-wrap ${selected ? "is-selected" : ""}`}>
+      <div
+        className={`ws-node-power-wrap ${selected ? "is-selected" : ""} ${showRunFrame ? "is-running" : ""} ${hasPowerContent ? "has-content" : ""} ${hasPowerMedia ? "has-media" : ""}`}
+      >
         <div className="ws-node-floating-label">
-          <Zap size={13} className="ws-icon-violet" />
+          <PowerIcon power={node.power} kind={node.kind} size={13} className="ws-icon-violet" />
           <span>{node.title}</span>
         </div>
         <div className="ws-node-power-card">
-          <div className="ws-node-power-header">
-            <span className="ws-node-power-badge">AI Core</span>
-            <span className="ws-node-power-status">空闲</span>
-          </div>
-          <p className="ws-node-power-desc">{node.description}</p>
+          {showRunFrame ? (
+            <svg
+              className="ws-node-running-border is-spin"
+              aria-hidden="true"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+            >
+              <rect
+                className="ws-node-running-track"
+                x="2"
+                y="2"
+                width="96"
+                height="96"
+                rx="7"
+                pathLength="100"
+              />
+              <rect
+                className="ws-node-running-progress"
+                x="2"
+                y="2"
+                width="96"
+                height="96"
+                rx="7"
+                pathLength="100"
+                strokeDasharray="18 82"
+                strokeDashoffset="0"
+              />
+            </svg>
+          ) : null}
+          {hasPowerContent ? (
+            <PowerNodeGeneratedContent
+              preview={preview}
+              fallback={node.description}
+              onMediaSize={(width, height) => {
+                const nextSize = generatedMediaNodeSize(width, height);
+                if (!nextSize || !onNodeResult) {
+                  return;
+                }
+                if (Math.abs((node.width || 0) - nextSize.width) > 2 || Math.abs((node.height || 0) - nextSize.height) > 2) {
+                  onNodeResult(node.id, nextSize);
+                }
+              }}
+            />
+          ) : (
+            <PowerNodeEmptyState />
+          )}
         </div>
         <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
         <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
+        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -2458,17 +3547,171 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
       <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
       <div className="ws-node-title">{node.title}</div>
       <div className="ws-node-desc">{node.description}</div>
+      <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
       <NodeSelectionOverlays node={node} selected={selected} />
     </div>
   );
 }
 
+function PowerNodeGeneratedContent({
+  preview,
+  fallback,
+  onMediaSize,
+}: {
+  preview: GeneratedNodePreview;
+  fallback: string;
+  onMediaSize?: (width: number, height: number) => void;
+}) {
+  if (preview.imageUrl) {
+    return (
+      <div className="ws-node-power-media">
+        <img
+          src={preview.imageUrl}
+          alt={preview.text || "生成图片"}
+          onLoad={(event) => onMediaSize?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+        />
+        {preview.text ? <p>{preview.text}</p> : null}
+      </div>
+    );
+  }
+  if (preview.videoUrl) {
+    return (
+      <div className="ws-node-power-media">
+        <video
+          src={preview.videoUrl}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={(event) => onMediaSize?.(event.currentTarget.videoWidth, event.currentTarget.videoHeight)}
+        />
+        {preview.text ? <p>{preview.text}</p> : null}
+      </div>
+    );
+  }
+  if (preview.audioUrl) {
+    return (
+      <div className="ws-node-power-file">
+        <Music size={16} />
+        <span>{preview.text || preview.audioUrl}</span>
+      </div>
+    );
+  }
+  if (preview.fileUrl) {
+    return (
+      <div className="ws-node-power-file">
+        <FileText size={16} />
+        <span>{preview.text || preview.fileUrl}</span>
+      </div>
+    );
+  }
+  return <p className="ws-node-power-desc">{preview.text || fallback}</p>;
+}
+
+function generatedMediaNodeSize(width: number, height: number): Pick<SpaceCanvasNode, "width" | "height"> | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  const ratio = width / height;
+  if (ratio >= 1) {
+    const nextWidth = 270;
+    return {
+      width: nextWidth,
+      height: Math.round(clampNumber(nextWidth / ratio, 150, 230)),
+    };
+  }
+  const nextHeight = 320;
+  return {
+    width: Math.round(clampNumber(nextHeight * ratio, 170, 260)),
+    height: nextHeight,
+  };
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function PowerNodeEmptyState() {
+  return (
+    <div className="ws-node-power-empty" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+function PowerIcon({
+  power,
+  kind,
+  size,
+  className,
+}: {
+  power?: PowerOption;
+  kind?: string;
+  size: number;
+  className?: string;
+}) {
+  const FallbackIcon = powerIcon(power?.kind || kind || "");
+  const Icon = resolveSharedLucideIcon(normalizePowerIconName(power?.icon)) || FallbackIcon;
+
+  return <Icon size={size} className={className} />;
+}
+
+function resolveSharedLucideIcon(iconName?: string): LucideIcon | null {
+  if (!iconName) {
+    return null;
+  }
+  try {
+    const resolver = getCompatModule("@/lib/icon").resolveLucideIcon as ((name?: string) => LucideIcon | null) | undefined;
+    const Icon = resolver?.(iconName);
+    if (Icon) {
+      return Icon;
+    }
+  } catch {
+    // The host SDK may not expose this compat module on older dev sessions.
+  }
+  return resolveLocalLucideIcon(iconName);
+}
+
+function resolveLocalLucideIcon(iconName?: string): LucideIcon | null {
+  if (!iconName) {
+    return null;
+  }
+  const exportName = iconName
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+  return (LucideIcons as unknown as Record<string, LucideIcon | undefined>)[exportName] || null;
+}
+
+function normalizePowerIconName(icon?: string) {
+  const text = String(icon || "").trim();
+  if (!text || text === "-") {
+    return "";
+  }
+  return text
+    .replace(/^i-lucide-/i, "")
+    .replace(/^lucide[:/\\-]/i, "")
+    .replace(/Icon$/i, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/[_\s]+/g, "-")
+    .replace(/[^a-zA-Z0-9-]/g, "")
+    .replace(/--+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
+
 function powerIcon(kind: string): LucideIcon {
-  if (kind === "image") return ImageIcon;
-  if (kind === "video") return Video;
-  if (kind === "workflow") return Workflow;
-  if (kind === "role") return UserCheck;
-  if (kind === "multi") return Sparkles;
+  const normalizedKind = String(kind || "").toLowerCase();
+  if (normalizedKind === "text" || normalizedKind === "llm") return Type;
+  if (normalizedKind === "image") return ImageIcon;
+  if (normalizedKind === "video") return Video;
+  if (normalizedKind === "audio" || normalizedKind === "music") return Music;
+  if (normalizedKind === "file") return FileText;
+  if (normalizedKind === "workflow") return Workflow;
+  if (normalizedKind === "role" || normalizedKind === "agent") return UserCheck;
+  if (normalizedKind === "multi") return Sparkles;
   return Brain;
 }
 

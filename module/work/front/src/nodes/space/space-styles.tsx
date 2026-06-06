@@ -18,6 +18,7 @@ export function WorkSpaceStyles() {
 	        --ws-violet: #8b5cf6;
 	        --ws-edge: rgba(255, 255, 255, 0.15);
 	        --ws-edge-active: #10b981;
+	        --ws-edge-selected: rgba(255, 255, 255, 0.94);
 	        --ws-flow-dot: rgba(255, 255, 255, 0.05);
 	        position: fixed;
 	        inset: 0;
@@ -48,6 +49,7 @@ export function WorkSpaceStyles() {
 	        --ws-violet: #7c3aed;
 	        --ws-edge: rgba(15, 23, 42, 0.14);
 	        --ws-edge-active: #10b981;
+	        --ws-edge-selected: #111827;
 	        --ws-flow-dot: rgba(15, 23, 42, 0.05);
 	        background:
 	          radial-gradient(circle at 78% 72%, rgba(16,185,129,0.12), transparent 25%),
@@ -76,6 +78,35 @@ export function WorkSpaceStyles() {
         position: absolute;
         inset: 0;
         overflow: hidden;
+      }
+
+      .ws-edge-delete {
+        position: absolute;
+        z-index: 9;
+        display: inline-flex;
+        width: 34px;
+        height: 34px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(148, 163, 184, 0.38);
+        border-radius: 999px;
+        background: rgba(17, 24, 39, 0.9);
+        color: #fff;
+        cursor: pointer;
+        pointer-events: all;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+        backdrop-filter: blur(12px);
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      }
+
+      .ws-edge-delete:hover {
+        background: #111827;
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+
+      .ws-page.is-light .ws-edge-delete {
+        background: rgba(255, 255, 255, 0.96);
+        color: #111827;
       }
 
 	      .ws-canvas-wrap::before {
@@ -205,6 +236,82 @@ export function WorkSpaceStyles() {
       .ws-page.is-light .ws-canvas-wrap .react-flow__controls-button:hover {
         background: rgba(15, 23, 42, 0.06) !important;
         color: #000 !important;
+      }
+
+      .ws-view-controls {
+        position: absolute;
+        left: 20px;
+        bottom: 20px;
+        z-index: 28;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 18px;
+        background: rgba(24, 28, 37, 0.9);
+        padding: 6px;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+        backdrop-filter: blur(14px);
+      }
+
+      .ws-page.is-light .ws-view-controls {
+        border-color: rgba(15, 23, 42, 0.08);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+      }
+
+      .ws-view-controls button {
+        display: inline-flex;
+        width: 32px;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.68);
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+      }
+
+      .ws-page.is-light .ws-view-controls button {
+        color: rgba(15, 23, 42, 0.62);
+      }
+
+      .ws-view-controls button:hover,
+      .ws-view-controls button.is-active {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        transform: translateY(-1px);
+      }
+
+      .ws-page.is-light .ws-view-controls button:hover,
+      .ws-page.is-light .ws-view-controls button.is-active {
+        background: rgba(15, 23, 42, 0.07);
+        color: #0f172a;
+      }
+
+      .ws-view-controls button.is-active {
+        color: var(--ws-green);
+      }
+
+      .ws-view-zoom {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: 2px;
+        border-left: 1px solid rgba(255, 255, 255, 0.1);
+        padding-left: 8px;
+      }
+
+      .ws-page.is-light .ws-view-zoom {
+        border-left-color: rgba(15, 23, 42, 0.08);
+      }
+
+      .ws-view-zoom input {
+        width: 96px;
+        accent-color: var(--ws-green);
+        cursor: pointer;
       }
 
       .ws-topbar {
@@ -867,6 +974,264 @@ export function WorkSpaceStyles() {
 	        color: #e11d48;
 	      }
 
+      .ws-node-action-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        pointer-events: auto;
+      }
+
+      .ws-node-action-menu {
+        position: fixed;
+        z-index: 71;
+        width: 138px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        background: rgba(24, 24, 27, 0.96);
+        color: rgba(255, 255, 255, 0.92);
+        padding: 6px;
+        box-shadow: 0 22px 50px rgba(0, 0, 0, 0.38);
+        backdrop-filter: blur(16px);
+      }
+
+      .ws-node-action-menu button {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        gap: 10px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: inherit;
+        padding: 11px 10px;
+        text-align: left;
+        font-size: 14px;
+        font-weight: 780;
+        cursor: pointer;
+      }
+
+      .ws-node-action-menu button + button {
+        margin-top: 2px;
+      }
+
+      .ws-node-action-menu button:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .ws-node-action-menu button.is-danger {
+        color: #fca5a5;
+      }
+
+      .ws-page.is-light .ws-node-action-menu {
+        border-color: rgba(15, 23, 42, 0.1);
+        background: rgba(255, 255, 255, 0.96);
+        color: #111827;
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
+      }
+
+      .ws-page.is-light .ws-node-action-menu button:hover {
+        background: rgba(15, 23, 42, 0.055);
+      }
+
+      .ws-page.is-light .ws-node-action-menu button.is-danger {
+        color: #e11d48;
+      }
+
+      .ws-node-detail-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: flex;
+        flex-direction: column;
+        background: rgba(0, 0, 0, 0.86);
+        color: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(20px);
+      }
+
+      .ws-node-detail-modal {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+      }
+
+      .ws-node-detail-head {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 0 20px;
+      }
+
+      .ws-node-detail-meta {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+        overflow: hidden;
+      }
+
+      .ws-node-detail-meta span {
+        color: rgba(255, 255, 255, 0.48);
+        font-size: 13px;
+        font-weight: 720;
+        white-space: nowrap;
+      }
+
+      .ws-node-detail-meta strong {
+        overflow: hidden;
+        max-width: 260px;
+        font-size: 13px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-node-detail-actions {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .ws-node-detail-head button,
+      .ws-node-detail-actions a {
+        display: inline-flex;
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.92);
+        cursor: pointer;
+        text-decoration: none;
+      }
+
+      .ws-node-detail-body {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        padding: 30px;
+      }
+
+      .ws-node-detail-body img,
+      .ws-node-detail-body video {
+        max-width: min(920px, calc(100vw - 120px));
+        max-height: calc(100vh - 142px);
+        border-radius: 4px;
+        object-fit: contain;
+      }
+
+      .ws-node-detail-body audio {
+        width: min(520px, calc(100vw - 96px));
+      }
+
+      .ws-node-detail-file {
+        display: flex;
+        width: min(460px, calc(100vw - 96px));
+        min-height: 260px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 26px;
+        text-align: center;
+      }
+
+      .ws-node-detail-file strong,
+      .ws-node-detail-file span {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-node-detail-file span {
+        color: rgba(255, 255, 255, 0.46);
+        font-size: 12px;
+      }
+
+      .ws-node-detail-file a {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.92);
+        padding: 9px 12px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 780;
+      }
+
+      .ws-node-detail-body pre {
+        width: min(860px, calc(100vw - 96px));
+        max-height: calc(100vh - 142px);
+        overflow: auto;
+        margin: 0;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.88);
+        padding: 22px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .ws-page.is-light .ws-node-detail-backdrop {
+        background: rgba(248, 250, 252, 0.78);
+        color: #111827;
+      }
+
+      .ws-page.is-light .ws-node-detail-head {
+        border-bottom-color: rgba(15, 23, 42, 0.08);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .ws-page.is-light .ws-node-detail-meta span {
+        color: rgba(71, 85, 105, 0.76);
+      }
+
+      .ws-page.is-light .ws-node-detail-head button,
+      .ws-page.is-light .ws-node-detail-actions a {
+        border-color: rgba(15, 23, 42, 0.12);
+        background: rgba(255, 255, 255, 0.88);
+        color: #111827;
+      }
+
+      .ws-page.is-light .ws-node-detail-file {
+        border-color: rgba(15, 23, 42, 0.1);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .ws-page.is-light .ws-node-detail-file span {
+        color: rgba(71, 85, 105, 0.72);
+      }
+
+      .ws-page.is-light .ws-node-detail-file a {
+        border-color: rgba(15, 23, 42, 0.12);
+        background: rgba(15, 23, 42, 0.04);
+        color: #111827;
+      }
+
+      .ws-page.is-light .ws-node-detail-body pre {
+        border-color: rgba(15, 23, 42, 0.1);
+        background: rgba(255, 255, 255, 0.78);
+        color: #111827;
+      }
+
 	      .ws-flow-list {
 	        display: flex;
         flex-direction: column;
@@ -1323,19 +1688,19 @@ export function WorkSpaceStyles() {
         height: 120px;
         border-radius: 999px;
         background: var(--ws-panel);
-        border: 2px solid var(--ws-border);
+        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        box-shadow: var(--ws-node-shadow);
         transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
       }
       .ws-node-agent-wrap.is-selected .ws-node-circle,
       .ws-node-circle:hover {
         border-color: var(--ws-amber);
-        box-shadow: 0 0 20px rgba(245,181,68,0.45);
+        box-shadow: var(--ws-node-shadow), 0 0 22px rgba(245,158,11,0.34);
         transform: scale(1.03);
       }
       .ws-node-circle-avatar {
@@ -1387,10 +1752,10 @@ export function WorkSpaceStyles() {
         transform: translateX(-50%);
         width: 180px;
         background: var(--ws-panel-strong);
-        border: 1px solid var(--ws-border);
+        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
         border-radius: 12px;
         padding: 8px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        box-shadow: var(--ws-node-shadow);
         z-index: 10;
         text-align: left;
       }
@@ -1423,7 +1788,7 @@ export function WorkSpaceStyles() {
       }
       .ws-node-flow-wrap.is-selected,
       .ws-node-flow-wrap:hover {
-        transform: scale(1.03);
+        transform: scale(1.01);
       }
       .ws-hexagon-svg {
         position: absolute;
@@ -1431,22 +1796,23 @@ export function WorkSpaceStyles() {
         width: 100%;
         height: 100%;
         color: var(--ws-panel);
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
+        filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.18));
         transition: filter 0.2s ease, color 0.2s ease;
       }
       .ws-hexagon-svg polygon {
         stroke: var(--ws-border) !important;
-        stroke-width: 1.5 !important;
+        stroke-width: var(--ws-node-border-size) !important;
+        vector-effect: non-scaling-stroke;
         transition: stroke 0.2s ease, stroke-width 0.2s ease;
       }
       .ws-node-flow-wrap.is-selected .ws-hexagon-svg,
       .ws-node-flow-wrap:hover .ws-hexagon-svg {
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.25)) drop-shadow(0 0 15px rgba(90,167,255,0.45));
+        filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.16)) drop-shadow(0 0 18px rgba(59,130,246,0.36));
       }
       .ws-node-flow-wrap.is-selected .ws-hexagon-svg polygon,
       .ws-node-flow-wrap:hover .ws-hexagon-svg polygon {
         stroke: var(--ws-blue) !important;
-        stroke-width: 1.5 !important;
+        stroke-width: var(--ws-node-border-size) !important;
       }
       .ws-node-flow-content {
         position: absolute;
@@ -1507,7 +1873,7 @@ export function WorkSpaceStyles() {
       }
       .ws-node-function-wrap.is-selected,
       .ws-node-function-wrap:hover {
-        transform: scale(1.03);
+        transform: scale(1.01);
       }
       .ws-triangle-svg {
         position: absolute;
@@ -1515,22 +1881,23 @@ export function WorkSpaceStyles() {
         width: 100%;
         height: 100%;
         color: var(--ws-panel);
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
+        filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.18));
         transition: filter 0.2s ease, color 0.2s ease;
       }
       .ws-triangle-svg polygon {
         stroke: var(--ws-border) !important;
-        stroke-width: 1.6 !important;
+        stroke-width: var(--ws-node-border-size) !important;
+        vector-effect: non-scaling-stroke;
         transition: stroke 0.2s ease, stroke-width 0.2s ease;
       }
       .ws-node-function-wrap.is-selected .ws-triangle-svg,
       .ws-node-function-wrap:hover .ws-triangle-svg {
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.25)) drop-shadow(0 0 15px rgba(255,107,138,0.45));
+        filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.16)) drop-shadow(0 0 18px rgba(244,63,94,0.36));
       }
       .ws-node-function-wrap.is-selected .ws-triangle-svg polygon,
       .ws-node-function-wrap:hover .ws-triangle-svg polygon {
         stroke: var(--ws-rose) !important;
-        stroke-width: 1.6 !important;
+        stroke-width: var(--ws-node-border-size) !important;
       }
       .ws-node-function-content {
         position: absolute;
@@ -1568,6 +1935,54 @@ export function WorkSpaceStyles() {
         width: 100%;
         height: 100%;
       }
+      .ws-node-quick-view {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        right: auto;
+        z-index: 12;
+        display: inline-flex;
+        width: 28px;
+        height: 28px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.88);
+        color: #111827;
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, -50%) scale(0.92);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+        transition: opacity 0.16s ease, transform 0.16s ease, background 0.16s ease;
+        backdrop-filter: blur(10px);
+      }
+      .ws-node-quick-view:hover {
+        background: #fff;
+      }
+      .ws-node-agent-wrap:hover .ws-node-quick-view,
+      .ws-node-flow-wrap:hover .ws-node-quick-view,
+      .ws-node-function-wrap:hover .ws-node-quick-view,
+      .ws-node-image-wrap:hover .ws-node-quick-view,
+      .ws-node-video-wrap:hover .ws-node-quick-view,
+      .ws-node-text-wrap:hover .ws-node-quick-view,
+      .ws-node-power-wrap:hover .ws-node-quick-view,
+      .ws-node:hover .ws-node-quick-view,
+      .ws-node-quick-view:focus-visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, -50%) scale(1);
+      }
+      .ws-page:not(.is-light) .ws-node-quick-view {
+        border-color: rgba(255, 255, 255, 0.14);
+        background: rgba(24, 24, 27, 0.84);
+        color: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.36);
+      }
+      .ws-page:not(.is-light) .ws-node-quick-view:hover {
+        background: rgba(39, 39, 42, 0.96);
+      }
       .ws-node-floating-label {
         position: absolute;
         bottom: calc(100% + 8px);
@@ -1588,8 +2003,8 @@ export function WorkSpaceStyles() {
         height: 100%;
         border-radius: 16px;
         overflow: hidden;
-        border: 2px solid transparent;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
+        box-shadow: var(--ws-node-shadow);
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
       .ws-node-image-wrap.is-selected .ws-node-image-container,
@@ -1597,7 +2012,7 @@ export function WorkSpaceStyles() {
       .ws-node-video-wrap.is-selected .ws-node-video-container,
       .ws-node-video-wrap:hover .ws-node-video-container {
         border-color: var(--ws-green);
-        box-shadow: 0 0 20px rgba(35,240,165,0.45);
+        box-shadow: var(--ws-node-shadow), 0 0 22px rgba(16,185,129,0.34);
       }
       .ws-node-image-raw,
       .ws-node-video-raw {
@@ -1626,16 +2041,18 @@ export function WorkSpaceStyles() {
 
       .ws-node-text-card,
       .ws-node-power-card {
+        position: relative;
         width: 100%;
         height: 100%;
         background: var(--ws-panel);
-        border: 1px solid var(--ws-border);
+        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
         border-radius: 16px;
         padding: 12px;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        overflow: hidden;
+        box-shadow: var(--ws-node-shadow);
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
       .ws-node-text-card {
@@ -1648,12 +2065,51 @@ export function WorkSpaceStyles() {
       .ws-node-text-wrap.is-selected .ws-node-text-card,
       .ws-node-text-wrap:hover .ws-node-text-card {
         border-color: var(--ws-green);
-        box-shadow: 0 0 20px rgba(35,240,165,0.25);
+        box-shadow: var(--ws-node-shadow), 0 0 22px rgba(16,185,129,0.24);
       }
       .ws-node-power-wrap.is-selected .ws-node-power-card,
       .ws-node-power-wrap:hover .ws-node-power-card {
         border-color: var(--ws-violet);
-        box-shadow: 0 0 20px rgba(167,139,250,0.25);
+        box-shadow: var(--ws-node-shadow), 0 0 22px rgba(124,58,237,0.24);
+      }
+      .ws-node-power-wrap.is-running .ws-node-power-card {
+        border-color: transparent;
+        box-shadow: var(--ws-node-shadow), 0 0 26px rgba(99, 102, 241, 0.28);
+        animation: none;
+      }
+      .ws-node-power-wrap.has-content .ws-node-power-card {
+        justify-content: flex-start;
+        animation: none;
+      }
+      .ws-node-power-wrap.has-media .ws-node-power-card {
+        padding: 0;
+      }
+      .ws-node-running-border {
+        position: absolute;
+        inset: -4px;
+        z-index: 3;
+        width: calc(100% + 8px);
+        height: calc(100% + 8px);
+        overflow: visible;
+        pointer-events: none;
+      }
+      .ws-node-running-track,
+      .ws-node-running-progress {
+        fill: transparent;
+        vector-effect: non-scaling-stroke;
+      }
+      .ws-node-running-track {
+        stroke: rgba(99, 102, 241, 0.12);
+        stroke-width: 5px;
+      }
+      .ws-node-running-progress {
+        stroke: #6366f1;
+        stroke-width: 5px;
+        stroke-linecap: round;
+        filter: drop-shadow(0 0 7px rgba(99, 102, 241, 0.68));
+      }
+      .ws-node-running-border.is-spin .ws-node-running-progress {
+        animation: ws-node-border-spin 1s linear infinite, ws-node-border-breathe 1.2s ease-in-out infinite;
       }
       .ws-node-text-content,
       .ws-node-power-desc {
@@ -1666,25 +2122,98 @@ export function WorkSpaceStyles() {
         -webkit-box-orient: vertical;
         overflow: hidden;
       }
-      .ws-node-power-header {
+      .ws-node-power-wrap.has-content .ws-node-power-desc {
+        display: block;
+        width: 100%;
+        -webkit-line-clamp: unset;
+        color: var(--ws-text);
+        font-size: 12px;
+        line-height: 1.55;
+        text-align: left;
+      }
+      .ws-node-power-empty {
         display: flex;
-        justify-content: space-between;
+        width: 100%;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .ws-node-power-empty span {
+        display: block;
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.38), rgba(148, 163, 184, 0.18));
+        background-size: 180% 100%;
+        animation: ws-node-empty-shimmer 1.9s ease-in-out infinite;
+      }
+      .ws-node-power-empty span:nth-child(1) {
+        width: 88%;
+      }
+      .ws-node-power-empty span:nth-child(2) {
+        width: 68%;
+        animation-delay: 120ms;
+      }
+      .ws-node-power-empty span:nth-child(3) {
+        width: 46%;
+        animation-delay: 240ms;
+      }
+      .ws-node-power-media {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        flex-direction: column;
+        gap: 0;
+      }
+      .ws-node-power-media img,
+      .ws-node-power-media video {
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        border-radius: 14px;
+        object-fit: contain;
+        background: rgba(15, 23, 42, 0.04);
+      }
+      .ws-node-power-media p {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        left: 8px;
+        margin: 0;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.62);
+        color: #fff;
+        padding: 4px 7px;
+        font-size: 10px;
+        line-height: 1.35;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ws-node-power-file {
+        display: flex;
+        min-width: 0;
         align-items: center;
-        margin-bottom: 6px;
+        gap: 8px;
+        color: var(--ws-text);
+        font-size: 11px;
+        font-weight: 750;
       }
-      .ws-node-power-badge {
-        font-size: 8px;
-        font-weight: 800;
-        color: var(--ws-violet);
-        background: rgba(167,139,250,0.12);
-        padding: 2px 6px;
-        border-radius: 4px;
-        border: 1px solid rgba(167,139,250,0.25);
+      .ws-node-power-file span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .ws-node-power-status {
-        font-size: 8px;
-        color: var(--ws-muted);
-        font-weight: 800;
+      @keyframes ws-node-border-spin {
+        to { stroke-dashoffset: -100; }
+      }
+      @keyframes ws-node-border-breathe {
+        0%, 100% { opacity: 0.32; }
+        48% { opacity: 1; }
+      }
+      @keyframes ws-node-empty-shimmer {
+        0%, 100% { background-position: 100% 0; opacity: 0.68; }
+        50% { background-position: 0 0; opacity: 1; }
       }
 
       .ws-page {
@@ -1693,6 +2222,8 @@ export function WorkSpaceStyles() {
         --ws-card-border: rgba(15,23,42,0.1);
         --ws-toolbar: rgba(255,255,255,0.95);
         --ws-toolbar-text: #27272a;
+        --ws-node-border-size: 2px;
+        --ws-node-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
       }
 
       .ws-page.is-dark {
@@ -1701,6 +2232,7 @@ export function WorkSpaceStyles() {
         --ws-card-border: rgba(255,255,255,0.08);
         --ws-toolbar: rgba(9,9,11,0.82);
         --ws-toolbar-text: rgba(255,255,255,0.9);
+        --ws-node-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
       }
 
       @keyframes ws-dashdraw {
@@ -1892,13 +2424,14 @@ export function WorkSpaceStyles() {
 
       .ws-node-bottom-settings {
         position: absolute;
-        top: calc(100% + 16px);
+        top: calc(100% + var(--ws-node-overlay-gap, 16px));
         left: 50%;
         z-index: 50;
         display: flex;
         width: 720px;
         max-width: min(720px, calc(100vw - 48px));
-        transform: translateX(-50%);
+        transform: translateX(-50%) scale(var(--ws-node-overlay-scale, 1));
+        transform-origin: top center;
         flex-direction: column;
         border: 1px solid var(--ws-card-border);
         border-radius: 18px;
@@ -1911,9 +2444,24 @@ export function WorkSpaceStyles() {
         animation: ws-settings-in 200ms ease-out;
       }
 
+      .ws-node-bottom-settings.is-composer {
+        width: 640px;
+        max-width: min(640px, calc(100vw - 48px));
+        border-radius: 18px;
+        padding: 0;
+        background: rgba(255, 255, 255, 0.92);
+        color: #111827;
+        box-shadow: 0 22px 50px rgba(15, 23, 42, 0.14);
+      }
+
+      .ws-page:not(.is-light) .ws-node-bottom-settings.is-composer {
+        background: rgba(24, 27, 34, 0.94);
+        color: var(--ws-toolbar-text);
+      }
+
       @keyframes ws-settings-in {
-        from { opacity: 0; transform: translate(-50%, -8px); }
-        to { opacity: 1; transform: translate(-50%, 0); }
+        from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(var(--ws-node-overlay-scale, 1)); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0) scale(var(--ws-node-overlay-scale, 1)); }
       }
 
       .ws-node-settings-head {
@@ -2079,12 +2627,6 @@ export function WorkSpaceStyles() {
         gap: 12px;
       }
 
-      .ws-node-run-cluster b {
-        color: #10b981;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 14px;
-      }
-
       .ws-node-run-button,
       .ws-node-agent-run {
         border: 0;
@@ -2117,6 +2659,674 @@ export function WorkSpaceStyles() {
         border-color: transparent;
         background: #10b981;
         color: #020617;
+      }
+
+      .ws-prompt-loading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 22px;
+        color: var(--ws-muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .ws-prompt-composer {
+        position: relative;
+        display: flex;
+        min-height: 92px;
+        flex-direction: column;
+        gap: 7px;
+        border-radius: 18px;
+        padding: 10px 12px;
+        overflow: visible;
+      }
+
+      .ws-prompt-main {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        min-width: 0;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .ws-prompt-inline-uploads {
+        display: inline-flex;
+        max-width: min(260px, 38%);
+        flex-shrink: 0;
+        align-items: flex-start;
+        gap: 6px;
+      }
+
+      .ws-prompt-upload-group {
+        position: relative;
+        display: inline-flex;
+        min-width: 0;
+        max-width: min(300px, calc(100vw - 160px));
+        flex-wrap: nowrap;
+        align-items: flex-start;
+        padding: 0 8px 8px 0;
+        overflow: visible;
+        z-index: 2;
+      }
+
+      .ws-prompt-upload-group.has-previews {
+        width: 84px;
+      }
+
+      .ws-prompt-upload-card,
+      .ws-prompt-upload-add {
+        appearance: none;
+        position: relative;
+        display: inline-flex;
+        width: 48px;
+        height: 54px;
+        flex-shrink: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        border: 1px solid rgba(203, 213, 225, 0.82);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #0f172a;
+        padding: 0;
+        font-size: 11px;
+        font-weight: 750;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        transition: margin 160ms ease, transform 160ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-upload-card,
+      .ws-page:not(.is-light) .ws-prompt-upload-add {
+        background: rgba(15, 23, 42, 0.54);
+        color: var(--ws-toolbar-text);
+      }
+
+      .ws-prompt-upload-add {
+        border-style: dashed;
+        color: #64748b;
+        cursor: pointer;
+      }
+
+      .ws-prompt-upload-card {
+        cursor: pointer;
+      }
+
+      .ws-prompt-upload-group.has-previews .ws-prompt-upload-card,
+      .ws-prompt-upload-group.has-previews .ws-prompt-upload-add {
+        margin-left: -22px;
+      }
+
+      .ws-prompt-upload-group.has-previews .ws-prompt-upload-card:first-child {
+        margin-left: 0;
+      }
+
+      .ws-prompt-upload-group.has-previews .ws-prompt-upload-card:nth-child(odd) {
+        transform: rotate(-4deg);
+      }
+
+      .ws-prompt-upload-group.has-previews .ws-prompt-upload-card:nth-child(even) {
+        transform: rotate(4deg);
+      }
+
+      .ws-prompt-upload-group.has-previews .ws-prompt-upload-add {
+        transform: rotate(3deg);
+      }
+
+      .ws-prompt-upload-group.has-previews:hover .ws-prompt-upload-card,
+      .ws-prompt-upload-group.has-previews:focus-within .ws-prompt-upload-card,
+      .ws-prompt-upload-group.has-previews:hover .ws-prompt-upload-add,
+      .ws-prompt-upload-group.has-previews:focus-within .ws-prompt-upload-add {
+        margin-left: 6px;
+        transform: rotate(0deg) translateY(0);
+      }
+
+      .ws-prompt-upload-group.has-previews:hover,
+      .ws-prompt-upload-group.has-previews:focus-within {
+        z-index: 6;
+      }
+
+      .ws-prompt-upload-group.has-previews:hover .ws-prompt-upload-card:first-child,
+      .ws-prompt-upload-group.has-previews:focus-within .ws-prompt-upload-card:first-child {
+        margin-left: 0;
+      }
+
+      .ws-prompt-upload-card:hover,
+      .ws-prompt-upload-add:hover {
+        border-color: rgba(148, 163, 184, 0.95);
+        background: rgba(248, 250, 252, 0.98);
+        color: #334155;
+        transform: translateY(-1px);
+        box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-upload-add:hover {
+        background: rgba(30, 41, 59, 0.9);
+        color: #e2e8f0;
+      }
+
+      .ws-prompt-upload-thumb {
+        position: absolute;
+        inset: 3px;
+        width: calc(100% - 6px);
+        height: calc(100% - 6px);
+        border-radius: 8px;
+        object-fit: cover;
+      }
+
+      .ws-prompt-upload-file {
+        display: inline-flex;
+        width: 36px;
+        height: 36px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.06);
+        color: #64748b;
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-upload-file {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .ws-prompt-upload-name,
+      .ws-prompt-upload-add span {
+        position: relative;
+        z-index: 1;
+        max-width: 46px;
+        overflow: hidden;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-prompt-upload-card .ws-prompt-upload-name {
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        left: 5px;
+        max-width: none;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        padding: 2px 4px;
+        font-size: 10px;
+        opacity: 0;
+        transform: translateY(3px);
+        transition: opacity 120ms ease, transform 120ms ease;
+      }
+
+      .ws-prompt-upload-group:hover .ws-prompt-upload-name,
+      .ws-prompt-upload-group:focus-within .ws-prompt-upload-name {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .ws-prompt-upload-remove {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        display: inline-flex;
+        width: 18px;
+        height: 18px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        background: #fff;
+        color: #64748b;
+        cursor: pointer;
+        opacity: 0;
+        transform: scale(0.86);
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+        transition: opacity 120ms ease, transform 120ms ease;
+        z-index: 8;
+      }
+
+      .ws-prompt-upload-group:hover .ws-prompt-upload-remove,
+      .ws-prompt-upload-group:focus-within .ws-prompt-upload-remove {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      .ws-prompt-upload-remove:disabled,
+      .ws-prompt-upload-add:disabled {
+        cursor: not-allowed;
+        opacity: 0.58;
+        transform: none;
+      }
+
+      .ws-upload-preview-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 74px;
+        background: rgba(248, 250, 252, 0.62);
+        backdrop-filter: blur(18px);
+      }
+
+      .ws-upload-preview-shell {
+        position: relative;
+        display: flex;
+        max-width: min(680px, calc(100vw - 148px));
+        max-height: min(760px, calc(100vh - 96px));
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .ws-upload-preview-title {
+        display: flex;
+        max-width: 520px;
+        flex-direction: column;
+        gap: 4px;
+        color: #0f172a;
+      }
+
+      .ws-upload-preview-title span {
+        color: #64748b;
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .ws-upload-preview-title strong {
+        overflow: hidden;
+        font-size: 18px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-upload-preview-body {
+        display: flex;
+        min-width: 320px;
+        min-height: 280px;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 28px 70px rgba(15, 23, 42, 0.22);
+      }
+
+      .ws-upload-preview-body img {
+        display: block;
+        max-width: 100%;
+        max-height: min(680px, calc(100vh - 178px));
+        border-radius: 20px;
+        object-fit: contain;
+      }
+
+      .ws-upload-preview-file {
+        display: flex;
+        width: min(420px, calc(100vw - 180px));
+        min-height: 280px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: #0f172a;
+        padding: 34px;
+      }
+
+      .ws-upload-preview-file svg {
+        color: #64748b;
+      }
+
+      .ws-upload-preview-file span {
+        max-width: 100%;
+        overflow: hidden;
+        font-size: 16px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-upload-preview-file small {
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .ws-upload-preview-actions {
+        position: absolute;
+        top: 0;
+        left: calc(100% + 14px);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .ws-upload-preview-actions button,
+      .ws-upload-preview-actions a {
+        display: inline-flex;
+        width: 48px;
+        height: 48px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(203, 213, 225, 0.88);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #0f172a;
+        cursor: pointer;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      }
+
+      .ws-upload-preview-actions button:hover,
+      .ws-upload-preview-actions a:hover {
+        transform: translateY(-1px);
+        border-color: rgba(148, 163, 184, 0.95);
+        background: #fff;
+      }
+
+      @media (max-width: 760px) {
+        .ws-upload-preview-backdrop {
+          padding: 24px;
+        }
+
+        .ws-upload-preview-shell {
+          max-width: calc(100vw - 48px);
+          max-height: calc(100vh - 48px);
+        }
+
+        .ws-upload-preview-actions {
+          top: auto;
+          bottom: 12px;
+          left: 50%;
+          flex-direction: row;
+          transform: translateX(-50%);
+        }
+      }
+
+      .ws-prompt-editor-shell {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        border-radius: 12px;
+      }
+
+      .ws-prompt-composer.is-running .ws-prompt-editor-shell::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.1), transparent);
+        transform: translateX(-100%);
+        animation: ws-prompt-loading-sweep 1.4s ease-in-out infinite;
+      }
+
+      .ws-prompt-composer.is-running .ws-prompt-editor {
+        opacity: 0.7;
+      }
+
+      .ws-prompt-editor {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        min-height: 40px;
+        resize: none;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 6px 2px 4px;
+        font: inherit;
+        font-size: 14px;
+        line-height: 1.5;
+        outline: none;
+      }
+
+      .ws-prompt-editor::placeholder {
+        color: rgba(100, 116, 139, 0.86);
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-editor::placeholder {
+        color: rgba(148, 163, 184, 0.72);
+      }
+
+      .ws-prompt-toolbar {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .ws-prompt-tools {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        align-items: center;
+        gap: 6px;
+        overflow: visible;
+      }
+
+      .ws-prompt-tool-wrap {
+        position: relative;
+        display: inline-flex;
+        min-width: 0;
+        flex-shrink: 0;
+        align-items: center;
+      }
+
+      .ws-prompt-tool-wrap.is-open::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: 100%;
+        z-index: 79;
+        width: max(100%, 238px);
+        height: 14px;
+        pointer-events: auto;
+      }
+
+      .ws-prompt-tool {
+        display: inline-flex;
+        max-width: 190px;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        background: transparent;
+        color: #0f172a;
+        padding: 0 6px;
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-tool {
+        background: transparent;
+        color: var(--ws-toolbar-text);
+      }
+
+      .ws-prompt-tool:hover,
+      .ws-prompt-tool.is-open,
+      .ws-prompt-tool.is-filled {
+        border-color: transparent;
+        background: rgba(15, 23, 42, 0.045);
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-tool:hover,
+      .ws-page:not(.is-light) .ws-prompt-tool.is-open,
+      .ws-page:not(.is-light) .ws-prompt-tool.is-filled {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .ws-prompt-tool span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-prompt-popover {
+        position: absolute;
+        bottom: calc(100% + 10px);
+        left: 0;
+        z-index: 80;
+        width: 238px;
+        max-width: min(238px, calc(100vw - 64px));
+        border: 1px solid rgba(203, 213, 225, 0.78);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.98);
+        padding: 7px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+        backdrop-filter: blur(18px);
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-popover {
+        background: rgba(17, 24, 39, 0.96);
+      }
+
+      .ws-prompt-menu-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .ws-prompt-menu-item {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        padding: 10px 9px;
+        text-align: left;
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+
+      .ws-prompt-menu-item:hover,
+      .ws-prompt-menu-item.is-active {
+        background: rgba(241, 245, 249, 0.96);
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-menu-item:hover,
+      .ws-page:not(.is-light) .ws-prompt-menu-item.is-active {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .ws-prompt-param-input,
+      .ws-prompt-param-textarea {
+        width: 100%;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 9px;
+        background: rgba(248, 250, 252, 0.94);
+        color: #0f172a;
+        padding: 9px 10px;
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+
+      .ws-prompt-param-textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+
+      .ws-page:not(.is-light) .ws-prompt-param-input,
+      .ws-page:not(.is-light) .ws-prompt-param-textarea {
+        background: rgba(15, 23, 42, 0.72);
+        color: var(--ws-toolbar-text);
+      }
+
+      .ws-prompt-switch {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        border: 0;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.06);
+        color: inherit;
+        padding: 10px;
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+
+      .ws-prompt-switch i {
+        position: relative;
+        width: 42px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(100, 116, 139, 0.26);
+        transition: background 140ms ease;
+      }
+
+      .ws-prompt-switch i::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.22);
+        transition: transform 140ms ease;
+      }
+
+      .ws-prompt-switch.is-on i {
+        background: #111827;
+      }
+
+      .ws-prompt-switch.is-on i::after {
+        transform: translateX(18px);
+      }
+
+      .ws-prompt-submit-group {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .ws-prompt-submit {
+        display: inline-flex;
+        width: 36px;
+        height: 36px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 999px;
+        background: #111827;
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 14px 30px rgba(17, 24, 39, 0.22);
+        transition: transform 120ms ease, opacity 120ms ease, background 120ms ease;
+      }
+
+      .ws-prompt-submit:hover {
+        background: #020617;
+        transform: translateY(-1px);
+      }
+
+      .ws-prompt-tool:disabled,
+      .ws-prompt-submit:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+        transform: none;
+      }
+
+      @keyframes ws-prompt-loading-sweep {
+        to { transform: translateX(100%); }
       }
 
       .ws-canvas-wrap.is-dragging .ws-node-top-toolbar,
