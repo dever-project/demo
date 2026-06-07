@@ -2181,36 +2181,40 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: center;
       }
-      .ws-node-circle {
+       .ws-node-circle {
         width: 120px;
         height: 120px;
         border-radius: 999px;
         background: var(--ws-panel);
-        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--ws-border);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
-        box-shadow: var(--ws-node-shadow);
-        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+        transition: all 0.25s ease;
       }
       .ws-node-agent-wrap.is-selected .ws-node-circle,
       .ws-node-circle:hover {
-        border-color: var(--ws-amber);
-        box-shadow: var(--ws-node-shadow), 0 0 22px rgba(245,158,11,0.34);
-        transform: scale(1.03);
+        border-color: var(--ws-border-strong);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+        transform: scale(1.02);
       }
       .ws-node-circle-avatar {
-        width: 48px;
-        height: 48px;
+        width: 44px;
+        height: 44px;
         border-radius: 999px;
-        background: rgba(245,181,68,0.1);
-        border: 1px solid rgba(245,181,68,0.25);
+        background: rgba(0, 0, 0, 0.02);
+        border: 1px solid var(--ws-border);
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: 4px;
+        margin-bottom: 6px;
+      }
+      .ws-page.is-dark .ws-node-circle-avatar {
+        background: rgba(255, 255, 255, 0.04);
       }
       .ws-node-circle-title {
         font-size: 11px;
