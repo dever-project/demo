@@ -507,24 +507,20 @@ export function WorkSpaceStyles() {
         display: flex;
         width: 286px;
         flex-direction: column;
-        border-right: 1px solid rgba(15, 23, 42, 0.08);
-        background: rgba(239, 241, 238, 0.86);
-        color: #111827;
-        padding: 18px 16px;
-      }
-
-      .ws-page.is-dark .ws-cate-sidebar {
-        border-right-color: rgba(255, 255, 255, 0.08);
-        background: rgba(18, 21, 24, 0.86);
-        color: #f8fafc;
+        border-right: 1px solid var(--ws-border);
+        background: var(--ws-panel);
+        backdrop-filter: blur(24px);
+        color: var(--ws-text);
+        padding: 24px 20px;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
       }
 
       .ws-cate-brand {
         display: flex;
         min-height: 38px;
         align-items: center;
-        gap: 10px;
-        margin-bottom: 20px;
+        gap: 12px;
+        margin-bottom: 24px;
       }
 
       .ws-sidebar-home {
@@ -535,18 +531,18 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: center;
         border: 0;
-        border-radius: 10px;
+        border-radius: 8px;
         background: transparent;
         color: inherit;
         cursor: pointer;
+        transition: background-color 0.2s ease;
       }
 
       .ws-sidebar-home:hover {
-        background: rgba(15, 23, 42, 0.06);
+        background: rgba(0, 0, 0, 0.03);
       }
-
       .ws-page.is-dark .ws-sidebar-home:hover {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.05);
       }
 
       .ws-sidebar-project {
@@ -557,26 +553,15 @@ export function WorkSpaceStyles() {
         gap: 2px;
       }
 
-      .ws-sidebar-project strong,
-      .ws-sidebar-project span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
       .ws-sidebar-project strong {
         font-size: 14px;
-        font-weight: 820;
+        font-weight: 600;
+        color: var(--ws-text);
       }
 
       .ws-sidebar-project span {
-        color: #7b8492;
+        color: var(--ws-muted);
         font-size: 12px;
-        font-weight: 650;
-      }
-
-      .ws-page.is-dark .ws-sidebar-project span {
-        color: rgba(248, 250, 252, 0.48);
       }
 
       .ws-cate-nav {
@@ -586,44 +571,44 @@ export function WorkSpaceStyles() {
         flex-direction: column;
         gap: 6px;
         overflow-y: auto;
-        padding-right: 2px;
       }
 
       .ws-cate-nav-item {
         display: flex;
         width: 100%;
-        min-height: 42px;
+        min-height: 40px;
         align-items: center;
         gap: 12px;
         border: 0;
-        border-radius: 8px;
+        border-radius: 10px;
         background: transparent;
-        color: #151a22;
+        color: var(--ws-muted);
         padding: 0 14px;
         text-align: left;
         cursor: pointer;
-        transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+        transition: all 0.2s ease;
       }
 
-      .ws-page.is-dark .ws-cate-nav-item {
-        color: rgba(248, 250, 252, 0.72);
+      .ws-cate-nav-item:hover {
+        background: rgba(0, 0, 0, 0.02);
+        color: var(--ws-text);
+      }
+      .ws-page.is-dark .ws-cate-nav-item:hover {
+        background: rgba(255, 255, 255, 0.03);
       }
 
-      .ws-cate-nav-item:hover,
       .ws-cate-nav-item.is-active {
-        background: rgba(255, 255, 255, 0.74);
-        color: #050609;
+        background: rgba(0, 0, 0, 0.04) !important;
+        color: var(--ws-text) !important;
+        font-weight: 500;
       }
-
-      .ws-page.is-dark .ws-cate-nav-item:hover,
       .ws-page.is-dark .ws-cate-nav-item.is-active {
-        background: rgba(255, 255, 255, 0.1);
-        color: #fff;
+        background: rgba(255, 255, 255, 0.08) !important;
       }
 
       .ws-cate-nav-item svg {
         flex: 0 0 auto;
-        stroke-width: 1.9;
+        stroke-width: 1.8;
       }
 
       .ws-cate-nav-item span {
@@ -631,8 +616,7 @@ export function WorkSpaceStyles() {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-size: 14px;
-        font-weight: 720;
+        font-size: 13px;
       }
 
       .ws-workspace-overlay {
