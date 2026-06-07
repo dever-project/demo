@@ -599,12 +599,12 @@ export function WorkSpaceStyles() {
 
       .ws-workspace-overlay {
         position: absolute;
-        inset: 60px 0 0 286px;
+        inset: 64px 0 0 286px;
         z-index: 23;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 0 24px 24px;
+        padding: 24px;
         pointer-events: auto;
       }
 
@@ -614,60 +614,49 @@ export function WorkSpaceStyles() {
 
       .ws-asset-editor-shell {
         display: grid;
-        width: min(1268px, calc(100vw - 334px));
-        height: min(798px, calc(100vh - 92px));
+        width: min(100%, 1200px);
+        height: 100%;
         overflow: hidden;
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        border-radius: 14px;
-        background: rgba(248, 249, 247, 0.94);
-        box-shadow: 0 22px 70px rgba(15, 23, 42, 0.12);
-        color: #1f2933;
+        border: 1px solid var(--ws-border);
+        border-radius: 16px;
+        background: var(--ws-panel);
+        backdrop-filter: blur(24px);
+        box-shadow: var(--ws-shadow);
+        color: var(--ws-text);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
       }
 
       .ws-page.is-free-space .ws-asset-editor-shell,
       .ws-page.is-free-space .ws-create-card,
       .ws-page.is-free-space .ws-chat-stage {
-        width: min(1120px, calc(100vw - 48px));
-      }
-
-      .ws-page.is-dark .ws-asset-editor-shell {
-        border-color: rgba(255, 255, 255, 0.08);
-        background: rgba(22, 24, 28, 0.9);
-        box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
-        color: #f8fafc;
+        width: min(100%, 1120px);
       }
 
       .ws-asset-editor-shell.has-list {
-        grid-template-columns: 236px minmax(0, 1fr);
+        grid-template-columns: 240px minmax(0, 1fr);
       }
 
       .ws-asset-editor-shell.is-single {
-        width: min(990px, calc(100vw - 334px));
+        width: min(100%, 900px);
       }
 
       .ws-asset-list-pane {
         display: flex;
         min-width: 0;
         flex-direction: column;
-        border-right: 1px solid rgba(15,23,42,0.08);
-        background: rgba(236, 239, 235, 0.7);
-        padding: 18px 10px;
+        border-right: 1px solid var(--ws-border);
+        background: rgba(0, 0, 0, 0.01);
+        padding: 20px 12px;
       }
-
       .ws-page.is-dark .ws-asset-list-pane {
-        border-right-color: rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.035);
+        background: rgba(255, 255, 255, 0.005);
       }
 
       .ws-asset-list-title {
-        padding: 0 10px 14px;
-        color: #111827;
-        font-size: 15px;
-        font-weight: 850;
-      }
-
-      .ws-page.is-dark .ws-asset-list-title {
-        color: #f8fafc;
+        padding: 0 12px 16px;
+        color: var(--ws-text);
+        font-size: 14px;
+        font-weight: 600;
       }
 
       .ws-asset-list {
@@ -675,40 +664,41 @@ export function WorkSpaceStyles() {
         min-height: 0;
         flex: 1;
         flex-direction: column;
-        gap: 6px;
+        gap: 4px;
         overflow-y: auto;
       }
 
       .ws-asset-list-item {
         display: flex;
-        min-height: 50px;
+        min-height: 48px;
         flex-direction: column;
         align-items: flex-start;
         justify-content: center;
-        gap: 3px;
+        gap: 2px;
         border: 0;
-        border-radius: 10px;
+        border-radius: 8px;
         background: transparent;
-        color: #374151;
-        padding: 8px 10px;
+        color: var(--ws-muted);
+        padding: 8px 12px;
         text-align: left;
         cursor: pointer;
+        transition: all 0.2s ease;
       }
 
-      .ws-asset-list-item:hover,
+      .ws-asset-list-item:hover {
+        background: rgba(0, 0, 0, 0.02);
+        color: var(--ws-text);
+      }
+      .ws-page.is-dark .ws-asset-list-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
       .ws-asset-list-item.is-active {
-        background: rgba(255,255,255,0.82);
-        color: #111827;
+        background: rgba(0, 0, 0, 0.04) !important;
+        color: var(--ws-text) !important;
       }
-
-      .ws-page.is-dark .ws-asset-list-item {
-        color: rgba(248, 250, 252, 0.68);
-      }
-
-      .ws-page.is-dark .ws-asset-list-item:hover,
       .ws-page.is-dark .ws-asset-list-item.is-active {
-        background: rgba(255, 255, 255, 0.08);
-        color: #fff;
+        background: rgba(255, 255, 255, 0.08) !important;
       }
 
       .ws-asset-list-item span {
@@ -717,17 +707,18 @@ export function WorkSpaceStyles() {
         text-overflow: ellipsis;
         white-space: nowrap;
         font-size: 13px;
-        font-weight: 760;
+        font-weight: 500;
       }
 
       .ws-asset-list-item small,
       .ws-asset-list-empty {
-        color: #8b96a8;
-        font-size: 11px;
+        color: var(--ws-muted);
+        font-size: 10px;
+        opacity: 0.8;
       }
 
       .ws-asset-list-empty {
-        padding: 10px;
+        padding: 12px;
       }
 
       .ws-asset-editor {
@@ -735,61 +726,47 @@ export function WorkSpaceStyles() {
         min-width: 0;
         min-height: 0;
         flex-direction: column;
-        background:
-          radial-gradient(circle at 50% 0%, rgba(255,255,255,0.88), transparent 32%),
-          #f7f7f4;
-      }
-
-      .ws-page.is-dark .ws-asset-editor {
-        background: #202226;
+        background: transparent;
+        align-items: center;
+        overflow-y: auto;
       }
 
       .ws-asset-editor-head {
         display: flex;
         height: 58px;
+        width: 100%;
         align-items: center;
-        gap: 10px;
-        border-bottom: 1px solid rgba(15,23,42,0.07);
+        gap: 8px;
+        border-bottom: 1px solid var(--ws-border);
         padding: 0 28px;
-      }
-
-      .ws-page.is-dark .ws-asset-editor-head {
-        border-bottom-color: rgba(255, 255, 255, 0.08);
+        flex-shrink: 0;
       }
 
       .ws-asset-editor-head span {
-        color: #667085;
+        color: var(--ws-muted);
         font-size: 13px;
       }
 
       .ws-asset-editor-head strong {
-        color: #111827;
-        font-size: 15px;
-      }
-
-      .ws-page.is-dark .ws-asset-editor-head strong {
-        color: #f8fafc;
+        color: var(--ws-text);
+        font-size: 14px;
+        font-weight: 600;
       }
 
       .ws-asset-editor textarea {
-        min-height: 0;
+        width: min(100%, 800px);
+        margin: 40px auto;
+        min-height: 600px;
         flex: 1;
         resize: none;
         border: 0;
         outline: none;
-        background:
-          linear-gradient(rgba(255,255,255,0.58), rgba(255,255,255,0.58)),
-          radial-gradient(circle at 30% 20%, rgba(17,24,39,0.035), transparent 28%);
-        color: #1f2933;
-        padding: 54px min(12vw, 150px);
-        font-family: "Songti SC", "STSong", Georgia, serif;
-        font-size: 19px;
-        line-height: 2.05;
-      }
-
-      .ws-page.is-dark .ws-asset-editor textarea {
-        background: rgba(255, 255, 255, 0.045);
-        color: rgba(248, 250, 252, 0.9);
+        background: transparent;
+        color: var(--ws-text);
+        padding: 24px;
+        font-family: Georgia, "Nimbus Roman No9 L", "Songti SC", "STSong", serif;
+        font-size: 16px;
+        line-height: 1.8;
       }
 
       .ws-create-card {
