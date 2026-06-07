@@ -44,7 +44,6 @@ import {
   Eye,
   FileText,
   FileSearch,
-  Folder,
   GitBranch,
   Grid,
   History,
@@ -53,7 +52,6 @@ import {
   Loader2,
   Map as MapIcon,
   Maximize2,
-  MessageSquare,
   Minus,
   Moon,
   MoreHorizontal,
@@ -135,7 +133,7 @@ import {
   isUploadPowerParam,
 } from "./space-prompt-composer";
 
-type PanelMode = "assets" | "create" | "chat" | null;
+type WorkMode = "assets" | "create" | "chat" | "canvas";
 type WorkSpaceTheme = "dark" | "light";
 type RunningNodeState = {
   nodeId: string;
@@ -264,7 +262,7 @@ export function WorkSpacePage() {
     Record<string, SpaceCanvasState>
   >({});
   const [prompt, setPrompt] = useState("");
-  const [panelMode, setPanelMode] = useState<PanelMode>(null);
+  const [workMode, setWorkMode] = useState<WorkMode>("assets");
   const [theme, setTheme] = useState<WorkSpaceTheme>(() => readStoredTheme());
   const [nodeMenu, setNodeMenu] = useState<AddNodeMenuState | null>(null);
   const [powers, setPowers] = useState<PowerOption[]>([]);
@@ -298,6 +296,11 @@ export function WorkSpacePage() {
       setCanvasStates(nextSpace.canvases || {});
       loadedCanvasesRef.current = serializeCanvasMap(nextSpace.canvases || {});
       setActiveCateId(defaultAssetCateId(nextSpace));
+      setWorkMode((current) =>
+        nextSpace.assetCates.length === 0 && current === "assets"
+          ? "canvas"
+          : current,
+      );
       setPowers(nextSpace.powers || []);
       setPowerKinds(nextSpace.powerKinds || []);
     } catch (err) {
@@ -312,6 +315,7 @@ export function WorkSpacePage() {
   }, [loadSpace]);
 
   const cates = useMemo(() => (space ? visibleAssetCates(space) : []), [space]);
+  const hasAssetCates = space ? space.assetCates.length > 0 : false;
   const activeCate = useMemo(
     () => (space ? assetCateById(space, activeCateId) : null),
     [activeCateId, space],
@@ -436,7 +440,6 @@ export function WorkSpacePage() {
     setActiveCateId(cateId);
     setSelectedNodeId("");
     setFocusNodeRequest(null);
-    setPanelMode(null);
     setNodeMenu(null);
     setRunStatus("");
   }
@@ -502,7 +505,7 @@ export function WorkSpacePage() {
       setSelectedNodeId(node.id);
       focusCanvasNode(node.id);
     }
-    setPanelMode(null);
+    setWorkMode("canvas");
     setNodeMenu(null);
   }
 
@@ -564,7 +567,7 @@ export function WorkSpacePage() {
 
   function openImportPicker() {
     setNodeMenu(null);
-    setPanelMode(null);
+    setWorkMode("canvas");
     setImportPickerSignal((current) => current + 1);
   }
 
@@ -599,38 +602,13 @@ export function WorkSpacePage() {
     position: CanvasPoint,
     connection?: PendingNodeConnection,
   ) {
-    setPanelMode(null);
+    setWorkMode("canvas");
     setNodeMenu({
       x: screen.x,
       y: screen.y,
       position,
       view: "types",
       connection,
-    });
-    void loadPowerCatalog();
-  }
-
-  function openDockNodeMenu() {
-    openNodeMenu(
-      { x: 92, y: 122 },
-      defaultNodePosition(activeCanvas.nodes.length),
-    );
-  }
-
-  function openNodeTypePicker(
-    type: SpaceCanvasNode["type"],
-    screen?: CanvasPoint,
-    position?: CanvasPoint,
-  ) {
-    const menuScreen = screen || { x: 112, y: 122 };
-    const menuPosition =
-      position || defaultNodePosition(activeCanvas.nodes.length);
-    setPanelMode(null);
-    setNodeMenu({
-      x: menuScreen.x,
-      y: menuScreen.y,
-      position: menuPosition,
-      view: nodeMenuViewForType(type),
     });
     void loadPowerCatalog();
   }
@@ -745,10 +723,13 @@ export function WorkSpacePage() {
   }
 
   return (
-    <main className={`ws-page is-${theme}`}>
+    <main
+      className={`ws-page is-${theme} ${hasAssetCates ? "has-cate-sidebar" : "is-free-space"}`}
+    >
       <WorkSpaceStyles />
       <CanvasWorkbench
         activeCate={activeCate}
+        interactive={workMode === "canvas"}
         nodes={canvasModel.nodes}
         edges={canvasModel.edges}
         viewport={activeCanvas.viewport}
@@ -787,25 +768,26 @@ export function WorkSpacePage() {
 
       <TopCanvasToolbar
         space={space}
-        cates={cates}
-        activeCate={activeCate}
-        onBack={() => navigate({ to: "/work/home" })}
+        mode={workMode}
         onRefresh={loadSpace}
-        onSelectCate={switchCate}
+        onSelectMode={(mode) => {
+          setWorkMode(mode);
+          setNodeMenu(null);
+          setRunStatus("");
+        }}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
 
-      <LeftCanvasDock panelMode={panelMode} onOpenPanel={setPanelMode} />
-
-      <button
-        type="button"
-        className="ws-assistant-ball"
-        onClick={() => setPanelMode(panelMode === "chat" ? null : "chat")}
-        aria-label="沟通角色"
-      >
-        <MessageSquare size={22} />
-      </button>
+      {hasAssetCates ? (
+        <AssetCateSidebar
+          space={space}
+          cates={cates}
+          activeCate={activeCate}
+          onBack={() => navigate({ to: "/work/home" })}
+          onSelectCate={switchCate}
+        />
+      ) : null}
 
       <div className="ws-import-composer-host" aria-hidden="true">
         <PromptComposer
@@ -826,31 +808,28 @@ export function WorkSpacePage() {
         />
       </div>
 
-      {panelMode === "assets" ? (
-        <AssetWorkspacePanel
-          space={space}
-          activeCate={activeCate}
-          onClose={() => setPanelMode(null)}
-        />
+      {workMode === "assets" ? (
+        <AssetWorkspacePanel space={space} activeCate={activeCate} />
       ) : null}
 
-      {panelMode === "create" ? (
+      {workMode === "create" ? (
         <CreationWorkspacePanel
           flows={activeFlows}
           running={running}
-          onClose={() => setPanelMode(null)}
-          onOpenCanvasMenu={openDockNodeMenu}
+          onEnterCanvas={() => {
+            setWorkMode("canvas");
+            setNodeMenu(null);
+          }}
           onRunFlow={executeFlow}
         />
       ) : null}
 
-      {panelMode === "chat" ? (
+      {workMode === "chat" ? (
         <CommunicationWorkspacePanel
           activeCate={activeCate}
           prompt={prompt}
           running={running}
           runStatus={runStatus}
-          onClose={() => setPanelMode(null)}
           onPromptChange={setPrompt}
           onSubmitMessage={submitMessage}
         />
@@ -897,73 +876,22 @@ export function WorkSpacePage() {
 
 function TopCanvasToolbar({
   space,
-  cates,
-  activeCate,
-  onBack,
+  mode,
   onRefresh,
-  onSelectCate,
+  onSelectMode,
   theme,
   onToggleTheme,
 }: {
   space: SpaceBootstrap;
-  cates: AssetCate[];
-  activeCate: AssetCate;
-  onBack: () => void;
+  mode: WorkMode;
   onRefresh: () => void;
-  onSelectCate: (cateId: number) => void;
+  onSelectMode: (mode: WorkMode) => void;
   theme: WorkSpaceTheme;
   onToggleTheme: () => void;
 }) {
-  const activeIndex = Math.max(
-    0,
-    cates.findIndex((cate) => cate.id === activeCate.id),
-  );
   return (
     <header className="ws-topbar">
-      <div className="ws-top-left">
-        <button
-          type="button"
-          className="ws-back"
-          onClick={onBack}
-          aria-label="返回工作台"
-        >
-          <ArrowLeft size={17} />
-        </button>
-        <div className="ws-project-meta">
-          <div className="ws-project-title">{space.project.name}</div>
-          <div className="ws-project-subtitle">
-            <span>
-              {space.team.name || space.project.team?.name || "自由团队"}
-            </span>
-            {space.release.version ? (
-              <span>v{space.release.version}</span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <nav
-        className="ws-cate-strip"
-        aria-label="资产分类"
-        style={
-          {
-            "--ws-cate-total": Math.max(cates.length, 1),
-            "--ws-cate-active": activeIndex,
-          } as CSSProperties
-        }
-      >
-        <span className="ws-cate-indicator" />
-        {cates.map((cate) => (
-          <button
-            key={cate.id}
-            type="button"
-            className={`ws-cate ${cate.id === activeCate.id ? "is-active" : ""}`}
-            onClick={() => onSelectCate(cate.id)}
-          >
-            <span className="ws-cate-name">{cate.name}</span>
-          </button>
-        ))}
-      </nav>
+      <ModeSwitch mode={mode} onSelectMode={onSelectMode} />
 
       <div className="ws-top-actions">
         <div className="ws-team-pill">
@@ -980,6 +908,50 @@ function TopCanvasToolbar({
         </button>
       </div>
     </header>
+  );
+}
+
+const workModeOptions: { key: WorkMode; label: string }[] = [
+  { key: "assets", label: "资产" },
+  { key: "create", label: "创作" },
+  { key: "chat", label: "沟通" },
+];
+
+function ModeSwitch({
+  mode,
+  onSelectMode,
+}: {
+  mode: WorkMode;
+  onSelectMode: (mode: WorkMode) => void;
+}) {
+  const activeMode = mode === "canvas" ? "create" : mode;
+  const activeIndex = Math.max(
+    0,
+    workModeOptions.findIndex((item) => item.key === activeMode),
+  );
+  return (
+    <nav
+      className="ws-mode-switch"
+      aria-label="工作模式"
+      style={
+        {
+          "--ws-mode-total": workModeOptions.length,
+          "--ws-mode-active": activeIndex,
+        } as CSSProperties
+      }
+    >
+      <span className="ws-mode-indicator" />
+      {workModeOptions.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          className={`ws-mode ${item.key === activeMode ? "is-active" : ""}`}
+          onClick={() => onSelectMode(item.key)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -1196,68 +1168,91 @@ function isAddMenuAction(
   return "className" in item;
 }
 
-function LeftCanvasDock({
-  panelMode,
-  onOpenPanel,
+function AssetCateSidebar({
+  space,
+  cates,
+  activeCate,
+  onBack,
+  onSelectCate,
 }: {
-  panelMode: PanelMode;
-  onOpenPanel: (mode: PanelMode) => void;
+  space: SpaceBootstrap;
+  cates: AssetCate[];
+  activeCate: AssetCate;
+  onBack: () => void;
+  onSelectCate: (cateId: number) => void;
 }) {
   return (
-    <aside className="ws-dock ws-glass-panel" aria-label="画布工具">
-      <DockButton
-        active={panelMode === "assets"}
-        icon={Folder}
-        label="资产"
-        onClick={() => onOpenPanel(panelMode === "assets" ? null : "assets")}
-      />
-      <DockButton
-        active={panelMode === "create"}
-        icon={PenTool}
-        label="创作"
-        onClick={() => onOpenPanel(panelMode === "create" ? null : "create")}
-      />
-      <DockButton
-        active={panelMode === "chat"}
-        icon={MessageSquare}
-        label="沟通"
-        onClick={() => onOpenPanel(panelMode === "chat" ? null : "chat")}
-      />
+    <aside className="ws-cate-sidebar" aria-label="资产分类">
+      <div className="ws-cate-brand">
+        <button
+          type="button"
+          className="ws-sidebar-home"
+          onClick={onBack}
+          aria-label="返回工作台"
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <div className="ws-sidebar-project">
+          <strong>{space.project.name}</strong>
+          <span>{space.team.name || space.project.team?.name || "自由团队"}</span>
+        </div>
+      </div>
+      <nav className="ws-cate-nav custom-scrollbar">
+        {cates.map((cate, index) => (
+          <CateNavItem
+            key={cate.id}
+            cate={cate}
+            active={cate.id === activeCate.id}
+            icon={assetCateIcon(cate, index)}
+            onClick={() => onSelectCate(cate.id)}
+          />
+        ))}
+      </nav>
     </aside>
   );
 }
 
-function DockButton({
+function CateNavItem({
   active,
   icon: Icon,
-  label,
+  cate,
   onClick,
 }: {
   active: boolean;
   icon: LucideIcon;
-  label: string;
+  cate: AssetCate;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      className={`ws-dock-button ${active ? "is-active" : ""}`}
+      className={`ws-cate-nav-item ${active ? "is-active" : ""}`}
       onClick={onClick}
     >
       <Icon size={18} />
-      <span>{label}</span>
+      <span>{cate.name}</span>
     </button>
   );
+}
+
+function assetCateIcon(cate: AssetCate, index: number): LucideIcon {
+  const name = cate.name || "";
+  if (/章|节|剧本|文章|大纲/.test(name)) return FileText;
+  if (/角色|人物|人/.test(name)) return Users;
+  if (/世界|地点|场景/.test(name)) return Compass;
+  if (/图|图片|画/.test(name)) return ImageIcon;
+  if (/视频|短剧|分镜/.test(name)) return Tv;
+  if (/灵感|想法/.test(name)) return Sparkles;
+  const icons = [FileText, Sparkles, Users, Compass, Layers, Grid];
+  return icons[index % icons.length];
 }
 
 function AssetWorkspacePanel({
   space,
   activeCate,
-  onClose,
 }: {
   space: SpaceBootstrap;
   activeCate: AssetCate;
-  onClose: () => void;
 }) {
   const assets = assetsForCate(space, activeCate.id);
   const showList = activeCate.cardinality !== "single" || assets.length > 1;
@@ -1270,7 +1265,7 @@ function AssetWorkspacePanel({
   }, [activeCate.id, assets[0]?.id]);
 
   return (
-    <WorkspaceOverlay onClose={onClose} className="ws-asset-workspace">
+    <WorkspaceSurface className="ws-asset-workspace">
       <section
         className={`ws-asset-editor-shell ${showList ? "has-list" : "is-single"}`}
       >
@@ -1300,33 +1295,28 @@ function AssetWorkspacePanel({
         ) : null}
         <AssetEditorSurface activeCate={activeCate} asset={selectedAsset} />
       </section>
-    </WorkspaceOverlay>
+    </WorkspaceSurface>
   );
 }
 
 function CreationWorkspacePanel({
   flows,
   running,
-  onClose,
-  onOpenCanvasMenu,
+  onEnterCanvas,
   onRunFlow,
 }: {
   flows: TeamFlow[];
   running: boolean;
-  onClose: () => void;
-  onOpenCanvasMenu: () => void;
+  onEnterCanvas: () => void;
   onRunFlow: (flow: TeamFlow) => void;
 }) {
   return (
-    <WorkspaceOverlay onClose={onClose} className="ws-create-workspace">
+    <WorkspaceSurface className="ws-create-workspace">
       <section className="ws-create-card">
         <button
           type="button"
           className="ws-create-option is-canvas"
-          onClick={() => {
-            onClose();
-            onOpenCanvasMenu();
-          }}
+          onClick={onEnterCanvas}
         >
           <span>自由画布</span>
           <small>添加资产、能力、控制节点并自由连线。</small>
@@ -1351,7 +1341,7 @@ function CreationWorkspacePanel({
           )}
         </div>
       </section>
-    </WorkspaceOverlay>
+    </WorkspaceSurface>
   );
 }
 
@@ -1360,7 +1350,6 @@ function CommunicationWorkspacePanel({
   prompt,
   running,
   runStatus,
-  onClose,
   onPromptChange,
   onSubmitMessage,
 }: {
@@ -1368,12 +1357,11 @@ function CommunicationWorkspacePanel({
   prompt: string;
   running: boolean;
   runStatus: string;
-  onClose: () => void;
   onPromptChange: (value: string) => void;
   onSubmitMessage: () => void;
 }) {
   return (
-    <WorkspaceOverlay onClose={onClose} className="ws-communication-workspace">
+    <WorkspaceSurface className="ws-communication-workspace">
       <section className="ws-chat-stage">
         <div className="ws-chat-thread">
           <div className="ws-chat-message is-assistant">
@@ -1411,29 +1399,19 @@ function CommunicationWorkspacePanel({
           </div>
         </div>
       </section>
-    </WorkspaceOverlay>
+    </WorkspaceSurface>
   );
 }
 
-function WorkspaceOverlay({
-  onClose,
+function WorkspaceSurface({
   className,
   children,
 }: {
-  onClose: () => void;
   className?: string;
   children: ReactNode;
 }) {
   return (
     <div className={`ws-workspace-overlay ${className || ""}`.trim()}>
-      <button
-        type="button"
-        className="ws-workspace-close"
-        onClick={onClose}
-        aria-label="关闭"
-      >
-        <X size={18} />
-      </button>
       {children}
     </div>
   );
@@ -1484,6 +1462,7 @@ function assetContentText(asset: ProjectAsset | null) {
 
 function CanvasWorkbench({
   activeCate,
+  interactive,
   nodes,
   edges,
   viewport,
@@ -1506,6 +1485,7 @@ function CanvasWorkbench({
   onNodeResult,
 }: {
   activeCate: AssetCate;
+  interactive: boolean;
   nodes: SpaceCanvasNode[];
   edges: { id: string; from: string; to: string }[];
   viewport: SpaceCanvasState["viewport"];
@@ -1631,10 +1611,13 @@ function CanvasWorkbench({
 
   const deleteEdge = useCallback(
     (edgeId: string) => {
+      if (!interactive) {
+        return;
+      }
       setSelectedEdgeId("");
       onEdgesCommit(edges.filter((edge) => edge.id !== edgeId));
     },
-    [edges, onEdgesCommit],
+    [edges, interactive, onEdgesCommit],
   );
 
   const flowEdges = useMemo<Edge[]>(() => {
@@ -1708,6 +1691,9 @@ function CanvasWorkbench({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      if (!interactive) {
+        return;
+      }
       const nextNodes = applyNodeChanges(changes, flowNodes);
       const positionsById = new Map(
         nextNodes.map((node) => [node.id, node.position]),
@@ -1749,11 +1735,14 @@ function CanvasWorkbench({
         flowNodeCache.current.set(node.id, node);
       }
     },
-    [flowNodes, nodes, onNodesCommit, onSelectNode],
+    [flowNodes, interactive, nodes, onNodesCommit, onSelectNode],
   );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      if (!interactive) {
+        return;
+      }
       let nextSelectedEdgeId = "";
       let hasSelectionChange = false;
       for (const change of changes) {
@@ -1770,11 +1759,14 @@ function CanvasWorkbench({
       const nextEdges = applyEdgeChanges(changes, flowEdges);
       onEdgesCommit(flowEdgesToCanvasEdges(nextEdges));
     },
-    [flowEdges, onEdgesCommit],
+    [flowEdges, interactive, onEdgesCommit],
   );
 
   const handleConnect = useCallback<OnConnect>(
     (connection) => {
+      if (!interactive) {
+        return;
+      }
       connectionCompletedRef.current = true;
       if (
         !connection.source ||
@@ -1791,11 +1783,14 @@ function CanvasWorkbench({
         ),
       );
     },
-    [edges, onEdgesCommit],
+    [edges, interactive, onEdgesCommit],
   );
 
   const handleConnectStart = useCallback(
     (_event: unknown, params: any) => {
+      if (!interactive) {
+        return;
+      }
       const nodeId = String(params?.nodeId || "");
       if (nodeId) {
         skipNextNodeClickRef.current = true;
@@ -1812,11 +1807,16 @@ function CanvasWorkbench({
       connectionCompletedRef.current = false;
       setSelectedEdgeId("");
     },
-    [onSelectNode],
+    [interactive, onSelectNode],
   );
 
   const handleConnectEnd = useCallback(
     (event: any) => {
+      if (!interactive) {
+        pendingConnectionRef.current = null;
+        connectionCompletedRef.current = false;
+        return;
+      }
       const pendingConnection = pendingConnectionRef.current;
       pendingConnectionRef.current = null;
       if (pendingConnection?.nodeId && typeof window !== "undefined") {
@@ -1842,18 +1842,21 @@ function CanvasWorkbench({
         pendingConnection,
       );
     },
-    [flowInstance, onOpenNodeMenu],
+    [flowInstance, interactive, onOpenNodeMenu],
   );
 
   const handleEdgeClick = useCallback(
     (event: ReactMouseEvent | MouseEvent, edge: Edge) => {
+      if (!interactive) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       setNodeActionMenu(null);
       onSelectNode("");
       setSelectedEdgeId(edge.id);
     },
-    [onSelectNode],
+    [interactive, onSelectNode],
   );
 
   useEffect(() => {
@@ -1864,6 +1867,9 @@ function CanvasWorkbench({
       if (event.key !== "Delete" && event.key !== "Backspace") {
         return;
       }
+      if (!interactive) {
+        return;
+      }
       if (isEditableEventTarget(event.target)) {
         return;
       }
@@ -1872,7 +1878,7 @@ function CanvasWorkbench({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteEdge, selectedEdgeId]);
+  }, [deleteEdge, interactive, selectedEdgeId]);
 
   const updateProximityEdge = useCallback((nextEdge: Edge | null) => {
     setProximityEdge((current: Edge | null) =>
@@ -1882,6 +1888,9 @@ function CanvasWorkbench({
 
   const checkValidConnection = useCallback(
     (connection: any) => {
+      if (!interactive) {
+        return false;
+      }
       const sourceNode = nodes.find(
         (n: SpaceCanvasNode) => n.id === connection.source,
       );
@@ -1890,11 +1899,14 @@ function CanvasWorkbench({
       );
       return canConnectNodes(sourceNode, targetNode);
     },
-    [nodes],
+    [interactive, nodes],
   );
 
   const handleNodeDrag = useCallback(
     (_event: ReactMouseEvent | MouseEvent, draggedNode: Node) => {
+      if (!interactive) {
+        return;
+      }
       const hasConnections = flowEdges.some(
         (edge) =>
           edge.source === draggedNode.id || edge.target === draggedNode.id,
@@ -1923,10 +1935,15 @@ function CanvasWorkbench({
       }
       updateProximityEdge(createProximityPreviewEdge(connection));
     },
-    [flowEdges, flowNodes, nodes, updateProximityEdge],
+    [flowEdges, flowNodes, interactive, nodes, updateProximityEdge],
   );
 
   const handleNodeDragStop = useCallback(() => {
+    if (!interactive) {
+      setDraggingNodeId("");
+      updateProximityEdge(null);
+      return;
+    }
     setDraggingNodeId("");
     if (!proximityEdge) {
       updateProximityEdge(null);
@@ -1943,10 +1960,20 @@ function CanvasWorkbench({
       );
     }
     updateProximityEdge(null);
-  }, [edges, flowEdges, onEdgesCommit, proximityEdge, updateProximityEdge]);
+  }, [
+    edges,
+    flowEdges,
+    interactive,
+    onEdgesCommit,
+    proximityEdge,
+    updateProximityEdge,
+  ]);
 
   const handlePaneClick = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
+      if (!interactive) {
+        return;
+      }
       if (skipNextPaneClickRef.current) {
         skipNextPaneClickRef.current = false;
         return;
@@ -1962,21 +1989,27 @@ function CanvasWorkbench({
       const screen = { x: event.clientX, y: event.clientY };
       onOpenNodeMenu(screen, flowPositionFromScreen(flowInstance, screen));
     },
-    [flowInstance, onOpenNodeMenu, onSelectNode],
+    [flowInstance, interactive, onOpenNodeMenu, onSelectNode],
   );
 
   const handlePaneContextMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
+      if (!interactive) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       const screen = { x: event.clientX, y: event.clientY };
       onOpenNodeMenu(screen, flowPositionFromScreen(flowInstance, screen));
     },
-    [flowInstance, onOpenNodeMenu],
+    [flowInstance, interactive, onOpenNodeMenu],
   );
 
   const handleNodeContextMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent, node: Node) => {
+      if (!interactive) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       setSelectedEdgeId("");
@@ -1987,7 +2020,7 @@ function CanvasWorkbench({
         y: event.clientY,
       });
     },
-    [onSelectNode],
+    [interactive, onSelectNode],
   );
 
   const actionNode = nodeActionMenu
@@ -2002,7 +2035,7 @@ function CanvasWorkbench({
   }
 
   function copyActionNode() {
-    if (!actionNode) {
+    if (!interactive || !actionNode) {
       return;
     }
     onCopyNode(
@@ -2015,7 +2048,7 @@ function CanvasWorkbench({
   }
 
   function deleteActionNode() {
-    if (!actionNode) {
+    if (!interactive || !actionNode) {
       return;
     }
     if (
@@ -2038,14 +2071,20 @@ function CanvasWorkbench({
   }
 
   const onDragOver = useCallback((event: DragEvent) => {
+    if (!interactive) {
+      return;
+    }
     event.preventDefault();
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
     }
-  }, []);
+  }, [interactive]);
 
   const onDrop = useCallback(
     (event: DragEvent) => {
+      if (!interactive) {
+        return;
+      }
       event.preventDefault();
       if (!flowInstance || !onAddConfiguredNode) return;
 
@@ -2081,7 +2120,7 @@ function CanvasWorkbench({
         onAddConfiguredNode(nodeType, position);
       }
     },
-    [flowInstance, onAddConfiguredNode],
+    [flowInstance, interactive, onAddConfiguredNode],
   );
 
   const resetCanvasView = useCallback(() => {
@@ -2111,7 +2150,7 @@ function CanvasWorkbench({
 
   return (
     <section
-      className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""}`}
+      className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""} ${interactive ? "is-interactive" : "is-passive"}`}
     >
       <ReactFlow
         nodes={flowNodes}
@@ -2126,6 +2165,9 @@ function CanvasWorkbench({
         isValidConnection={checkValidConnection}
         onEdgeClick={handleEdgeClick}
         onNodeClick={(_, node: Node) => {
+          if (!interactive) {
+            return;
+          }
           if (skipNextNodeClickRef.current) {
             skipNextNodeClickRef.current = false;
             return;
@@ -2135,7 +2177,11 @@ function CanvasWorkbench({
           onSelectNode(node.id);
         }}
         onNodeContextMenu={handleNodeContextMenu}
-        onNodeDragStart={(_, node: Node) => setDraggingNodeId(node.id)}
+        onNodeDragStart={(_, node: Node) => {
+          if (interactive) {
+            setDraggingNodeId(node.id);
+          }
+        }}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         onDragOver={onDragOver}
@@ -2172,6 +2218,15 @@ function CanvasWorkbench({
         }}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
+        nodesDraggable={interactive}
+        nodesConnectable={interactive}
+        nodesFocusable={interactive}
+        edgesFocusable={interactive}
+        elementsSelectable={interactive}
+        panOnDrag={interactive}
+        panOnScroll={interactive}
+        zoomOnScroll={interactive}
+        zoomOnPinch={interactive}
         snapToGrid={snapToGrid}
         snapGrid={[18, 18]}
         zoomOnDoubleClick={false}
@@ -2190,7 +2245,7 @@ function CanvasWorkbench({
           gap={18}
           size={1.5}
         />
-        {showMiniMap && nodes.length > 0 ? (
+        {interactive && showMiniMap && nodes.length > 0 ? (
           <MiniMap
             position="bottom-left"
             pannable
@@ -2202,19 +2257,21 @@ function CanvasWorkbench({
         ) : null}
       </ReactFlow>
 
-      <CanvasViewControls
-        showMiniMap={showMiniMap}
-        snapToGrid={snapToGrid}
-        zoom={viewportZoom}
-        onToggleMiniMap={() => setShowMiniMap((value) => !value)}
-        onToggleSnap={() => setSnapToGrid((value) => !value)}
-        onReset={resetCanvasView}
-        onZoomIn={zoomCanvasIn}
-        onZoomOut={zoomCanvasOut}
-        onZoomChange={zoomCanvasTo}
-      />
+      {interactive ? (
+        <CanvasViewControls
+          showMiniMap={showMiniMap}
+          snapToGrid={snapToGrid}
+          zoom={viewportZoom}
+          onToggleMiniMap={() => setShowMiniMap((value) => !value)}
+          onToggleSnap={() => setSnapToGrid((value) => !value)}
+          onReset={resetCanvasView}
+          onZoomIn={zoomCanvasIn}
+          onZoomOut={zoomCanvasOut}
+          onZoomChange={zoomCanvasTo}
+        />
+      ) : null}
 
-      {nodes.length === 0 ? (
+      {interactive && nodes.length === 0 ? (
         <div className="ws-empty-note" role="note">
           <span className="ws-empty-action">
             <MousePointer2 size={16} />
@@ -2224,7 +2281,7 @@ function CanvasWorkbench({
         </div>
       ) : null}
 
-      {nodeActionMenu && actionNode ? (
+      {interactive && nodeActionMenu && actionNode ? (
         <NodeActionMenu
           point={nodeActionMenu}
           canShowDetail={nodeHasResultContent(actionNode)}
