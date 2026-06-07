@@ -2,12 +2,14 @@ import { joinSiteApi, request } from "@dever/front-plugin";
 import {
   normalizeCanvasState,
   normalizePowerCatalog,
+  normalizeProjectAsset,
   normalizeSpaceBootstrap,
 } from "./space-model";
 import type {
   PowerForm,
   PowerKindOption,
   PowerOption,
+  ProjectAsset,
   SpaceBootstrap,
   SpaceCanvasState,
   TeamFlow,
@@ -21,8 +23,8 @@ export async function fetchSpaceBootstrap(
   const result = await request(joinSiteApi("space/bootstrap"), "get", {
     project_id: projectId,
   });
-  if (result.code !== 0) {
-    throw new Error(result.message || "加载创作空间失败");
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "加载创作空间失败");
   }
   return normalizeSpaceBootstrap(result.data);
 }
@@ -37,8 +39,8 @@ export async function sendSpaceMessage(
     asset_cate_id: assetCateId,
     message,
   });
-  if (result.code !== 0) {
-    throw new Error(result.message || "发送失败");
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "发送失败");
   }
   return result.data;
 }
@@ -49,8 +51,8 @@ export async function fetchSpacePowers(projectId: number): Promise<{
   const result = await request(joinSiteApi("space/powers"), "get", {
     project_id: projectId,
   });
-  if (result.code !== 0) {
-    throw new Error(result.message || "加载能力列表失败");
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "加载能力列表失败");
   }
   return normalizePowerCatalog(result.data);
 }
@@ -69,8 +71,8 @@ export async function fetchSpacePowerForm(input: {
     power_key: input.powerKey,
     target_id: input.targetId || 0,
   });
-  if (result.code !== 0) {
-    throw new Error(result.message || "加载能力参数失败");
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "加载能力参数失败");
   }
   return normalizePowerForm(result.data);
 }
@@ -99,8 +101,8 @@ export async function runSpacePower(input: {
     input: { prompt: input.prompt },
     params: input.params,
   });
-  if (result.code !== 0) {
-    throw new Error(result.message || "能力节点执行失败");
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "能力节点执行失败");
   }
   return result.data;
 }
@@ -110,20 +112,85 @@ export async function runSpaceFlow(
   assetCateId: number,
   flow: TeamFlow,
   prompt: string,
+  extraInput?: Record<string, unknown>,
 ) {
   const result = await request(joinSiteApi("space/run_flow"), "post", {
     project_id: projectId,
     flow_id: flow.id,
     input: {
+      ...(extraInput || {}),
       prompt,
       message: prompt,
       asset_cate_id: assetCateId,
     },
   });
-  if (result.code !== 0) {
-    throw new Error(result.message || "流程运行失败");
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "流程运行失败");
   }
   return result.data;
+}
+
+export async function fetchSpaceRunStatus(input: {
+  projectId: number;
+  runId?: number;
+  requestId?: string;
+}) {
+  const result = await request(joinSiteApi("space/run_status"), "get", {
+    project_id: input.projectId,
+    run_id: input.runId || 0,
+    request_id: input.requestId || "",
+  });
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "读取流程状态失败");
+  }
+  return result.data;
+}
+
+export async function submitSpaceApproval(input: {
+  projectId: number;
+  approvalId: number;
+  data: Record<string, unknown>;
+  comment?: string;
+  decision?: "approved" | "rejected";
+}) {
+  const result = await request(joinSiteApi("space/approval"), "post", {
+    project_id: input.projectId,
+    approval_id: input.approvalId,
+    decision: input.decision || "approved",
+    comment: input.comment || "",
+    data: input.data,
+  });
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "提交反馈失败");
+  }
+  return result.data;
+}
+
+export async function fetchSpaceBootstrapAssets(
+  projectId: number,
+): Promise<ProjectAsset[]> {
+  const space = await fetchSpaceBootstrap(projectId);
+  return space.assets || [];
+}
+
+export async function saveSpaceAssetVersion(input: {
+  projectId: number;
+  assetId: number;
+  content: unknown;
+}): Promise<ProjectAsset> {
+  const result = await request(joinSiteApi("space/asset_version"), "post", {
+    project_id: input.projectId,
+    asset_id: input.assetId,
+    content: input.content,
+  });
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "保存资产失败");
+  }
+  const asset = (result.data as any)?.asset;
+  if (!asset) {
+    throw new Error("保存资产后未返回资产内容");
+  }
+  return normalizeProjectAsset(asset);
 }
 
 export async function saveSpaceCanvas(
@@ -237,4 +304,8 @@ function normalizePowerForm(value: any): PowerForm {
     source_rule: Number(data.source_rule || 0),
     primary_param_key: String(data.primary_param_key || ""),
   };
+}
+
+function isSuccessResponse(result: any) {
+  return result?.code === 0 || result?.status === 1;
 }

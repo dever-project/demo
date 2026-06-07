@@ -78,6 +78,10 @@ export function normalizePowerCatalog(value: unknown): {
   };
 }
 
+export function normalizeProjectAsset(value: unknown): ProjectAsset {
+  return normalizeAsset(asRecord(value));
+}
+
 export function visibleAssetCates(space: SpaceBootstrap) {
   return space.assetCates.length > 0 ? space.assetCates : [freeAssetCate];
 }
@@ -101,8 +105,9 @@ export function relatedFlows(space: SpaceBootstrap, assetCateId: number) {
   if (assetCateId === 0) {
     return space.flows.slice(0, 4);
   }
-  const matched = space.flows.filter((flow) => flowAssetCateIds(space, flow).has(assetCateId));
-  return matched.length > 0 ? matched.slice(0, 4) : space.flows.slice(0, 3);
+  return space.flows
+    .filter((flow) => flowOutputAssetCateIds(space, flow).has(assetCateId))
+    .slice(0, 4);
 }
 
 export function isExecutionRole(role: TeamRole) {
@@ -133,6 +138,7 @@ export function createLocalNode(
   const selectedFunction = options?.functionOption;
   const selectedPower = options?.power;
   const selectedRole = options?.role;
+  const nodeAssetCateId = Number(selectedAsset?.asset_cate_id || assetCate.id);
   const labels: Record<SpaceCanvasNode["type"], [string, string, string]> = {
     asset: [
       selectedAsset?.name || "资产引用",
@@ -174,7 +180,7 @@ export function createLocalNode(
     y: baseY,
     width: size.width,
     height: size.height,
-    assetCateId: assetCate.id,
+    assetCateId: nodeAssetCateId,
     kind: selectedAsset?.kind || assetCate.kind,
     cardinality: assetCate.cardinality,
     asset: selectedAsset,
@@ -236,11 +242,42 @@ export function cardinalityLabel(cardinality: AssetCardinality) {
 }
 
 export function documentPreview(content: unknown): string {
-  const text = collectDocumentText(content).trim();
+  const text = documentText(content);
   if (text) {
     return text.length > 120 ? `${text.slice(0, 120)}...` : text;
   }
   return "";
+}
+
+export function documentText(content: unknown): string {
+  return collectDocumentText(content).replace(/\s+/g, " ").trim();
+}
+
+export function looseRichJSONText(content: unknown): string {
+  if (typeof content !== "string") {
+    return "";
+  }
+  const text = content.trim();
+  if (!isLikelyRichJSONSnippet(text)) {
+    return "";
+  }
+  const richStart = text.search(/"rich"\s*:/);
+  const source = richStart >= 0 ? text.slice(richStart) : text;
+  const pieces: string[] = [];
+  const textField = /"text"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = textField.exec(source)) !== null) {
+    const value = decodeJSONStringFragment(match[1]).trim();
+    if (value) {
+      pieces.push(value);
+    }
+  }
+  return pieces.join(" ").replace(/\s+/g, " ").trim();
+}
+
+export function richDocument(content: unknown): RichDocumentNode | null {
+  const doc = findRichDocument(content, new Set());
+  return hasVisibleRichDocument(doc) ? doc : null;
 }
 
 function normalizeProject(value: unknown): WorkProject {
@@ -370,6 +407,9 @@ function normalizeAsset(value: Record<string, unknown>): ProjectAsset {
       ? {
           id: numberValue(version.id),
           asset_id: numberValue(version.asset_id),
+          run_id: numberValue(version.run_id),
+          node_run_id: numberValue(version.node_run_id),
+          release_id: numberValue(version.release_id),
           version: numberValue(version.version),
           content: version.content,
           created_at: stringValue(version.created_at),
@@ -448,17 +488,17 @@ function normalizeCanvasViewport(value: unknown): SpaceCanvasViewport {
   return viewport;
 }
 
-function flowAssetCateIds(space: SpaceBootstrap, flow: TeamFlow) {
+function flowOutputAssetCateIds(space: SpaceBootstrap, flow: TeamFlow) {
   const ids = new Set<number>();
-  for (const key of ["asset_cate_id", "assetCateId", "target_asset_cate_id", "targetAssetCateId", "output_asset_cate_id", "outputAssetCateId"]) {
-    const id = numberValue(flow.config[key]);
+  for (const node of space.nodesByFlow[flow.key] || []) {
+    if (String(node.type || "").toLowerCase() !== "save") {
+      continue;
+    }
+    const id = numberValue(
+      firstDefined(node.asset_cate_id, node.config?.asset_cate_id),
+    );
     if (id > 0) {
       ids.add(id);
-    }
-  }
-  for (const node of space.nodesByFlow[flow.key] || []) {
-    if (node.asset_cate_id > 0) {
-      ids.add(node.asset_cate_id);
     }
   }
   return ids;
@@ -492,8 +532,52 @@ function nodeDefaultSize(type: SpaceCanvasNode["type"]) {
   }
 }
 
+export type RichDocumentNode = {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: RichDocumentNode[];
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+  text?: string;
+};
+
+const richMediaAliases: Record<string, string> = {
+  audio: "editorMediaAudio",
+  image: "editorMediaImage",
+  mediaAudio: "editorMediaAudio",
+  mediaImage: "editorMediaImage",
+  mediaVideo: "editorMediaVideo",
+  video: "editorMediaVideo",
+};
+
+const richWrapperKeys = [
+  "rich",
+  "value",
+  "doc",
+  "document",
+  "content",
+  "data",
+  "output",
+  "result",
+  "body",
+] as const;
+
 function collectDocumentText(value: unknown): string {
   if (typeof value === "string") {
+    const text = value.trim();
+    if (looksLikeJSON(text)) {
+      const parsed = parseJSONValue(text);
+      if (parsed !== undefined) {
+        const parsedText = collectDocumentText(parsed).trim();
+        if (parsedText) {
+          return parsedText;
+        }
+        return "";
+      }
+    }
+    const looseText = looseRichJSONText(text);
+    if (looseText) {
+      return looseText;
+    }
     return value;
   }
   if (Array.isArray(value)) {
@@ -503,9 +587,254 @@ function collectDocumentText(value: unknown): string {
     return "";
   }
   const row = value as Record<string, unknown>;
+  const rich = richDocument(row);
+  if (rich) {
+    return collectRichDocumentText(rich);
+  }
   const text = typeof row.text === "string" ? row.text : "";
-  const content = collectDocumentText(row.content);
-  return [text, content].filter(Boolean).join(" ");
+  const pieces = [
+    text,
+    typeof row.markdown === "string" ? row.markdown : "",
+  ];
+  for (const key of richWrapperKeys) {
+    if (row[key] != null) {
+      pieces.push(collectDocumentText(row[key]));
+    }
+  }
+  return pieces.filter(Boolean).join(" ");
+}
+
+function findRichDocument(
+  value: unknown,
+  seen: Set<unknown>,
+): RichDocumentNode | null {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!looksLikeJSON(text)) {
+      return null;
+    }
+    const parsed = parseJSONValue(text);
+    return parsed === undefined ? null : findRichDocument(parsed, seen);
+  }
+  if (Array.isArray(value)) {
+    const doc = normalizeRichDocument({ type: "doc", content: value });
+    if (hasVisibleRichDocument(doc)) {
+      return doc;
+    }
+    for (const item of value) {
+      const nested = findRichDocument(item, seen);
+      if (nested) {
+        return nested;
+      }
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  if (seen.has(value)) {
+    return null;
+  }
+  seen.add(value);
+
+  const row = value as Record<string, unknown>;
+  const direct = normalizeRichDocument(row);
+  if (direct) {
+    return direct;
+  }
+
+  if (String(row.format || "").toLowerCase() === "rich_json" && row.rich != null) {
+    const rich = findRichDocument(row.rich, seen);
+    if (rich) {
+      return rich;
+    }
+  }
+
+  for (const key of richWrapperKeys) {
+    if (row[key] == null) {
+      continue;
+    }
+    const rich = findRichDocument(row[key], seen);
+    if (rich) {
+      return rich;
+    }
+  }
+  return null;
+}
+
+function normalizeRichDocument(value: unknown): RichDocumentNode | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const type = normalizeRichNodeType(value.type);
+  if (type === "doc") {
+    return {
+      type: "doc",
+      attrs: isRecord(value.attrs) ? value.attrs : undefined,
+      content: normalizeRichContent(value.content),
+    };
+  }
+  return null;
+}
+
+function normalizeRichContent(content: unknown): RichDocumentNode[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content
+    .map(normalizeRichNode)
+    .filter((node): node is RichDocumentNode => Boolean(node));
+}
+
+function normalizeRichNode(value: unknown): RichDocumentNode | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const type = normalizeRichNodeType(value.type) || inferRichNodeType(value);
+  if (!type) {
+    return null;
+  }
+  const node: RichDocumentNode = { type };
+  const attrs = isRecord(value.attrs) ? { ...value.attrs } : {};
+  if (type === "heading" && numberValue(attrs.level) <= 0) {
+    const level = numberValue(value.level);
+    if (level > 0) {
+      attrs.level = level;
+    }
+  }
+  if (Object.keys(attrs).length > 0) {
+    node.attrs = attrs;
+  }
+  const marks = normalizeRichMarks(value.marks);
+  if (marks.length > 0) {
+    node.marks = marks;
+  }
+  if (type === "text") {
+    const text = stringValue(value.text);
+    if (!text) {
+      return null;
+    }
+    node.text = text;
+    return node;
+  }
+  const children = normalizeRichContent(value.content);
+  if (children.length > 0) {
+    node.content = children;
+  }
+  return node;
+}
+
+function inferRichNodeType(value: Record<string, unknown>) {
+  if (typeof value.text === "string") {
+    return "text";
+  }
+  const attrs = isRecord(value.attrs) ? value.attrs : {};
+  if (numberValue(attrs.level) > 0 || numberValue(value.level) > 0) {
+    return "heading";
+  }
+  return "";
+}
+
+function normalizeRichMarks(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((mark) => {
+      if (!isRecord(mark)) {
+        return null;
+      }
+      const type = stringValue(mark.type);
+      if (!type) {
+        return null;
+      }
+      return {
+        type,
+        attrs: isRecord(mark.attrs) ? mark.attrs : undefined,
+      };
+    })
+    .filter(
+      (mark): mark is { type: string; attrs?: Record<string, unknown> } =>
+        Boolean(mark),
+    );
+}
+
+function normalizeRichNodeType(value: unknown) {
+  const type = stringValue(value);
+  return richMediaAliases[type] || type;
+}
+
+function collectRichDocumentText(node: RichDocumentNode | null): string {
+  if (!node) {
+    return "";
+  }
+  if (node.type === "text") {
+    return node.text || "";
+  }
+  if (
+    node.type === "editorMediaImage" ||
+    node.type === "editorMediaVideo" ||
+    node.type === "editorMediaAudio"
+  ) {
+    return stringValue(node.attrs?.alt || node.attrs?.title || node.attrs?.src);
+  }
+  return (node.content || [])
+    .map(collectRichDocumentText)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function hasVisibleRichDocument(node: RichDocumentNode | null): boolean {
+  if (!node) {
+    return false;
+  }
+  if (node.type === "text") {
+    return Boolean(stringValue(node.text));
+  }
+  if (
+    node.type === "editorMediaImage" ||
+    node.type === "editorMediaVideo" ||
+    node.type === "editorMediaAudio"
+  ) {
+    return Boolean(stringValue(node.attrs?.src));
+  }
+  return (node.content || []).some(hasVisibleRichDocument);
+}
+
+function looksLikeJSON(value: string) {
+  return (
+    (value.startsWith("{") && value.endsWith("}")) ||
+    (value.startsWith("[") && value.endsWith("]"))
+  );
+}
+
+function parseJSONValue(value: string) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isLikelyRichJSONSnippet(value: string) {
+  return (
+    value.includes("rich_json") ||
+    value.includes('"rich"') ||
+    value.includes("agent_run_id") ||
+    value.includes("node_run_id")
+  );
+}
+
+function decodeJSONStringFragment(value: string) {
+  try {
+    return JSON.parse(`"${value}"`);
+  } catch {
+    return value
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\\/g, "\\");
+  }
 }
 
 function asRecords(value: unknown): Record<string, unknown>[] {

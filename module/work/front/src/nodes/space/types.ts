@@ -145,6 +145,9 @@ export type CanvasFunctionOption = {
 export type AssetVersion = {
   id: number;
   asset_id: number;
+  run_id?: number;
+  node_run_id?: number;
+  release_id?: number;
   version: number;
   content?: unknown;
   created_at?: string;

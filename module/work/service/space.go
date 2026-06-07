@@ -9,6 +9,7 @@ import (
 	"time"
 
 	workmodel "my/module/work/model"
+	assetservice "my/package/bot/service/asset"
 	bodyservice "my/package/bot/service/body"
 	teamservice "my/package/bot/service/team"
 	uploadrepo "my/package/front/service/upload/repository"
@@ -16,6 +17,7 @@ import (
 
 type SpaceService struct {
 	project ProjectService
+	asset   assetservice.Service
 	team    teamservice.Service
 }
 
@@ -24,6 +26,7 @@ const spaceDefaultUploadRuleID uint64 = 7
 func NewSpaceService() SpaceService {
 	return SpaceService{
 		project: NewProjectService(),
+		asset:   assetservice.NewService(),
 		team:    teamservice.NewService(),
 	}
 }
@@ -127,6 +130,37 @@ func (s SpaceService) SaveCanvas(ctx context.Context, projectID uint64, assetCat
 	}, nil
 }
 
+func (s SpaceService) SaveAssetVersion(ctx context.Context, projectID uint64, assetID uint64, content any) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	asset := s.asset.FindProjectAsset(ctx, project.ID, assetID)
+	if asset == nil {
+		return nil, fmt.Errorf("资产不存在")
+	}
+	savedAsset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
+		ProjectID:   asset.ProjectID,
+		BodyID:      asset.BodyID,
+		TeamID:      asset.TeamID,
+		FlowID:      asset.FlowID,
+		AssetCateID: asset.AssetCateID,
+		ReleaseID:   project.ReleaseID,
+		Name:        asset.Name,
+		Kind:        asset.Kind,
+		Content:     content,
+		Sort:        asset.Sort,
+	})
+	if err != nil {
+		return nil, err
+	}
+	item := assetservice.AssetToMap(*savedAsset)
+	item["version"] = assetservice.VersionToMap(*version)
+	return map[string]any{
+		"asset": item,
+	}, nil
+}
+
 func (s SpaceService) PrepareUploadInit(ctx context.Context, projectID uint64, body map[string]any) error {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
@@ -206,6 +240,22 @@ func (s SpaceService) RunFlow(ctx context.Context, projectID uint64, flowID uint
 		Input:     input,
 		Mode:      "flow",
 	})
+}
+
+func (s SpaceService) RunStatus(ctx context.Context, projectID uint64, runID uint64, requestID string) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.team.ProjectRunStatus(ctx, project.ID, runID, requestID)
+}
+
+func (s SpaceService) SubmitApproval(ctx context.Context, projectID uint64, approvalID uint64, decision string, comment string, data map[string]any) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.team.SubmitProjectApproval(ctx, project.ID, approvalID, decision, comment, data)
 }
 
 func (s SpaceService) CanvasPowerForm(ctx context.Context, projectID uint64, flowID uint64, powerID uint64, powerKey string, targetID uint64) (map[string]any, error) {

@@ -100,6 +100,32 @@ func (Space) PostRunFlow(c *server.Context) error {
 	return workJSON(c, data, err)
 }
 
+func (Space) GetRunStatus(c *server.Context) error {
+	data, err := spaceSvc.RunStatus(
+		c.Context(),
+		queryUint64(c, "project_id", "projectId", "id"),
+		queryUint64(c, "run_id", "runId"),
+		queryText(c, "request_id", "requestId"),
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) PostApproval(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.SubmitApproval(
+		c.Context(),
+		bodyUint64(body, "project_id", "projectId", "id"),
+		bodyUint64(body, "approval_id", "approvalId"),
+		bodyText(body, "decision"),
+		bodyText(body, "comment"),
+		bodyMap(body, "data"),
+	)
+	return workJSON(c, data, err)
+}
+
 func (Space) PostCanvas(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {
@@ -110,6 +136,20 @@ func (Space) PostCanvas(c *server.Context) error {
 		bodyUint64(body, "project_id", "projectId", "id"),
 		bodyUint64(body, "asset_cate_id", "assetCateId"),
 		bodyMap(body, "canvas"),
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) PostAssetVersion(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.SaveAssetVersion(
+		c.Context(),
+		bodyUint64(body, "project_id", "projectId", "id"),
+		bodyUint64(body, "asset_id", "assetId"),
+		body["content"],
 	)
 	return workJSON(c, data, err)
 }

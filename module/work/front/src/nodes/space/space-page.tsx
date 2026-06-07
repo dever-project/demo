@@ -1,16 +1,20 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type ChangeEvent,
   type Dispatch,
   type DragEvent,
+  type FormEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { createPortal } from "react-dom";
 import * as LucideIcons from "lucide-react";
 import {
   Background,
@@ -30,7 +34,6 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   ArrowLeft,
-  ArrowUp,
   Bot,
   Brain,
   CheckCircle2,
@@ -38,20 +41,19 @@ import {
   Columns3,
   Compass,
   Copy,
-  Cpu,
   Crop,
   Download,
   Eye,
   FileText,
   FileSearch,
   GitBranch,
-  Grid,
   History,
   Image as ImageIcon,
   Layers,
   Loader2,
   Map as MapIcon,
   Maximize2,
+  MessageSquare,
   Minus,
   Moon,
   MoreHorizontal,
@@ -69,7 +71,6 @@ import {
   Sun,
   Trash2,
   Type,
-  Tv,
   Users,
   UserCheck,
   Upload,
@@ -83,15 +84,19 @@ import { toast } from "sonner";
 import { getCompatModule, request, useNavigate } from "@dever/front-plugin";
 import {
   fetchSpaceBootstrap,
+  fetchSpaceBootstrapAssets,
   fetchSpacePowerForm,
   fetchSpacePowers,
+  fetchSpaceRunStatus,
   completeSpaceUpload,
   initSpaceUpload,
   runSpacePower,
   runSpaceFlow,
+  saveSpaceAssetVersion,
   saveSpaceCanvas,
   sendSpaceMessage,
   SPACE_UPLOAD_RULE_ID,
+  submitSpaceApproval,
   uploadSpacePart,
 } from "./space-api";
 import {
@@ -100,10 +105,13 @@ import {
   createLocalNode,
   defaultAssetCateId,
   documentPreview,
+  documentText,
   emptyCanvasState,
   isExecutionRole,
+  looseRichJSONText,
   powerKindLabel,
   relatedFlows,
+  richDocument,
   visibleAssetCates,
 } from "./space-model";
 import { WorkSpaceStyles } from "./space-styles";
@@ -133,7 +141,17 @@ import {
   isUploadPowerParam,
 } from "./space-prompt-composer";
 
-type WorkMode = "assets" | "create" | "chat" | "canvas";
+const { EnergonContentView, normalizeEnergonOutput } = getCompatModule(
+  "@/components/energon/content-view",
+) as {
+  EnergonContentView?: React.ComponentType<{ output: any; emptyText?: string }>;
+  normalizeEnergonOutput?: (output: any) => any;
+};
+const { normalizeAgentResultOutputValue } = getCompatModule("@/lib/agent-result-protocol") as {
+  normalizeAgentResultOutputValue?: (value: any) => any;
+};
+
+type WorkMode = "create" | "result";
 type WorkSpaceTheme = "dark" | "light";
 type RunningNodeState = {
   nodeId: string;
@@ -157,7 +175,9 @@ type AddConfiguredNodeHandler = (
     power?: PowerOption;
     role?: TeamRole;
     connectToNodeId?: string;
+    connectFromNodeId?: string;
     selectCreated?: boolean;
+    replaceSingleAssetNode?: boolean;
   },
 ) => void;
 type CanvasPoint = { x: number; y: number };
@@ -177,6 +197,30 @@ type NodeInputContext = {
     output: unknown;
     preview: GeneratedNodePreview;
   }>;
+};
+type FlowRunStatus = "running" | "waiting" | "success" | "fail" | "canceled" | string;
+type FlowRunSnapshot = {
+  runId: number;
+  requestId: string;
+  status: FlowRunStatus;
+  output: unknown;
+  error: string;
+  approvals: FlowApproval[];
+  raw: any;
+};
+type FlowApproval = {
+  id: number;
+  title: string;
+  status: string;
+  decision: string;
+  content: Record<string, any>;
+};
+type FlowFeedbackPrompt = {
+  approval: FlowApproval;
+  title: string;
+  description: string;
+  fields: PowerParam[];
+  values: Record<string, unknown>;
 };
 type PendingNodeConnection = {
   nodeId: string;
@@ -262,7 +306,8 @@ export function WorkSpacePage() {
     Record<string, SpaceCanvasState>
   >({});
   const [prompt, setPrompt] = useState("");
-  const [workMode, setWorkMode] = useState<WorkMode>("assets");
+  const [workMode, setWorkMode] = useState<WorkMode>("create");
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [theme, setTheme] = useState<WorkSpaceTheme>(() => readStoredTheme());
   const [nodeMenu, setNodeMenu] = useState<AddNodeMenuState | null>(null);
   const [powers, setPowers] = useState<PowerOption[]>([]);
@@ -296,11 +341,6 @@ export function WorkSpacePage() {
       setCanvasStates(nextSpace.canvases || {});
       loadedCanvasesRef.current = serializeCanvasMap(nextSpace.canvases || {});
       setActiveCateId(defaultAssetCateId(nextSpace));
-      setWorkMode((current) =>
-        nextSpace.assetCates.length === 0 && current === "assets"
-          ? "canvas"
-          : current,
-      );
       setPowers(nextSpace.powers || []);
       setPowerKinds(nextSpace.powerKinds || []);
     } catch (err) {
@@ -335,8 +375,8 @@ export function WorkSpacePage() {
     );
   }, [space, activeCate]);
   const menuFlows = useMemo(
-    () => (activeFlows.length > 0 ? activeFlows : space?.flows || []),
-    [activeFlows, space],
+    () => activeFlows,
+    [activeFlows],
   );
   const activeCanvas = useMemo(
     () =>
@@ -349,6 +389,31 @@ export function WorkSpacePage() {
     () => applyNodeResultOverrides(activeCanvas, nodeResultOverrides),
     [activeCanvas, nodeResultOverrides],
   );
+
+  useEffect(() => {
+    if (
+      !space ||
+      space.assetCates.length === 0 ||
+      !activeCate ||
+      activeFlows.length === 0
+    ) {
+      return;
+    }
+    const key = String(activeCate.id);
+    setCanvasStates((current) => {
+      if (Object.prototype.hasOwnProperty.call(current, key)) {
+        return current;
+      }
+      const seededCanvas = createSeedCanvasFromFlows(activeCate, activeFlows);
+      if (seededCanvas.nodes.length === 0) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: seededCanvas,
+      };
+    });
+  }, [activeCate, activeFlows, space]);
 
   const updateActiveCanvas = useCallback(
     (updater: (canvas: SpaceCanvasState) => SpaceCanvasState) => {
@@ -392,6 +457,28 @@ export function WorkSpacePage() {
     },
     [updateActiveCanvas],
   );
+
+  const upsertSpaceAsset = useCallback((asset: ProjectAsset) => {
+    if (!asset || !asset.id) {
+      return;
+    }
+    const normalizedAsset = normalizeRichAssetVersionContent(asset);
+    setSpace((current) => {
+      if (!current) {
+        return current;
+      }
+      const exists = current.assets.some((item) => item.id === normalizedAsset.id);
+      const assets = exists
+        ? current.assets.map((item) =>
+            item.id === normalizedAsset.id ? normalizedAsset : item,
+          )
+        : [normalizedAsset, ...current.assets];
+      return {
+        ...current,
+        assets,
+      };
+    });
+  }, []);
 
   useEffect(() => {
     if (!space) {
@@ -473,7 +560,9 @@ export function WorkSpacePage() {
       power?: PowerOption;
       role?: TeamRole;
       connectToNodeId?: string;
+      connectFromNodeId?: string;
       selectCreated?: boolean;
+      replaceSingleAssetNode?: boolean;
     },
   ) {
     if (!activeCate) {
@@ -486,12 +575,93 @@ export function WorkSpacePage() {
       position,
       options,
     );
+    const nodeAssetCate = space
+      ? assetCateById(space, assetNodeCateId(node) || activeCate.id)
+      : activeCate;
+    if (type === "asset") {
+      node.cardinality = nodeAssetCate.cardinality;
+    }
+    const replacementAssetCateId =
+      type === "asset" && options?.replaceSingleAssetNode
+        ? assetNodeCateId(node) || Number(nodeAssetCate.id || 0)
+        : 0;
+    const replacementTarget = replacementAssetCateId
+      ? findReplaceableAssetNode(
+          activeCanvas.nodes,
+          activeCanvas.edges,
+          replacementAssetCateId,
+          options?.connectFromNodeId,
+        )
+      : null;
+    const duplicateReplacementNodeIds = replacementTarget
+      ? connectedAssetNodeIds(
+          activeCanvas.nodes,
+          activeCanvas.edges,
+          replacementAssetCateId,
+          options?.connectFromNodeId,
+          replacementTarget.id,
+        )
+      : new Set<string>();
+    const selectedCreatedNodeId = replacementTarget?.id || node.id;
     const connection = nodeMenu?.connection;
     updateActiveCanvas((canvas) => {
       let edges = canvas.edges;
+      const currentReplacementTarget = replacementAssetCateId
+        ? findReplaceableAssetNode(
+            canvas.nodes,
+            canvas.edges,
+            replacementAssetCateId,
+            options?.connectFromNodeId,
+          )
+        : null;
+      if (currentReplacementTarget) {
+        const duplicateNodeIds = connectedAssetNodeIds(
+          canvas.nodes,
+          canvas.edges,
+          replacementAssetCateId,
+          options?.connectFromNodeId,
+          currentReplacementTarget.id,
+        );
+        edges = canvas.edges.filter(
+          (edge) =>
+            !duplicateNodeIds.has(edge.from) && !duplicateNodeIds.has(edge.to),
+        );
+        if (connection) {
+          const endpoints = connectedNodeEdgeEndpoints(
+            connection,
+            currentReplacementTarget.id,
+          );
+          edges = appendCanvasEdge(edges, endpoints.source, endpoints.target);
+        } else if (options?.connectFromNodeId) {
+          edges = appendCanvasEdge(
+            edges,
+            options.connectFromNodeId || "",
+            currentReplacementTarget.id,
+          );
+        } else if (options?.connectToNodeId) {
+          edges = appendCanvasEdge(
+            edges,
+            currentReplacementTarget.id,
+            options.connectToNodeId || "",
+          );
+        }
+        return {
+          ...canvas,
+          nodes: canvas.nodes
+            .filter((item) => !duplicateNodeIds.has(item.id))
+            .map((item) =>
+              item.id === currentReplacementTarget.id
+                ? replaceAssetNode(item, node)
+                : item,
+            ),
+          edges,
+        };
+      }
       if (connection) {
         const endpoints = connectedNodeEdgeEndpoints(connection, node.id);
         edges = appendCanvasEdge(edges, endpoints.source, endpoints.target);
+      } else if (options?.connectFromNodeId) {
+        edges = appendCanvasEdge(edges, options.connectFromNodeId || "", node.id);
       } else if (options?.connectToNodeId) {
         edges = appendCanvasEdge(edges, node.id, options.connectToNodeId || "");
       }
@@ -501,11 +671,25 @@ export function WorkSpacePage() {
         edges,
       };
     });
-    if (options?.selectCreated !== false) {
-      setSelectedNodeId(node.id);
-      focusCanvasNode(node.id);
+    if (replacementTarget) {
+      const replacementNode = replaceAssetNode(replacementTarget, node);
+      setNodeResultOverrides((current) => {
+        const next = { ...current };
+        for (const nodeId of duplicateReplacementNodeIds) {
+          delete next[nodeId];
+        }
+        next[replacementTarget.id] = {
+          ...(next[replacementTarget.id] || {}),
+          ...assetNodeResultOverride(replacementNode),
+        };
+        return next;
+      });
     }
-    setWorkMode("canvas");
+    if (options?.selectCreated !== false) {
+      setSelectedNodeId(selectedCreatedNodeId);
+      focusCanvasNode(selectedCreatedNodeId);
+    }
+    setWorkMode("create");
     setNodeMenu(null);
   }
 
@@ -567,7 +751,7 @@ export function WorkSpacePage() {
 
   function openImportPicker() {
     setNodeMenu(null);
-    setWorkMode("canvas");
+    setWorkMode("create");
     setImportPickerSignal((current) => current + 1);
   }
 
@@ -602,7 +786,7 @@ export function WorkSpacePage() {
     position: CanvasPoint,
     connection?: PendingNodeConnection,
   ) {
-    setWorkMode("canvas");
+    setWorkMode("create");
     setNodeMenu({
       x: screen.x,
       y: screen.y,
@@ -675,30 +859,6 @@ export function WorkSpacePage() {
     }
   }
 
-  async function executeFlow(flow: TeamFlow) {
-    if (!space || !activeCate) {
-      return;
-    }
-    setRunning(true);
-    setRunStatus("");
-    try {
-      const result = await runSpaceFlow(
-        space.project.id,
-        activeCate.id,
-        flow,
-        prompt.trim(),
-      );
-      setRunStatus(
-        runStatusText(result, `已运行流程：${flow.name || "团队流程"}`),
-      );
-      toast.success("流程已提交运行");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "流程运行失败");
-    } finally {
-      setRunning(false);
-    }
-  }
-
   if (loading) {
     return (
       <main className={`ws-page is-${theme} ws-loading-screen`}>
@@ -723,13 +883,12 @@ export function WorkSpacePage() {
   }
 
   return (
-    <main
-      className={`ws-page is-${theme} ${hasAssetCates ? "has-cate-sidebar" : "is-free-space"}`}
-    >
+    <main className={`ws-page is-${theme} is-${workMode}-view`}>
       <WorkSpaceStyles />
       <CanvasWorkbench
         activeCate={activeCate}
-        interactive={workMode === "canvas"}
+        mode={workMode}
+        interactive={workMode === "create"}
         nodes={canvasModel.nodes}
         edges={canvasModel.edges}
         viewport={activeCanvas.viewport}
@@ -764,30 +923,29 @@ export function WorkSpacePage() {
         runningNode={runningNode}
         setRunningNode={setRunningNode}
         onNodeResult={updateNodeResult}
+        onAssetCreated={upsertSpaceAsset}
       />
 
       <TopCanvasToolbar
         space={space}
-        mode={workMode}
+        cates={cates}
+        activeCate={activeCate}
+        hasAssetCates={hasAssetCates}
+        onBack={() => navigate({ to: "/work/home" })}
+        onSelectCate={switchCate}
         onRefresh={loadSpace}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+
+      <LeftCanvasDock
+        mode={workMode}
         onSelectMode={(mode) => {
           setWorkMode(mode);
           setNodeMenu(null);
           setRunStatus("");
         }}
-        theme={theme}
-        onToggleTheme={toggleTheme}
       />
-
-      {hasAssetCates ? (
-        <AssetCateSidebar
-          space={space}
-          cates={cates}
-          activeCate={activeCate}
-          onBack={() => navigate({ to: "/work/home" })}
-          onSelectCate={switchCate}
-        />
-      ) : null}
 
       <div className="ws-import-composer-host" aria-hidden="true">
         <PromptComposer
@@ -808,23 +966,24 @@ export function WorkSpacePage() {
         />
       </div>
 
-      {workMode === "assets" ? (
-        <AssetWorkspacePanel space={space} activeCate={activeCate} />
-      ) : null}
-
-      {workMode === "create" ? (
-        <CreationWorkspacePanel
-          flows={activeFlows}
-          running={running}
-          onEnterCanvas={() => {
-            setWorkMode("canvas");
-            setNodeMenu(null);
-          }}
-          onRunFlow={executeFlow}
+      {workMode === "result" ? (
+        <AssetWorkspacePanel
+          space={space}
+          activeCate={activeCate}
+          onClose={() => setWorkMode("create")}
         />
       ) : null}
 
-      {workMode === "chat" ? (
+      <button
+        type="button"
+        className={`ws-assistant-ball ${assistantOpen ? "is-open" : ""}`}
+        onClick={() => setAssistantOpen((current) => !current)}
+        aria-label={assistantOpen ? "收起创作助手" : "打开创作助手"}
+      >
+        <MessageSquare size={25} />
+      </button>
+
+      {assistantOpen ? (
         <CommunicationWorkspacePanel
           activeCate={activeCate}
           prompt={prompt}
@@ -832,6 +991,7 @@ export function WorkSpacePage() {
           runStatus={runStatus}
           onPromptChange={setPrompt}
           onSubmitMessage={submitMessage}
+          onClose={() => setAssistantOpen(false)}
         />
       ) : null}
 
@@ -866,7 +1026,25 @@ export function WorkSpacePage() {
 
       {nodeDetail ? (
         <NodeDetailDialog
+          projectId={space.project.id}
           node={nodeDetail}
+          onAssetSaved={(asset) => {
+            const normalizedAsset = normalizeRichAssetVersionContent(asset);
+            upsertSpaceAsset(normalizedAsset);
+            updateNodeResult(nodeDetail.id, {
+              asset: normalizedAsset,
+              description: documentPreview(normalizedAsset.version?.content),
+            });
+            setNodeDetail((current) =>
+              current?.id === nodeDetail.id
+                ? {
+                    ...current,
+                    asset: normalizedAsset,
+                    description: documentPreview(normalizedAsset.version?.content),
+                  }
+                : current,
+            );
+          }}
           onClose={() => setNodeDetail(null)}
         />
       ) : null}
@@ -876,22 +1054,70 @@ export function WorkSpacePage() {
 
 function TopCanvasToolbar({
   space,
-  mode,
+  cates,
+  activeCate,
+  hasAssetCates,
+  onBack,
+  onSelectCate,
   onRefresh,
-  onSelectMode,
   theme,
   onToggleTheme,
 }: {
   space: SpaceBootstrap;
-  mode: WorkMode;
+  cates: AssetCate[];
+  activeCate: AssetCate;
+  hasAssetCates: boolean;
+  onBack: () => void;
+  onSelectCate: (cateId: number) => void;
   onRefresh: () => void;
-  onSelectMode: (mode: WorkMode) => void;
   theme: WorkSpaceTheme;
   onToggleTheme: () => void;
 }) {
+  const activeIndex = Math.max(
+    0,
+    cates.findIndex((cate) => cate.id === activeCate.id),
+  );
   return (
     <header className="ws-topbar">
-      <ModeSwitch mode={mode} onSelectMode={onSelectMode} />
+      <div className="ws-project-head">
+        <button
+          type="button"
+          className="ws-back-button"
+          onClick={onBack}
+          aria-label="返回工作台"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <div className="ws-project-copy">
+          <strong>{space.project.name}</strong>
+          <span>{space.team.name || space.project.team?.name || "自由团队"}</span>
+        </div>
+      </div>
+
+      {hasAssetCates ? (
+        <nav
+          className="ws-cate-strip"
+          aria-label="资产类型"
+          style={
+            {
+              "--ws-cate-total": cates.length,
+              "--ws-cate-active": activeIndex,
+            } as CSSProperties
+          }
+        >
+          <span className="ws-cate-indicator" />
+          {cates.map((cate) => (
+            <button
+              key={cate.id}
+              type="button"
+              className={`ws-cate ${cate.id === activeCate.id ? "is-active" : ""}`}
+              onClick={() => onSelectCate(cate.id)}
+            >
+              <span className="ws-cate-name">{cate.name}</span>
+            </button>
+          ))}
+        </nav>
+      ) : null}
 
       <div className="ws-top-actions">
         <div className="ws-team-pill">
@@ -911,46 +1137,38 @@ function TopCanvasToolbar({
   );
 }
 
-const workModeOptions: { key: WorkMode; label: string }[] = [
-  { key: "assets", label: "资产" },
-  { key: "create", label: "创作" },
-  { key: "chat", label: "沟通" },
+const dockModeOptions: Array<{
+  key: WorkMode;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { key: "create", label: "创作", icon: PenTool },
+  { key: "result", label: "结果", icon: FileSearch },
 ];
 
-function ModeSwitch({
+function LeftCanvasDock({
   mode,
   onSelectMode,
 }: {
   mode: WorkMode;
   onSelectMode: (mode: WorkMode) => void;
 }) {
-  const activeMode = mode === "canvas" ? "create" : mode;
-  const activeIndex = Math.max(
-    0,
-    workModeOptions.findIndex((item) => item.key === activeMode),
-  );
   return (
-    <nav
-      className="ws-mode-switch"
-      aria-label="工作模式"
-      style={
-        {
-          "--ws-mode-total": workModeOptions.length,
-          "--ws-mode-active": activeIndex,
-        } as CSSProperties
-      }
-    >
-      <span className="ws-mode-indicator" />
-      {workModeOptions.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          className={`ws-mode ${item.key === activeMode ? "is-active" : ""}`}
-          onClick={() => onSelectMode(item.key)}
-        >
-          {item.label}
-        </button>
-      ))}
+    <nav className="ws-dock" aria-label="画布视角">
+      {dockModeOptions.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={`ws-dock-button ${item.key === mode ? "is-active" : ""}`}
+            onClick={() => onSelectMode(item.key)}
+          >
+            <Icon size={20} />
+            {item.label}
+          </button>
+        );
+      })}
     </nav>
   );
 }
@@ -1168,91 +1386,14 @@ function isAddMenuAction(
   return "className" in item;
 }
 
-function AssetCateSidebar({
-  space,
-  cates,
-  activeCate,
-  onBack,
-  onSelectCate,
-}: {
-  space: SpaceBootstrap;
-  cates: AssetCate[];
-  activeCate: AssetCate;
-  onBack: () => void;
-  onSelectCate: (cateId: number) => void;
-}) {
-  return (
-    <aside className="ws-cate-sidebar" aria-label="资产分类">
-      <div className="ws-cate-brand">
-        <button
-          type="button"
-          className="ws-sidebar-home"
-          onClick={onBack}
-          aria-label="返回工作台"
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <div className="ws-sidebar-project">
-          <strong>{space.project.name}</strong>
-          <span>{space.team.name || space.project.team?.name || "自由团队"}</span>
-        </div>
-      </div>
-      <nav className="ws-cate-nav custom-scrollbar">
-        {cates.map((cate, index) => (
-          <CateNavItem
-            key={cate.id}
-            cate={cate}
-            active={cate.id === activeCate.id}
-            icon={assetCateIcon(cate, index)}
-            onClick={() => onSelectCate(cate.id)}
-          />
-        ))}
-      </nav>
-    </aside>
-  );
-}
-
-function CateNavItem({
-  active,
-  icon: Icon,
-  cate,
-  onClick,
-}: {
-  active: boolean;
-  icon: LucideIcon;
-  cate: AssetCate;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`ws-cate-nav-item ${active ? "is-active" : ""}`}
-      onClick={onClick}
-    >
-      <Icon size={18} />
-      <span>{cate.name}</span>
-    </button>
-  );
-}
-
-function assetCateIcon(cate: AssetCate, index: number): LucideIcon {
-  const name = cate.name || "";
-  if (/章|节|剧本|文章|大纲/.test(name)) return FileText;
-  if (/角色|人物|人/.test(name)) return Users;
-  if (/世界|地点|场景/.test(name)) return Compass;
-  if (/图|图片|画/.test(name)) return ImageIcon;
-  if (/视频|短剧|分镜/.test(name)) return Tv;
-  if (/灵感|想法/.test(name)) return Sparkles;
-  const icons = [FileText, Sparkles, Users, Compass, Layers, Grid];
-  return icons[index % icons.length];
-}
-
 function AssetWorkspacePanel({
   space,
   activeCate,
+  onClose,
 }: {
   space: SpaceBootstrap;
   activeCate: AssetCate;
+  onClose: () => void;
 }) {
   const assets = assetsForCate(space, activeCate.id);
   const showList = activeCate.cardinality !== "single" || assets.length > 1;
@@ -1269,6 +1410,14 @@ function AssetWorkspacePanel({
       <section
         className={`ws-asset-editor-shell ${showList ? "has-list" : "is-single"}`}
       >
+        <button
+          type="button"
+          className="ws-workspace-close"
+          onClick={onClose}
+          aria-label="关闭结果"
+        >
+          <X size={18} />
+        </button>
         {showList ? (
           <aside className="ws-asset-list-pane">
             <div className="ws-asset-list-title">{activeCate.name}</div>
@@ -1299,52 +1448,6 @@ function AssetWorkspacePanel({
   );
 }
 
-function CreationWorkspacePanel({
-  flows,
-  running,
-  onEnterCanvas,
-  onRunFlow,
-}: {
-  flows: TeamFlow[];
-  running: boolean;
-  onEnterCanvas: () => void;
-  onRunFlow: (flow: TeamFlow) => void;
-}) {
-  return (
-    <WorkspaceSurface className="ws-create-workspace">
-      <section className="ws-create-card">
-        <button
-          type="button"
-          className="ws-create-option is-canvas"
-          onClick={onEnterCanvas}
-        >
-          <span>自由画布</span>
-          <small>添加资产、能力、控制节点并自由连线。</small>
-        </button>
-        <div className="ws-create-flow-list custom-scrollbar">
-          <div className="ws-create-section-title">流程列表</div>
-          {flows.length > 0 ? (
-            flows.map((flow) => (
-              <button
-                key={flow.id}
-                type="button"
-                className="ws-create-flow-item"
-                disabled={running}
-                onClick={() => onRunFlow(flow)}
-              >
-                <span>{flow.name || "未命名流程"}</span>
-                <small>{flow.goal || "运行团队预设流程"}</small>
-              </button>
-            ))
-          ) : (
-            <div className="ws-create-empty">暂无流程</div>
-          )}
-        </div>
-      </section>
-    </WorkspaceSurface>
-  );
-}
-
 function CommunicationWorkspacePanel({
   activeCate,
   prompt,
@@ -1352,6 +1455,7 @@ function CommunicationWorkspacePanel({
   runStatus,
   onPromptChange,
   onSubmitMessage,
+  onClose,
 }: {
   activeCate: AssetCate;
   prompt: string;
@@ -1359,10 +1463,19 @@ function CommunicationWorkspacePanel({
   runStatus: string;
   onPromptChange: (value: string) => void;
   onSubmitMessage: () => void;
+  onClose: () => void;
 }) {
   return (
     <WorkspaceSurface className="ws-communication-workspace">
       <section className="ws-chat-stage">
+        <button
+          type="button"
+          className="ws-chat-close"
+          onClick={onClose}
+          aria-label="关闭创作助手"
+        >
+          <X size={18} />
+        </button>
         <div className="ws-chat-thread">
           <div className="ws-chat-message is-assistant">
             <div className="ws-chat-avatar">AI</div>
@@ -1444,24 +1557,12 @@ function assetContentText(asset: ProjectAsset | null) {
   if (!asset) {
     return "";
   }
-  const content = asset.version?.content;
-  if (typeof content === "string") {
-    return content;
-  }
-  if (content && typeof content === "object") {
-    const record = content as Record<string, unknown>;
-    for (const key of ["text", "content", "body", "markdown", "value"]) {
-      const value = record[key];
-      if (typeof value === "string" && value.trim()) {
-        return value;
-      }
-    }
-  }
-  return documentPreview(content);
+  return safeDocumentText(asset.version?.content);
 }
 
 function CanvasWorkbench({
   activeCate,
+  mode,
   interactive,
   nodes,
   edges,
@@ -1483,8 +1584,10 @@ function CanvasWorkbench({
   runningNode,
   setRunningNode,
   onNodeResult,
+  onAssetCreated,
 }: {
   activeCate: AssetCate;
+  mode: WorkMode;
   interactive: boolean;
   nodes: SpaceCanvasNode[];
   edges: { id: string; from: string; to: string }[];
@@ -1510,6 +1613,7 @@ function CanvasWorkbench({
   runningNode: RunningNodeState | null;
   setRunningNode: RunningNodeSetter;
   onNodeResult: NodeResultSetter;
+  onAssetCreated: (asset: ProjectAsset) => void;
 }) {
   const [flowInstance, setFlowInstance] = useState<FlowViewport | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
@@ -1546,6 +1650,7 @@ function CanvasWorkbench({
       activeIds.add(node.id);
       const position = { x: node.x, y: node.y };
       const selected = node.id === selectedNodeId;
+      const className = `ws-flow-node ws-flow-node-${node.type}`;
 
       const nodeData = {
         ...node,
@@ -1555,6 +1660,7 @@ function CanvasWorkbench({
         setRunningNode,
         onAddConfiguredNode,
         onNodeResult,
+        onAssetCreated,
         onShowNodeDetail,
         viewportZoom,
         inputContext: buildNodeInputContext(node.id, nodes, contextEdges),
@@ -1568,6 +1674,7 @@ function CanvasWorkbench({
         cached.position.y === position.y &&
         cached.data === nodeData &&
         cached.selected === selected &&
+        cached.className === className &&
         cachedStyle?.width === node.width &&
         cachedStyle?.height === node.height
       ) {
@@ -1580,6 +1687,7 @@ function CanvasWorkbench({
         position,
         data: nodeData,
         selected,
+        className,
         style: {
           ...cached?.style,
           width: node.width,
@@ -1599,6 +1707,7 @@ function CanvasWorkbench({
     edges,
     nodes,
     onAddConfiguredNode,
+    onAssetCreated,
     onNodeResult,
     onShowNodeDetail,
     projectId,
@@ -2150,7 +2259,7 @@ function CanvasWorkbench({
 
   return (
     <section
-      className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""} ${interactive ? "is-interactive" : "is-passive"}`}
+      className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""} ${interactive ? "is-interactive" : "is-passive"} ${mode === "result" ? "is-result-mode" : ""}`}
     >
       <ReactFlow
         nodes={flowNodes}
@@ -2224,7 +2333,7 @@ function CanvasWorkbench({
         edgesFocusable={interactive}
         elementsSelectable={interactive}
         panOnDrag={interactive}
-        panOnScroll={interactive}
+        panOnScroll={false}
         zoomOnScroll={interactive}
         zoomOnPinch={interactive}
         snapToGrid={snapToGrid}
@@ -2413,17 +2522,54 @@ function CanvasViewControls({
 }
 
 function NodeDetailDialog({
+  projectId,
   node,
+  onAssetSaved,
   onClose,
 }: {
+  projectId: number;
   node: SpaceCanvasNode;
+  onAssetSaved?: (asset: ProjectAsset) => void;
   onClose: () => void;
 }) {
+  const detailRich = nodeRichDocument(node);
+  const displayOutput = nodeEnergonOutput(node);
+  const detailText = displayTextFromOutput(
+    displayOutput,
+    node.description || "",
+  );
+  const [editableRich, setEditableRich] = useState(() => detailText);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setEditableRich(detailText);
+  }, [detailText, node.id]);
   const preview = nodeDetailPreview(node);
   const typeLabel =
     node.subtitle || powerKindLabel(String(node.kind || node.type));
   const downloadUrl =
     preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl;
+  const assetId = Number(node.asset?.id || 0);
+
+  async function saveRichContent() {
+    if (!assetId || assetId < 0) {
+      toast.info("当前内容还不是后端资产，暂不能保存版本");
+      return;
+    }
+    setSaving(true);
+    try {
+      const asset = await saveSpaceAssetVersion({
+        projectId,
+        assetId,
+        content: parseEditableRichContent(editableRich),
+      });
+      onAssetSaved?.(asset);
+      toast.success("资产版本已保存");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "保存资产失败");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="ws-node-detail-backdrop" onMouseDown={onClose}>
@@ -2468,13 +2614,229 @@ function NodeDetailDialog({
                 下载文件
               </a>
             </div>
+          ) : detailRich ? (
+            <div className="ws-node-detail-editor">
+              <RichDocumentView
+                value={detailRich}
+                className="ws-node-detail-output ws-node-detail-rich-preview"
+              />
+              <div className="ws-node-detail-editor-foot">
+                <p>
+                  {assetId > 0
+                    ? "保存后会生成一个新的资产版本。"
+                    : "当前内容还不是后端资产，暂不能保存版本。"}
+                </p>
+                <button type="button" disabled>
+                  <Save size={15} />
+                  <span>编辑待接入</span>
+                </button>
+              </div>
+            </div>
+          ) : EnergonContentView && hasDisplayOutput(displayOutput) ? (
+            <div className="ws-node-detail-editor">
+              <div className="ws-node-detail-output">
+                <EnergonContentView output={displayOutput} emptyText="暂无详情" />
+              </div>
+              <div className="ws-node-detail-editor-foot">
+                <p>
+                  {assetId > 0
+                    ? "保存后会生成一个新的资产版本。"
+                    : "当前内容还不是后端资产，暂不能保存版本。"}
+                </p>
+                <button
+                  type="button"
+                  disabled
+                  onClick={() => void saveRichContent()}
+                >
+                  <Save size={15} />
+                  <span>编辑待接入</span>
+                </button>
+              </div>
+            </div>
+          ) : detailText ? (
+            <div className="ws-node-detail-editor">
+              <RichDocumentEditor
+                value={editableRich}
+                onChange={setEditableRich}
+              />
+              <div className="ws-node-detail-editor-foot">
+                <p>
+                  {assetId > 0
+                    ? "保存后会生成一个新的资产版本。"
+                    : "当前内容还不是后端资产，暂不能保存版本。"}
+                </p>
+                <button
+                  type="button"
+                  disabled={saving || assetId <= 0}
+                  onClick={() => void saveRichContent()}
+                >
+                  {saving ? <Loader2 size={15} className="ws-spin" /> : <Save size={15} />}
+                  <span>{saving ? "保存中" : "保存版本"}</span>
+                </button>
+              </div>
+            </div>
           ) : (
-            <pre>{preview.text || node.description || "暂无详情"}</pre>
+            <pre>{detailText || "暂无详情"}</pre>
           )}
         </div>
       </section>
     </div>
   );
+}
+
+function parseEditableRichContent(value: string) {
+  const parsed = parseMaybeJSON(value);
+  const rich = safeRichDocument(parsed);
+  return rich || plainTextToRichDocument(value);
+}
+
+function plainTextToRichDocument(value: string) {
+  const blocks = String(value || "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  return {
+    type: "doc",
+    content: (blocks.length > 0 ? blocks : [""]).map((block) => ({
+      type: "paragraph",
+      content: block
+        ? [
+            {
+              type: "text",
+              text: block,
+            },
+          ]
+        : [],
+    })),
+  };
+}
+
+function RichDocumentEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <textarea
+      className="ws-rich-document-editor"
+      value={value}
+      placeholder="编辑内容"
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
+function RichDocumentView({
+  value,
+  className,
+}: {
+  value: ReturnType<typeof richDocument>;
+  className?: string;
+}) {
+  if (!value) {
+    return null;
+  }
+  return (
+    <div className={className}>
+      {renderRichDocumentNodes(value.content || [], "root")}
+    </div>
+  );
+}
+
+function renderRichDocumentNodes(nodes: any[], keyPrefix: string): ReactNode {
+  return nodes.map((node, index) =>
+    renderRichDocumentNode(node, `${keyPrefix}-${index}`),
+  );
+}
+
+function renderRichDocumentNode(node: any, key: string): ReactNode {
+  const children = renderRichDocumentNodes(node?.content || [], key);
+  switch (node?.type) {
+    case "heading": {
+      const level = Math.min(Math.max(Number(node.attrs?.level || 2), 1), 6);
+      const HeadingTag = richHeadingTag(level);
+      return <HeadingTag key={key}>{children}</HeadingTag>;
+    }
+    case "paragraph":
+      return <p key={key}>{children}</p>;
+    case "bulletList":
+      return <ul key={key}>{children}</ul>;
+    case "orderedList":
+      return <ol key={key}>{children}</ol>;
+    case "listItem":
+      return <li key={key}>{children}</li>;
+    case "blockquote":
+      return <blockquote key={key}>{children}</blockquote>;
+    case "hardBreak":
+      return <br key={key} />;
+    case "horizontalRule":
+      return <hr key={key} />;
+    case "text":
+      return renderRichTextNode(node, key);
+    case "editorMediaImage":
+      return node.attrs?.src ? (
+        <img key={key} src={String(node.attrs.src)} alt={String(node.attrs.alt || "")} />
+      ) : null;
+    default:
+      return children;
+  }
+}
+
+function renderRichTextNode(node: any, key: string): ReactNode {
+  let content: ReactNode = node.text || "";
+  for (const mark of node.marks || []) {
+    switch (mark?.type) {
+      case "bold":
+        content = <strong key={`${key}-bold`}>{content}</strong>;
+        break;
+      case "italic":
+        content = <em key={`${key}-italic`}>{content}</em>;
+        break;
+      case "strike":
+        content = <s key={`${key}-strike`}>{content}</s>;
+        break;
+      case "code":
+        content = <code key={`${key}-code`}>{content}</code>;
+        break;
+      case "link": {
+        const href = String(mark.attrs?.href || "");
+        content = href ? (
+          <a key={`${key}-link`} href={href} target="_blank" rel="noreferrer">
+            {content}
+          </a>
+        ) : (
+          content
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return <Fragment key={key}>{content}</Fragment>;
+}
+
+function richHeadingTag(level: number) {
+  const tags = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
+  return tags[level - 1] || "h2";
+}
+
+function safeRichDocument(value: any): ReturnType<typeof richDocument> {
+  try {
+    return richDocument(value);
+  } catch {
+    return null;
+  }
+}
+
+function safeDocumentText(value: any) {
+  try {
+    return documentText(value);
+  } catch {
+    return "";
+  }
 }
 
 type FlowViewport = {
@@ -2524,7 +2886,7 @@ function buildGeneratedNodeResultPatch(
   result: any,
   fallbackPrompt: string,
 ): Partial<SpaceCanvasNode> {
-  const output = firstDefined(
+  const rawOutput = firstDefined(
     result?.output,
     result?.version?.content,
     result?.asset?.version?.content,
@@ -2533,11 +2895,14 @@ function buildGeneratedNodeResultPatch(
     result?.data?.result,
     result?.data,
   );
+  const fixedRichOutput = fixedTiptapRichOutput(rawOutput);
+  const output = fixedRichOutput || extractDisplayOutput(rawOutput);
   const preview = generatedPreviewFromValue(
     output,
     String(node.power?.kind || node.kind || ""),
   );
   const summary =
+    safeDocumentText(output) ||
     preview.text ||
     preview.imageUrl ||
     preview.videoUrl ||
@@ -2557,24 +2922,301 @@ function buildGeneratedNodeResultPatch(
   };
 }
 
+async function waitForFlowCompletion(
+  projectId: number,
+  run: { runId?: number; requestId?: string },
+): Promise<FlowRunSnapshot> {
+  let lastSnapshot: FlowRunSnapshot | null = null;
+  for (let index = 0; index < 60; index += 1) {
+    const status = await fetchSpaceRunStatus({
+      projectId,
+      runId: run.runId || 0,
+      requestId: run.requestId || "",
+    });
+    const snapshot = normalizeFlowRunSnapshot(status);
+    lastSnapshot = snapshot;
+    if (
+      snapshot.status === "success" ||
+      snapshot.status === "fail" ||
+      snapshot.status === "canceled" ||
+      isFlowWaitingSnapshot(snapshot)
+    ) {
+      return snapshot;
+    }
+    await delay(900);
+  }
+  return (
+    lastSnapshot || {
+      runId: Number(run.runId || 0),
+      requestId: String(run.requestId || ""),
+      status: "running",
+      output: null,
+      error: "流程仍在运行，请稍后刷新查看结果",
+      approvals: [],
+      raw: {},
+    }
+  );
+}
+
+function normalizeFlowRunSnapshot(value: any): FlowRunSnapshot {
+  const run = value?.run || value?.data?.run || value || {};
+  const approvals = Array.isArray(value?.approvals)
+    ? value.approvals
+    : Array.isArray(value?.data?.approvals)
+      ? value.data.approvals
+      : [];
+  return {
+    runId: Number(run?.id || value?.run_id || 0),
+    requestId: String(run?.request_id || value?.request_id || ""),
+    status: String(run?.status || value?.status || "running"),
+    output: firstDefined(run?.output, value?.output, value?.data?.output),
+    error: String(run?.error || value?.error || ""),
+    approvals: approvals.map(normalizeFlowApproval).filter(Boolean),
+    raw: value,
+  };
+}
+
+function normalizeFlowApproval(value: any): FlowApproval {
+  const content = value?.content && typeof value.content === "object"
+    ? value.content
+    : {};
+  return {
+    id: Number(value?.id || value?.approval_id || 0),
+    title: String(value?.title || ""),
+    status: String(value?.status || ""),
+    decision: String(value?.decision || ""),
+    content,
+  };
+}
+
+function flowFeedbackFromSnapshot(
+  snapshot: FlowRunSnapshot,
+): FlowFeedbackPrompt | null {
+  const approval = snapshot.approvals.find(isPendingFlowApproval);
+  if (!approval?.id) {
+    return null;
+  }
+  const interaction = flowApprovalInteraction(approval);
+  const fields = flowFeedbackFields(interaction);
+  return {
+    approval,
+    title: firstText(interaction.title, approval.title, "补充信息"),
+    description: firstText(interaction.description, "补充信息后继续执行流程。"),
+    fields,
+    values: flowFeedbackInitialValues(interaction, fields),
+  };
+}
+
+function isPendingFlowApproval(approval: FlowApproval) {
+  return approval.status === "pending" || approval.decision === "pending";
+}
+
+function isFlowWaitingSnapshot(snapshot: FlowRunSnapshot) {
+  return (
+    snapshot.status === "waiting" ||
+    snapshot.approvals.some(isPendingFlowApproval)
+  );
+}
+
+function flowApprovalInteraction(approval: FlowApproval) {
+  const content = approval.content || {};
+  const interaction = content.interaction;
+  return interaction && typeof interaction === "object" ? interaction : content;
+}
+
+function flowFeedbackFields(interaction: Record<string, any>): PowerParam[] {
+  const fields = Array.isArray(interaction.fields)
+    ? interaction.fields
+    : Array.isArray(interaction.params)
+      ? interaction.params
+      : [];
+  return fields
+    .map((field, index) => normalizeFeedbackField(field, index))
+    .filter((field): field is PowerParam => Boolean(field.key));
+}
+
+function normalizeFeedbackField(value: any, index: number): PowerParam {
+  const options = Array.isArray(value?.options) ? value.options : [];
+  return {
+    id: Number(value?.id || index + 1),
+    name: String(value?.name || value?.label || value?.title || value?.key || ""),
+    key: String(value?.key || value?.name || `field_${index + 1}`),
+    type: String(value?.type || "input"),
+    value_type: value?.value_type || value?.valueType || "string",
+    default_value: String(value?.default_value || value?.defaultValue || ""),
+    required: Boolean(value?.required),
+    options: options.map((option: any, optionIndex: number) => ({
+      id: Number(option?.id || optionIndex + 1),
+      name: String(option?.name || option?.label || option?.value || ""),
+      value: String(option?.value || option?.id || option?.label || option?.name || ""),
+      sort: Number(option?.sort || optionIndex + 1),
+    })),
+  };
+}
+
+function flowFeedbackInitialValues(
+  interaction: Record<string, any>,
+  fields: PowerParam[],
+) {
+  const values = defaultPowerParamValues(fields);
+  const source =
+    interaction.values && typeof interaction.values === "object"
+      ? interaction.values
+      : {};
+  return {
+    ...values,
+    ...source,
+  };
+}
+
+function latestAssetFromStatus(
+  snapshot: FlowRunSnapshot,
+  assetCateId: number,
+): ProjectAsset | null {
+  const assets = Array.isArray(snapshot.raw?.assets)
+    ? snapshot.raw.assets
+    : Array.isArray(snapshot.raw?.data?.assets)
+      ? snapshot.raw.data.assets
+      : [];
+  return latestAssetCandidate(assets, assetCateId, snapshot.runId);
+}
+
+async function latestGeneratedAsset(
+  projectId: number,
+  assetCateId: number,
+  runId: number,
+) {
+  if (runId <= 0) {
+    return null;
+  }
+  const assets = await fetchSpaceBootstrapAssets(projectId);
+  return latestAssetCandidate(assets, assetCateId, runId);
+}
+
+function latestAssetCandidate(
+  assets: ProjectAsset[],
+  assetCateId: number,
+  runId: number,
+) {
+  if (runId <= 0) {
+    return null;
+  }
+  const runCandidates = assets.filter((asset) => {
+    if (Number(asset.version?.run_id || 0) !== runId) {
+      return false;
+    }
+    return true;
+  });
+  const candidates = runCandidates.filter((asset) => {
+    if (assetCateId > 0 && Number(asset.asset_cate_id || 0) !== assetCateId) {
+      return false;
+    }
+    return true;
+  });
+  const matched = candidates.length > 0 ? candidates : runCandidates;
+  return (
+    matched.sort(
+      (left, right) =>
+        Number(right.version_id || right.id || 0) -
+        Number(left.version_id || left.id || 0),
+    )[0] || null
+  );
+}
+
+function virtualResultAsset(
+  node: SpaceCanvasNode,
+  snapshot: FlowRunSnapshot,
+  fallbackPrompt: string,
+): ProjectAsset {
+  const rawOutput = firstDefined(snapshot.output, { status: snapshot.status });
+  const output =
+    fixedTiptapRichOutput(rawOutput) || normalizeDisplayOutputForCanvas(rawOutput);
+  const content = firstDefined(output, fallbackPrompt);
+  return {
+    id: -Date.now(),
+    project_id: 0,
+    body_id: 0,
+    team_id: 0,
+    flow_id: node.flow?.id || 0,
+    asset_cate_id: Number(node.assetCateId || 0),
+    name: `${node.title || "流程"}结果`,
+    kind: String(node.kind || "text"),
+    version_id: 0,
+    sort: 0,
+    version: {
+      id: 0,
+      asset_id: 0,
+      version: 1,
+      content,
+    },
+  };
+}
+
+function normalizeRichAssetVersionContent(asset: ProjectAsset): ProjectAsset {
+  const content = asset.version?.content;
+  const richOutput = fixedTiptapRichOutput(content);
+  if (!richOutput || !asset.version) {
+    return asset;
+  }
+  return {
+    ...asset,
+    version: {
+      ...asset.version,
+      content: richOutput,
+    },
+  };
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function generatedNodePreview(node: SpaceCanvasNode): GeneratedNodePreview {
   const stored = (node as any).generatedPreview;
   if (stored && typeof stored === "object") {
-    return {
-      text: String(stored.text || ""),
+    const storedText = String(stored.text || "");
+    const preview = {
+      text: storedText,
       imageUrl: String(stored.imageUrl || ""),
       videoUrl: String(stored.videoUrl || ""),
       audioUrl: String(stored.audioUrl || ""),
       fileUrl: String(stored.fileUrl || ""),
     };
+    const normalizedText = displayTextFromOutput(
+      nodeContextOutput(node),
+      preview.text || node.description,
+    );
+    if (normalizedText) {
+      preview.text = normalizedText;
+    } else if (looksLikeStructuredJSONSnippet(storedText)) {
+      preview.text = "";
+    }
+    if (hasGeneratedPreview(preview)) {
+      return preview;
+    }
   }
-  const output = firstDefined(
-    (node as any).generatedOutput,
-    (node as any).output,
-    (node as any).result?.output,
-    (node as any).version?.content,
-    (node as any).asset?.version?.content,
-  );
+  if (node.type !== "asset" && stored && typeof stored === "object") {
+    const preview = {
+      text: displayTextFromOutput(nodeContextOutput(node), node.description),
+      imageUrl: "",
+      videoUrl: "",
+      audioUrl: "",
+      fileUrl: "",
+    };
+    return preview;
+  }
+  const output =
+    node.type === "asset"
+      ? nodeContextOutput(node)
+      : firstDefined(
+          (node as any).generatedOutput,
+          (node as any).output,
+          (node as any).result?.output,
+          (node as any).version?.content,
+          (node as any).asset?.version?.content,
+        );
   const preview = generatedPreviewFromValue(
     output,
     String(node.power?.kind || node.kind || ""),
@@ -2583,7 +3225,10 @@ function generatedNodePreview(node: SpaceCanvasNode): GeneratedNodePreview {
     !hasGeneratedPreview(preview) &&
     (node.hasResult === true || node.status === "已生成")
   ) {
-    preview.text = node.description;
+    preview.text = displayTextFromOutput(
+      nodeContextOutput(node),
+      node.description,
+    );
   }
   return preview;
 }
@@ -2598,10 +3243,665 @@ function nodeDetailPreview(node: SpaceCanvasNode): GeneratedNodePreview {
     String(node.kind || node.power?.kind || ""),
   );
   if (!hasGeneratedPreview(assetPreview)) {
-    assetPreview.text =
-      node.description || stringifyContextValue(nodeContextOutput(node));
+    assetPreview.text = displayTextFromOutput(
+      nodeContextOutput(node),
+      node.description,
+    );
   }
   return assetPreview;
+}
+
+function nodeRichDocument(node: SpaceCanvasNode) {
+  return fixedTiptapRichDocumentFromNode(node) || richDocumentFromNode(node);
+}
+
+function nodeEnergonOutput(node: SpaceCanvasNode) {
+  const rich = fixedTiptapRichDocumentFromNode(node);
+  if (rich) {
+    const output = { rich };
+    return normalizeEnergonOutput?.(output) ?? output;
+  }
+  return firstDisplayOutput(
+    node.asset?.version?.content,
+    (node as any).asset?.version?.content,
+    (node as any).version?.content,
+    (node as any).generatedOutput,
+    (node as any).output,
+    (node as any).result?.output,
+    node.description,
+    (node as any).generatedPreview?.text,
+  );
+}
+
+function fixedTiptapRichDocumentFromNode(node: SpaceCanvasNode) {
+  return firstTiptapRichDocument(
+    node.asset?.version?.content,
+    (node as any).asset?.version?.content,
+    (node as any).version?.content,
+    (node as any).generatedOutput,
+    (node as any).output,
+    (node as any).result?.output,
+    node.description,
+    (node as any).generatedPreview?.text,
+  );
+}
+
+function firstTiptapRichDocument(...values: any[]) {
+  for (const value of values) {
+    const rich = fixedTiptapRichDocument(value);
+    if (rich) {
+      return rich;
+    }
+  }
+  return null;
+}
+
+function firstDisplayOutput(...values: any[]) {
+  for (const value of values) {
+    const output = normalizeEnergonDisplayOutput(value);
+    if (hasDisplayOutput(output)) {
+      return output;
+    }
+  }
+  return "";
+}
+
+function normalizeEnergonDisplayOutput(value: any): any {
+  const parsed = parseMaybeJSON(value);
+  const fixedRichOutput = fixedTiptapRichOutput(parsed);
+  if (fixedRichOutput) {
+    return normalizeEnergonOutput?.(fixedRichOutput) ?? fixedRichOutput;
+  }
+  const canvasOutput = normalizeDisplayOutputForCanvas(value);
+  if (canvasOutput !== parsed && hasDisplayOutput(canvasOutput)) {
+    return canvasOutput;
+  }
+  const protocolOutput =
+    normalizeAgentResultOutputValue?.(parsed) ?? parsed;
+  const output = normalizeEnergonDisplayValue(protocolOutput, new Set());
+  if (hasDisplayOutput(output)) {
+    return output;
+  }
+  if (protocolOutput !== parsed) {
+    return normalizeEnergonDisplayValue(parsed, new Set());
+  }
+  return "";
+}
+
+function normalizeEnergonDisplayValue(value: any, seen: Set<any>): any {
+  const parsed = parseMaybeJSON(value);
+  const fixedRichOutput = fixedTiptapRichOutput(parsed);
+  if (fixedRichOutput) {
+    return normalizeEnergonOutput?.(fixedRichOutput) ?? fixedRichOutput;
+  }
+  if (typeof parsed === "string") {
+    const fixedOutput = fixedRichDisplayOutput(parsed);
+    if (hasDisplayOutput(fixedOutput)) {
+      return fixedOutput;
+    }
+    const looseText = looseRichJSONText(parsed);
+    if (looseText) {
+      return { text: looseText };
+    }
+    return looksLikeStructuredJSONSnippet(parsed) ? "" : parsed;
+  }
+  if (Array.isArray(parsed)) {
+    const output = parsed
+      .map((item) => normalizeEnergonDisplayValue(item, seen))
+      .filter(hasDisplayOutput);
+    return output.length > 0 ? output : "";
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return parsed;
+  }
+  const rich = safeRichDocument(parsed);
+  if (rich) {
+    return { rich };
+  }
+  if (seen.has(parsed)) {
+    return "";
+  }
+  seen.add(parsed);
+
+  const extracted = extractDisplayOutput(parsed);
+  if (extracted !== parsed) {
+    return normalizeEnergonDisplayValue(extracted, seen);
+  }
+
+  if (isAgentResultPayloadObject(parsed)) {
+    return normalizeAgentResultPayloadForEnergon(parsed);
+  }
+  for (const key of ["output", "result", "data", "content", "json", "value"]) {
+    if (!(key in parsed)) {
+      continue;
+    }
+    const output = normalizeEnergonDisplayValue(parsed[key], seen);
+    if (hasDisplayOutput(output)) {
+      return output;
+    }
+  }
+  if (isRunEnvelope(parsed)) {
+    const text = firstText(parsed.message, parsed.error, parsed.status);
+    return text ? { text } : "";
+  }
+  return hasMeaningfulObjectOutput(parsed) ? parsed : "";
+}
+
+function isAgentResultPayloadObject(value: any) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value.format ||
+      value.result_mode ||
+      value.rich ||
+      value.images ||
+      value.videos ||
+      value.audios ||
+      value.files)
+  );
+}
+
+function normalizeAgentResultPayloadForEnergon(value: Record<string, any>) {
+  const result: Record<string, any> = {};
+  const rich = safeRichDocument(value);
+  if (rich) {
+    result.rich = rich;
+  }
+  const content = parseMaybeJSON(value.content);
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    copyEnergonOutputFields(result, content);
+  }
+  copyEnergonOutputFields(result, value);
+  if (!hasDisplayOutput(result) && content && typeof content === "object") {
+    return content;
+  }
+  return hasMeaningfulObjectOutput(result) ? result : "";
+}
+
+function normalizeDisplayOutputForCanvas(value: any): any {
+  const fixedRichOutput = fixedTiptapRichOutput(value);
+  if (fixedRichOutput) {
+    return fixedRichOutput;
+  }
+  const fixedOutput = fixedRichDisplayOutput(value);
+  if (hasDisplayOutput(fixedOutput)) {
+    return fixedOutput;
+  }
+  const parsed = parseMaybeJSON(value);
+  const rich = safeRichDocument(parsed);
+  if (rich) {
+    return { rich };
+  }
+  const extracted = extractDisplayOutput(parsed);
+  if (extracted !== parsed) {
+    const extractedRich = safeRichDocument(extracted);
+    return extractedRich ? { rich: extractedRich } : extracted;
+  }
+  return parsed;
+}
+
+function fixedTiptapRichOutput(value: any): { rich: any } | null {
+  const rich = fixedTiptapRichDocument(value);
+  return rich ? { rich } : null;
+}
+
+function fixedTiptapRichDocument(value: any, seen = new Set<any>()): any {
+  const parsed = parseMaybeJSON(value);
+  if (Array.isArray(parsed)) {
+    if (seen.has(parsed)) {
+      return null;
+    }
+    seen.add(parsed);
+    for (const item of parsed) {
+      const rich = fixedTiptapRichDocument(item, seen);
+      if (rich) {
+        return rich;
+      }
+    }
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  if (seen.has(parsed)) {
+    return null;
+  }
+  seen.add(parsed);
+  if (isRichDocumentLike(parsed)) {
+    return fixedTiptapRichDocumentFromTextDoc(parsed, seen) || parsed;
+  }
+  const row = parsed as Record<string, any>;
+  const candidates = [
+    valueAtPath(row, ["output", "content", "rich"]),
+    valueAtPath(row, ["output", "rich"]),
+    valueAtPath(row, ["content", "rich"]),
+    row.content,
+    row.rich,
+    row.text,
+    row.summary,
+  ];
+  for (const candidate of candidates) {
+    if (candidate === parsed) {
+      continue;
+    }
+    const rich = fixedTiptapRichDocument(candidate, seen);
+    if (rich) {
+      return rich;
+    }
+  }
+  return null;
+}
+
+function fixedTiptapRichDocumentFromTextDoc(
+  doc: any,
+  seen: Set<any>,
+): any {
+  const texts = collectTiptapTextValues(doc);
+  for (const text of texts) {
+    const rich = fixedTiptapRichDocumentFromStructuredText(text, seen);
+    if (rich) {
+      return rich;
+    }
+  }
+  return fixedTiptapRichDocumentFromStructuredText(texts.join(""), seen);
+}
+
+function fixedTiptapRichDocumentFromStructuredText(
+  value: string,
+  seen: Set<any>,
+): any {
+  const text = String(value || "").trim();
+  if (!looksLikeStructuredJSONSnippet(text)) {
+    return null;
+  }
+  const parsedText = parseMaybeEmbeddedJSON(text);
+  if (parsedText === text || parsedText === value) {
+    return null;
+  }
+  return fixedTiptapRichDocument(parsedText, seen);
+}
+
+function collectTiptapText(value: any): string {
+  return collectTiptapTextValues(value).join("");
+}
+
+function collectTiptapTextValues(value: any, seen = new Set<any>()): string[] {
+  if (!value) {
+    return [];
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectTiptapTextValues(item, seen));
+  }
+  if (typeof value !== "object") {
+    return [];
+  }
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+  const values: string[] = [];
+  if (typeof value.text === "string") {
+    values.push(value.text);
+  }
+  if (Array.isArray(value.content)) {
+    values.push(...collectTiptapTextValues(value.content, seen));
+  }
+  return values;
+}
+
+function parseMaybeEmbeddedJSON(value: string): any {
+  const text = String(value || "").trim();
+  const parsed = parseStructuredJSONText(text);
+  if (parsed !== text) return parsed;
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    return value;
+  }
+  const sliced = text.slice(start, end + 1);
+  const slicedParsed = parseStructuredJSONText(sliced);
+  return slicedParsed === sliced ? value : slicedParsed;
+}
+
+function parseStructuredJSONText(value: string): any {
+  const text = String(value || "").trim();
+  const repaired = repairJSONControlChars(text);
+  const unescaped = unescapeEscapedJSONQuotes(repaired);
+  for (const source of uniqueNonEmptyStrings([text, repaired, unescaped])) {
+    const parsed = parseMaybeJSON(source);
+    if (parsed !== source) {
+      return parsed;
+    }
+  }
+  return value;
+}
+
+function repairJSONControlChars(value: string) {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (const char of value) {
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      result += char;
+      escaped = inString;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+    if (inString && char.charCodeAt(0) < 32) {
+      result += escapeJSONControlChar(char);
+      continue;
+    }
+    result += char;
+  }
+  return result;
+}
+
+function escapeJSONControlChar(value: string) {
+  switch (value) {
+    case "\n":
+      return "\\n";
+    case "\r":
+      return "\\r";
+    case "\t":
+      return "\\t";
+    default:
+      return `\\u${value.charCodeAt(0).toString(16).padStart(4, "0")}`;
+  }
+}
+
+function unescapeEscapedJSONQuotes(value: string) {
+  const text = value.trim();
+  if (!text.includes('\\"') || (!text.startsWith("{") && !text.startsWith("["))) {
+    return value;
+  }
+  return text.replace(/\\"/g, '"');
+}
+
+function uniqueNonEmptyStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) {
+      return false;
+    }
+    seen.add(text);
+    return true;
+  });
+}
+
+function fixedRichDisplayOutput(value: any): any {
+  const rich = fixedRichDocument(value);
+  if (rich) {
+    return { rich };
+  }
+  const parsed = parseMaybeJSON(value);
+  if (!parsed) {
+    return "";
+  }
+  if (typeof parsed === "string") {
+    const looseText = looseRichJSONText(parsed);
+    return looseText ? { text: looseText } : "";
+  }
+  return "";
+}
+
+function fixedRichDocument(
+  value: any,
+  seen = new Set<any>(),
+): ReturnType<typeof richDocument> {
+  const parsed = parseMaybeJSON(value);
+  if (isRichDocumentLike(parsed)) {
+    return fixedTiptapRichDocumentFromTextDoc(parsed, seen) || parsed;
+  }
+  if (Array.isArray(parsed)) {
+    return safeRichDocument(normalizeDisplayOutput(parsed));
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  if (seen.has(parsed)) {
+    return null;
+  }
+  seen.add(parsed);
+
+  const row = parsed as Record<string, any>;
+  const payloadRich = richDocumentFromPayload(row);
+  if (payloadRich) {
+    return payloadRich;
+  }
+
+  const fixedCandidates = [
+    valueAtPath(row, ["output", "content", "rich"]),
+    valueAtPath(row, ["output", "content"]),
+    valueAtPath(row, ["output", "rich"]),
+    valueAtPath(row, ["content", "output", "content", "rich"]),
+    valueAtPath(row, ["content", "output", "content"]),
+    valueAtPath(row, ["content", "rich"]),
+    valueAtPath(row, ["data", "output", "content", "rich"]),
+    valueAtPath(row, ["data", "output", "content"]),
+    valueAtPath(row, ["data", "content", "rich"]),
+    row.rich,
+    row.output,
+    row.result,
+    row.content,
+    row.data,
+    row.value,
+    row.json,
+    row.text,
+    row.message,
+  ];
+
+  for (const candidate of fixedCandidates) {
+    if (candidate == null || candidate === parsed) {
+      continue;
+    }
+    const candidateRich = fixedRichDocument(candidate, seen);
+    if (candidateRich) {
+      return candidateRich;
+    }
+  }
+
+  for (const [key, candidate] of Object.entries(row)) {
+    if (
+      !isLikelyNestedResultKey(key) ||
+      !candidate ||
+      typeof candidate !== "object"
+    ) {
+      continue;
+    }
+    const candidateRich = fixedRichDocument(candidate, seen);
+    if (candidateRich) {
+      return candidateRich;
+    }
+  }
+
+  return null;
+}
+
+function richDocumentFromPayload(
+  payload: Record<string, any>,
+): ReturnType<typeof richDocument> {
+  if (isRichDocumentLike(payload)) {
+    return payload;
+  }
+  if (
+    Array.isArray(payload.content) &&
+    (String(payload.format || "").toLowerCase() === "rich_json" ||
+      payload.type === undefined)
+  ) {
+    return safeRichDocument({
+      type: "doc",
+      content: payload.content,
+    });
+  }
+  if (
+    String(payload.format || "").toLowerCase() === "rich_json" &&
+    payload.rich != null
+  ) {
+    return fixedRichDocument(payload.rich);
+  }
+  return null;
+}
+
+function isRichDocumentLike(value: any): value is NonNullable<ReturnType<typeof richDocument>> {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      value.type === "doc" &&
+      Array.isArray(value.content),
+  );
+}
+
+function copyEnergonOutputFields(
+  target: Record<string, any>,
+  source: Record<string, any>,
+) {
+  for (const key of [
+    "title",
+    "text",
+    "reasoning",
+    "rich",
+    "images",
+    "videos",
+    "audios",
+    "files",
+    "json",
+    "error",
+    "progress",
+    "meta",
+  ]) {
+    if (hasDisplayOutput(source[key])) {
+      target[key] =
+        key === "rich" ? normalizeEnergonRichValue(source[key]) : source[key];
+    }
+  }
+}
+
+function normalizeEnergonRichValue(value: any) {
+  const rich =
+    fixedRichDocument(value) ||
+    safeRichDocument(normalizeDisplayOutput(value)) ||
+    safeRichDocument(value);
+  return rich || value;
+}
+
+function hasMeaningfulObjectOutput(value: Record<string, any>) {
+  return Object.entries(value).some(([key, item]) => {
+    if (key.startsWith("_")) {
+      return false;
+    }
+    return hasDisplayOutput(item);
+  });
+}
+
+function hasDisplayOutput(value: any): boolean {
+  if (value == null || value === "") {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0 && !looksLikeStructuredJSONSnippet(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasDisplayOutput);
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  if (fixedRichDocument(value)) {
+    return true;
+  }
+  if (isRunEnvelope(value as Record<string, any>)) {
+    return false;
+  }
+  return hasMeaningfulObjectOutput(value);
+}
+
+function nodeDisplayText(node: SpaceCanvasNode) {
+  return displayTextFromOutput(
+    nodeContextOutput(node),
+    node.description || node.title,
+  );
+}
+
+function richDocumentFromNode(node: SpaceCanvasNode) {
+  const candidates = [
+    nodeContextOutput(node),
+    (node as any).generatedPreview?.text,
+    (node as any).generatedOutput,
+    (node as any).output,
+    (node as any).result?.output,
+    (node as any).version?.content,
+    (node as any).asset?.version?.content,
+    node.asset?.version?.content,
+    node.description,
+  ];
+  for (const candidate of candidates) {
+    const rich =
+      fixedRichDocument(candidate) ||
+      safeRichDocument(normalizeDisplayOutputForCanvas(candidate)) ||
+      safeRichDocument(extractDisplayOutput(candidate)) ||
+      safeRichDocument(candidate);
+    if (rich) {
+      return rich;
+    }
+  }
+  return null;
+}
+
+function displayTextFromOutput(value: any, fallback = "") {
+  const output = extractDisplayOutput(value);
+  const rich = safeRichDocument(output);
+  const richText = rich ? safeDocumentText(rich) : "";
+  if (richText) {
+    return richText;
+  }
+
+  const text = safeDocumentText(output).trim();
+  const looseText = looseRichJSONText(text);
+  if (looseText) {
+    return looseText;
+  }
+  if (text && !looksLikeStructuredJSONSnippet(text)) {
+    return text;
+  }
+  if (looksLikeJSONText(text)) {
+    const parsedText = safeDocumentText(extractDisplayOutput(parseMaybeJSON(text))).trim();
+    if (parsedText && parsedText !== text) {
+      return parsedText;
+    }
+  }
+
+  const fallbackText = String(fallback || "").trim();
+  const looseFallbackText = looseRichJSONText(fallbackText);
+  if (looseFallbackText) {
+    return looseFallbackText;
+  }
+  if (!looksLikeStructuredJSONSnippet(fallbackText)) {
+    return fallbackText;
+  }
+  const parsedFallbackText = safeDocumentText(
+    extractDisplayOutput(parseMaybeJSON(fallbackText)),
+  ).trim();
+  return parsedFallbackText && parsedFallbackText !== fallbackText
+    ? parsedFallbackText
+    : "";
 }
 
 function generatedPreviewFromValue(
@@ -2624,6 +3924,11 @@ function fillGeneratedPreview(
   value: any,
   kind: string,
 ) {
+  const normalizedValue = extractDisplayOutput(value);
+  if (normalizedValue !== value) {
+    fillGeneratedPreview(preview, normalizedValue, kind);
+    return;
+  }
   if (value == null) {
     return;
   }
@@ -2646,17 +3951,7 @@ function fillGeneratedPreview(
   }
 
   const row = value as Record<string, any>;
-  preview.text ||= firstText(
-    row.text,
-    row.content,
-    row.body,
-    row.result,
-    row.finalOutput,
-    row.message,
-    row.prompt,
-    row.choices?.[0]?.message?.content,
-    row.choices?.[0]?.text,
-  );
+  preview.text ||= displayTextFromOutput(value, "");
   preview.imageUrl ||= firstMediaText(
     row.image,
     row.url,
@@ -2667,7 +3962,7 @@ function fillGeneratedPreview(
   preview.fileUrl ||= firstMediaText(row.file, firstArrayValue(row.files));
 
   if (!hasGeneratedPreview(preview)) {
-    for (const key of ["output", "result", "content", "body", "data"]) {
+    for (const key of ["output", "result", "content", "body", "data", "rich"]) {
       if (row[key] && typeof row[key] === "object") {
         fillGeneratedPreview(preview, row[key], kind);
         if (hasGeneratedPreview(preview)) {
@@ -2676,7 +3971,7 @@ function fillGeneratedPreview(
       }
     }
   }
-  if (!preview.text && !hasGeneratedPreview(preview)) {
+  if (!preview.text && !hasGeneratedPreview(preview) && !isWrappedOutput(row)) {
     try {
       preview.text = JSON.stringify(value, null, 2);
     } catch {
@@ -2692,6 +3987,23 @@ function setPreviewString(
 ) {
   const text = value.trim();
   if (!text) {
+    return;
+  }
+  if (looksLikeJSONText(text)) {
+    const parsedText = displayTextFromOutput(parseMaybeJSON(text), "");
+    if (parsedText) {
+      preview.text ||= parsedText;
+    }
+    return;
+  }
+  const looseText = looseRichJSONText(text);
+  if (looseText) {
+    preview.text ||= looseText;
+    return;
+  }
+  const documentTextValue = safeDocumentText(text);
+  if (documentTextValue && documentTextValue !== text) {
+    preview.text ||= documentTextValue;
     return;
   }
   if (looksLikeURL(text)) {
@@ -2722,6 +4034,17 @@ function setPreviewString(
     return;
   }
   preview.text ||= text;
+}
+
+function isWrappedOutput(value: Record<string, any>) {
+  return Boolean(
+    value.output ||
+      value.result ||
+      value.content ||
+      value.rich ||
+      value.agent_run_id ||
+      value.approval_id,
+  );
 }
 
 function hasGeneratedPreview(preview: GeneratedNodePreview) {
@@ -2791,10 +4114,30 @@ function flowPositionFromScreen(
   return screen;
 }
 
-function defaultNodePosition(index: number): CanvasPoint {
+function createSeedCanvasFromFlows(
+  activeCate: AssetCate,
+  flows: TeamFlow[],
+): SpaceCanvasState {
+  const nodes = flows.map((flow, index) =>
+    createLocalNode("flow", activeCate, index, seedFlowNodePosition(index), {
+      flow,
+    }),
+  );
+  return normalizeCanvasForState(
+    {
+      assetCateId: activeCate.id,
+      nodes,
+      edges: [],
+      viewport: {},
+    },
+    activeCate.id,
+  );
+}
+
+function seedFlowNodePosition(index: number): CanvasPoint {
   return {
-    x: 360 + (index % 5) * 34,
-    y: 250 + (index % 5) * 26,
+    x: 420 + (index % 3) * 260,
+    y: 320 + Math.floor(index / 3) * 210,
   };
 }
 
@@ -2834,7 +4177,7 @@ function buildNodeInputContext(
         String(node.power?.kind || node.kind || ""),
       );
       if (!hasGeneratedPreview(preview)) {
-        preview.text = node.description || node.title;
+        preview.text = displayTextFromOutput(output, node.description || node.title);
       }
       return {
         nodeId: node.id,
@@ -2866,7 +4209,18 @@ function nodeInputContextLine(source: NodeInputContext["sources"][number]) {
 }
 
 function nodeContextOutput(node: SpaceCanvasNode) {
-  return firstDefined(
+  if (node.type === "asset") {
+    return extractDisplayOutput(firstDefined(
+      node.asset?.version?.content,
+      (node as any).asset?.version?.content,
+      (node as any).version?.content,
+      (node as any).generatedOutput,
+      (node as any).output,
+      (node as any).result?.output,
+      node.description,
+    ));
+  }
+  return extractDisplayOutput(firstDefined(
     (node as any).generatedOutput,
     (node as any).output,
     (node as any).result?.output,
@@ -2874,6 +4228,223 @@ function nodeContextOutput(node: SpaceCanvasNode) {
     (node as any).asset?.version?.content,
     node.asset?.version?.content,
     node.description,
+  ));
+}
+
+function extractDisplayOutput(value: any): any {
+  const parsed = parseMaybeJSON(value);
+  const fixedRichOutput = fixedTiptapRichOutput(parsed);
+  if (fixedRichOutput) {
+    return fixedRichOutput.rich;
+  }
+  if (isRichDocumentLike(parsed)) {
+    return parsed;
+  }
+  const rich = fixedRichDocument(parsed);
+  if (rich) {
+    return rich;
+  }
+  return normalizeDisplayOutput(extractDisplayOutputInner(parsed, new Set()));
+}
+
+function extractDisplayOutputInner(value: any, seen: Set<any>): any {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (seen.has(value)) {
+    return value;
+  }
+  seen.add(value);
+
+  const row = value as Record<string, any>;
+  const directRich = directRichOutput(row);
+  if (directRich !== undefined) {
+    return directRich;
+  }
+
+  const nestedNodeOutput = firstNestedNodeOutput(row, seen);
+  if (nestedNodeOutput !== undefined) {
+    return nestedNodeOutput;
+  }
+
+  for (const path of displayOutputPaths) {
+    const candidate = valueAtPath(row, path);
+    if (candidate === undefined || candidate === value) {
+      continue;
+    }
+    const normalized = extractDisplayOutputInner(parseMaybeJSON(candidate), seen);
+    if (isDisplayOutputValue(normalized)) {
+      return normalized;
+    }
+  }
+
+  if (isRunEnvelope(row)) {
+    for (const key of ["output", "result", "data", "body"]) {
+      if (row[key] === undefined || row[key] === value) {
+        continue;
+      }
+      const normalized = extractDisplayOutputInner(parseMaybeJSON(row[key]), seen);
+      if (isDisplayOutputValue(normalized)) {
+        return normalized;
+      }
+    }
+  }
+
+  return value;
+}
+
+function firstNestedNodeOutput(row: Record<string, any>, seen: Set<any>) {
+  for (const [key, value] of Object.entries(row)) {
+    if (!isLikelyNestedResultKey(key) || !value || typeof value !== "object") {
+      continue;
+    }
+    const normalized = extractDisplayOutputInner(parseMaybeJSON(value), seen);
+    if (isDisplayOutputValue(normalized)) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function isLikelyNestedResultKey(key: string) {
+  return /^(node|step|task|power|agent)[_-]?\d+$/i.test(key);
+}
+
+const displayOutputPaths = [
+  ["output", "content", "rich"],
+  ["output", "content"],
+  ["output", "rich"],
+  ["content", "output", "content", "rich"],
+  ["content", "output", "content"],
+  ["content", "output", "rich"],
+  ["content", "data", "text"],
+  ["content", "data", "content"],
+  ["content", "rich"],
+  ["data", "output", "content", "rich"],
+  ["data", "output", "content"],
+  ["data", "content", "rich"],
+  ["data", "content"],
+  ["rich"],
+] as const;
+
+function directRichOutput(row: Record<string, any>) {
+  const payloadRich = richDocumentFromPayload(row);
+  if (payloadRich) {
+    return payloadRich;
+  }
+  if (String(row.result_mode || "").toLowerCase() === "inline" && row.content != null) {
+    const content = parseMaybeJSON(row.content);
+    if (content && typeof content === "object") {
+      const rich = directRichOutput(content as Record<string, any>);
+      if (rich !== undefined) {
+        return rich;
+      }
+    }
+  }
+  return undefined;
+}
+
+function normalizeDisplayOutput(value: any) {
+  const parsed = parseMaybeJSON(value);
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    !parsed.type &&
+    Array.isArray(parsed.content)
+  ) {
+    return {
+      type: "doc",
+      content: parsed.content,
+    };
+  }
+  if (Array.isArray(parsed)) {
+    return {
+      type: "doc",
+      content: parsed,
+    };
+  }
+  return parsed;
+}
+
+function isRunEnvelope(row: Record<string, any>) {
+  return Boolean(
+    row.agent_run_id ||
+      row.approval_id ||
+      row.node_run_id ||
+      row.request_id ||
+      row.approved !== undefined ||
+      row.message !== undefined,
+  );
+}
+
+function isDisplayOutputValue(value: any) {
+  if (value == null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0 && !looksLikeStructuredJSONSnippet(value);
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value !== "object") {
+    return true;
+  }
+  if (fixedRichDocument(value) || safeRichDocument(value)) {
+    return true;
+  }
+  if (isRunEnvelope(value as Record<string, any>)) {
+    return false;
+  }
+  return safeDocumentText(value).trim().length > 0;
+}
+
+function valueAtPath(source: Record<string, any>, path: readonly string[]) {
+  let current: any = source;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || !(key in current)) {
+      return undefined;
+    }
+    current = current[key];
+  }
+  return current;
+}
+
+function parseMaybeJSON(value: any) {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const text = value.trim();
+  if (!looksLikeJSONText(text)) {
+    return value;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return value;
+  }
+}
+
+function looksLikeJSONText(value: string) {
+  const text = String(value || "").trim();
+  return (
+    (text.startsWith("{") && text.endsWith("}")) ||
+    (text.startsWith("[") && text.endsWith("]"))
+  );
+}
+
+function looksLikeStructuredJSONSnippet(value: string) {
+  const text = String(value || "").trim();
+  return Boolean(
+    text &&
+      (looksLikeJSONText(text) ||
+        text.startsWith("{") ||
+        text.startsWith("[") ||
+        text.includes("rich_json") ||
+        text.includes('"agent_run_id"') ||
+        text.includes('"node_run_id"') ||
+        text.includes('"approval_id"')),
   );
 }
 
@@ -3062,6 +4633,103 @@ function appendCanvasEdge(
       to: target,
     },
   ];
+}
+
+function assetNodeCateId(node: SpaceCanvasNode) {
+  return Number(node.asset?.asset_cate_id || node.assetCateId || 0);
+}
+
+function isAssetNodeForCate(node: SpaceCanvasNode, assetCateId: number) {
+  return node.type === "asset" && assetNodeCateId(node) === assetCateId;
+}
+
+function findReplaceableAssetNode(
+  nodes: SpaceCanvasNode[],
+  edges: SpaceCanvasEdge[],
+  assetCateId: number,
+  sourceNodeId?: string,
+) {
+  if (!assetCateId) {
+    return null;
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  if (sourceNodeId) {
+    for (const edge of edges) {
+      if (edge.from !== sourceNodeId) {
+        continue;
+      }
+      const targetNode = byId.get(edge.to);
+      if (targetNode && isAssetNodeForCate(targetNode, assetCateId)) {
+        return targetNode;
+      }
+    }
+  }
+  return nodes.find((node) => isAssetNodeForCate(node, assetCateId)) || null;
+}
+
+function connectedAssetNodeIds(
+  nodes: SpaceCanvasNode[],
+  edges: SpaceCanvasEdge[],
+  assetCateId: number,
+  sourceNodeId: string | undefined,
+  keepNodeId: string,
+) {
+  const duplicateIds = new Set<string>();
+  if (!sourceNodeId || !assetCateId) {
+    return duplicateIds;
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const edge of edges) {
+    if (edge.from !== sourceNodeId || edge.to === keepNodeId) {
+      continue;
+    }
+    const targetNode = byId.get(edge.to);
+    if (targetNode && isAssetNodeForCate(targetNode, assetCateId)) {
+      duplicateIds.add(targetNode.id);
+    }
+  }
+  return duplicateIds;
+}
+
+function replaceAssetNode(
+  currentNode: SpaceCanvasNode,
+  nextNode: SpaceCanvasNode,
+): SpaceCanvasNode {
+  return {
+    ...nextNode,
+    id: currentNode.id,
+    x: currentNode.x,
+    y: currentNode.y,
+    width: currentNode.width || nextNode.width,
+    height: currentNode.height || nextNode.height,
+    local: currentNode.local !== false,
+  };
+}
+
+function assetNodeResultOverride(node: SpaceCanvasNode): Partial<SpaceCanvasNode> {
+  const output =
+    fixedTiptapRichOutput(node.asset?.version?.content) ||
+    extractDisplayOutput(node.asset?.version?.content);
+  const preview = generatedPreviewFromValue(
+    output,
+    String(node.kind || ""),
+  );
+  if (!hasGeneratedPreview(preview)) {
+    preview.text = node.description;
+  }
+  return {
+    title: node.title,
+    subtitle: node.subtitle,
+    description: node.description,
+    assetCateId: node.assetCateId,
+    kind: node.kind,
+    cardinality: node.cardinality,
+    asset: node.asset,
+    generatedOutput: output,
+    generatedPreview: preview,
+    hasResult: true,
+    status: "已生成",
+  };
 }
 
 function flowEdgesToCanvasEdges(edges: Edge[]): SpaceCanvasEdge[] {
@@ -3254,42 +4922,6 @@ function isEditableEventTarget(target: EventTarget | null) {
   );
 }
 
-function groupedAssets(assets: ProjectAsset[], assetCates: AssetCate[]) {
-  const cateNames = new Map(assetCates.map((cate) => [cate.id, cate.name]));
-  const groups = new Map<number, ProjectAsset[]>();
-  for (const asset of assets) {
-    const cateId = asset.asset_cate_id || 0;
-    groups.set(cateId, [...(groups.get(cateId) || []), asset]);
-  }
-  return Array.from(groups.entries())
-    .sort(([left], [right]) => left - right)
-    .map(([cateId, items]) => ({
-      key: String(cateId),
-      title: cateNames.get(cateId) || "未分类资产",
-      items,
-    }));
-}
-
-function groupedPowers(powers: PowerOption[], powerKinds: PowerKindOption[]) {
-  const labels = new Map(powerKinds.map((item) => [item.id, item.value]));
-  const groups = new Map<string, PowerOption[]>();
-  for (const power of powers) {
-    const kind = power.kind || "text";
-    groups.set(kind, [...(groups.get(kind) || []), power]);
-  }
-  const orderedKinds = [
-    ...powerKinds.map((item) => item.id).filter((kind) => groups.has(kind)),
-    ...Array.from(groups.keys())
-      .filter((kind) => !labels.has(kind))
-      .sort(),
-  ];
-  return orderedKinds.map((kind) => ({
-    kind,
-    label: labels.get(kind) || powerKindLabel(kind),
-    items: groups.get(kind) || [],
-  }));
-}
-
 function functionIcon(key: string): LucideIcon {
   if (key === "condition") return Route;
   if (key === "confirm") return UserCheck;
@@ -3331,7 +4963,10 @@ function NodeSelectionOverlays({
   node: SpaceCanvasNode;
   selected?: boolean;
 }) {
-  if (!selected) {
+  if (node.type === "asset") {
+    return null;
+  }
+  if (!selected && node.type !== "flow") {
     return null;
   }
   const { projectId, runningNode, setRunningNode } = node as any;
@@ -3340,6 +4975,9 @@ function NodeSelectionOverlays({
     | undefined;
   const onAddConfiguredNode = (node as any).onAddConfiguredNode as
     | AddConfiguredNodeHandler
+    | undefined;
+  const onAssetCreated = (node as any).onAssetCreated as
+    | ((asset: ProjectAsset) => void)
     | undefined;
   return (
     <>
@@ -3351,6 +4989,7 @@ function NodeSelectionOverlays({
         setRunningNode={setRunningNode}
         onNodeResult={onNodeResult || (() => undefined)}
         onAddConfiguredNode={onAddConfiguredNode}
+        onAssetCreated={onAssetCreated}
       />
     </>
   );
@@ -3595,6 +5234,7 @@ function NodeBottomSettings({
   setRunningNode,
   onNodeResult,
   onAddConfiguredNode,
+  onAssetCreated,
 }: {
   node: SpaceCanvasNode;
   projectId: number;
@@ -3602,6 +5242,7 @@ function NodeBottomSettings({
   setRunningNode: RunningNodeSetter;
   onNodeResult: NodeResultSetter;
   onAddConfiguredNode?: AddConfiguredNodeHandler;
+  onAssetCreated?: (asset: ProjectAsset) => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [running, setRunning] = useState(false);
@@ -3609,6 +5250,13 @@ function NodeBottomSettings({
   const [powerFormLoading, setPowerFormLoading] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<number>(0);
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
+  const [flowFeedbackPrompt, setFlowFeedbackPrompt] =
+    useState<FlowFeedbackPrompt | null>(null);
+  const [flowRunRef, setFlowRunRef] = useState<{
+    runId: number;
+    requestId: string;
+    prompt: string;
+  } | null>(null);
   const inputContext = ((node as any).inputContext ||
     null) as NodeInputContext | null;
 
@@ -3768,6 +5416,172 @@ function NodeBottomSettings({
     );
   }
 
+  async function runFlowNode(extraInput?: Record<string, unknown>) {
+    if (!node.flow) {
+      return "waiting" as const;
+    }
+    const runPrompt = promptWithInputContext(prompt, inputContext);
+    const flowInput = withNodeInputContext(extraInput || {}, inputContext);
+    const started = await runSpaceFlow(
+      projectId,
+      Number(node.assetCateId || 0),
+      node.flow,
+      runPrompt,
+      flowInput,
+    );
+    const runId = Number(started?.run_id || 0);
+    const requestId = String(started?.request_id || "");
+    setFlowRunRef({ runId, requestId, prompt: runPrompt });
+    const finalSnapshot = await waitForFlowCompletion(projectId, {
+      runId,
+      requestId,
+    });
+    if (isFlowWaitingSnapshot(finalSnapshot)) {
+      const feedback = flowFeedbackFromSnapshot(finalSnapshot);
+      if (feedback) {
+        setFlowFeedbackPrompt(feedback);
+        toast.message("需要补充信息后继续");
+      } else {
+        toast.message("流程等待用户处理");
+      }
+      return "waiting" as const;
+    }
+    if (finalSnapshot.status === "fail" || finalSnapshot.status === "canceled") {
+      throw new Error(finalSnapshot.error || "流程运行失败");
+    }
+    if (finalSnapshot.status !== "success") {
+      throw new Error(finalSnapshot.error || "流程仍在运行，请稍后刷新查看结果");
+    }
+    onNodeResult(
+      node.id,
+      buildGeneratedNodeResultPatch(node, finalSnapshot.output, runPrompt),
+    );
+    await addFlowResultNode(finalSnapshot, runPrompt);
+    toast.success("流程执行完成");
+    return "success" as const;
+  }
+
+  async function addFlowResultNode(
+    snapshot: FlowRunSnapshot,
+    fallbackPrompt: string,
+  ) {
+    if (!onAddConfiguredNode || !space) {
+      return;
+    }
+    const asset =
+      latestAssetFromStatus(snapshot, Number(node.assetCateId || 0)) ||
+      (await latestGeneratedAsset(
+        projectId,
+        Number(node.assetCateId || 0),
+        snapshot.runId,
+      ));
+    const position = {
+      x: Number(node.x || 0) + Number(node.width || 150) + 170,
+      y: Number(node.y || 0) + 10,
+    };
+    const resultAsset = normalizeRichAssetVersionContent(
+      asset || virtualResultAsset(node, snapshot, fallbackPrompt),
+    );
+    const resultAssetCate = assetCateById(
+      space,
+      Number(resultAsset.asset_cate_id || node.assetCateId || 0),
+    );
+    if (asset && asset.id > 0) {
+      onAssetCreated?.(asset);
+    }
+    onAddConfiguredNode("asset", position, {
+      asset: resultAsset,
+      connectFromNodeId: node.id,
+      selectCreated: true,
+      replaceSingleAssetNode: resultAssetCate.cardinality === "single",
+    });
+  }
+
+  async function submitFlowFeedback(values: Record<string, unknown>) {
+    if (!flowFeedbackPrompt || !flowRunRef) {
+      return;
+    }
+    setRunning(true);
+    setRunningNode({
+      nodeId: node.id,
+      title: node.title,
+      startedAt: Date.now(),
+      progress: 0,
+      status: "running",
+    });
+    let outcome: RunningNodeState["status"] = "error";
+    try {
+      const submitted = await submitSpaceApproval({
+        projectId,
+        approvalId: flowFeedbackPrompt.approval.id,
+        data: values,
+      });
+      setFlowFeedbackPrompt(null);
+      const finalSnapshot = await waitForFlowCompletion(projectId, {
+        runId: Number(submitted?.run_id || flowRunRef.runId || 0),
+        requestId: String(submitted?.request_id || flowRunRef.requestId || ""),
+      });
+      if (isFlowWaitingSnapshot(finalSnapshot)) {
+        const feedback = flowFeedbackFromSnapshot(finalSnapshot);
+        if (feedback) {
+          setFlowFeedbackPrompt(feedback);
+          toast.message("还需要继续补充信息");
+        } else {
+          toast.message("流程仍在等待用户处理");
+        }
+        outcome = "success";
+        return;
+      }
+      if (
+        finalSnapshot.status === "fail" ||
+        finalSnapshot.status === "canceled"
+      ) {
+        throw new Error(finalSnapshot.error || "流程运行失败");
+      }
+      if (finalSnapshot.status !== "success") {
+        throw new Error(finalSnapshot.error || "流程仍在运行，请稍后刷新查看结果");
+      }
+      onNodeResult(
+        node.id,
+        buildGeneratedNodeResultPatch(node, finalSnapshot.output, flowRunRef.prompt),
+      );
+      await addFlowResultNode(finalSnapshot, flowRunRef.prompt);
+      outcome = "success";
+      toast.success("流程执行完成");
+    } catch (err) {
+      setRunningNode((current) =>
+        current?.nodeId === node.id
+          ? {
+              ...current,
+              status: "error",
+              progress: Math.max(current.progress, 92),
+            }
+          : current,
+      );
+      toast.error(err instanceof Error ? err.message : "提交反馈失败");
+    } finally {
+      setRunning(false);
+      setRunningNode((current) => {
+        if (current?.nodeId !== node.id) {
+          return current;
+        }
+        return {
+          ...current,
+          status: outcome,
+          progress: outcome === "success" ? 100 : Math.max(current.progress, 92),
+        };
+      });
+      window.setTimeout(
+        () => {
+          setRunningNode((current) =>
+            current?.nodeId === node.id ? null : current,
+          );
+        },
+        outcome === "success" ? 650 : 1200,
+      );
+    }
+  }
+
   async function selectPowerSource(targetId: number) {
     if (nodeRunning) {
       return;
@@ -3829,6 +5643,7 @@ function NodeBottomSettings({
       status: "running",
     });
     let completed = false;
+    let outcome: RunningNodeState["status"] = "error";
     try {
       if (node.type === "power" && node.power) {
         const runPrompt = promptWithInputContext(powerPrompt, inputContext);
@@ -3867,7 +5682,7 @@ function NodeBottomSettings({
             context: inputContext?.sources || [],
           },
         });
-        if (result.code === 0) {
+        if (isSuccessResponse(result)) {
           onNodeResult(
             node.id,
             buildGeneratedNodeResultPatch(node, result, runPrompt),
@@ -3878,19 +5693,11 @@ function NodeBottomSettings({
           toast.error(result.message || "智能体任务执行失败");
         }
       } else if (node.type === "flow" && node.flow) {
-        const runPrompt = promptWithInputContext(prompt, inputContext);
-        const result = await runSpaceFlow(
-          projectId,
-          Number(node.assetCateId || 0),
-          node.flow,
-          runPrompt,
-        );
-        onNodeResult(
-          node.id,
-          buildGeneratedNodeResultPatch(node, result, runPrompt),
-        );
-        toast.success("流程已启动");
-        completed = true;
+        const flowOutcome = await runFlowNode();
+        if (flowOutcome === "success") {
+          completed = true;
+        }
+        outcome = "success";
       } else if (node.type === "function") {
         const optionKey = node.functionOption?.key || "";
         if (optionKey === "confirm") {
@@ -3900,7 +5707,7 @@ function NodeBottomSettings({
             decision: "approved",
             comment: "人工确认通过",
           });
-          if (result.code === 0) {
+          if (isSuccessResponse(result)) {
             onNodeResult(
               node.id,
               buildGeneratedNodeResultPatch(node, result, "人工确认通过"),
@@ -3934,7 +5741,11 @@ function NodeBottomSettings({
           completed = true;
         }
       }
+      if (completed) {
+        outcome = "success";
+      }
     } catch (err) {
+      outcome = "error";
       setRunningNode((current) =>
         current?.nodeId === node.id
           ? {
@@ -3953,8 +5764,8 @@ function NodeBottomSettings({
         }
         return {
           ...current,
-          status: completed ? "success" : "error",
-          progress: completed ? 100 : Math.max(current.progress, 92),
+          status: outcome,
+          progress: outcome === "success" ? 100 : Math.max(current.progress, 92),
         };
       });
       window.setTimeout(
@@ -3963,7 +5774,7 @@ function NodeBottomSettings({
             current?.nodeId === node.id ? null : current,
           );
         },
-        completed ? 650 : 1200,
+        outcome === "success" ? 650 : 1200,
       );
     }
   };
@@ -4045,6 +5856,44 @@ function NodeBottomSettings({
     );
   }
 
+  if (node.type === "flow" && node.flow) {
+    return (
+      <>
+        <div
+          className="ws-node-bottom-settings is-flow-run-only nodrag"
+          onClick={(event) => event.stopPropagation()}
+          style={overlayStyle}
+        >
+          <button
+            type="button"
+            className="ws-node-flow-run"
+            disabled={nodeRunning}
+            onClick={handleRun}
+          >
+            {nodeRunning ? (
+              <Loader2 size={15} className="ws-spin" />
+            ) : (
+              <Play size={15} fill="currentColor" />
+            )}
+            <span>{nodeRunning ? "运行中" : "启动"}</span>
+          </button>
+        </div>
+        {flowFeedbackPrompt ? (
+          <FlowFeedbackDialog
+            prompt={flowFeedbackPrompt}
+            running={nodeRunning}
+            onClose={() => {
+              if (!nodeRunning) {
+                setFlowFeedbackPrompt(null);
+              }
+            }}
+            onSubmit={(values) => void submitFlowFeedback(values)}
+          />
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <div
       className="ws-node-bottom-settings nodrag"
@@ -4084,35 +5933,6 @@ function NodeBottomSettings({
               <NodeSettingButton icon={FileSearch} label="查看生成记录" />
             </div>
             <span className="ws-node-settings-state">资产就绪</span>
-          </div>
-        )}
-
-        {node.type === "flow" && (
-          <div className="ws-node-settings-row">
-            <div className="ws-node-settings-flow-copy">
-              <strong>{node.title || "团队流程"}</strong>
-              <span>
-                隶属于: {node.flow?.key || "团队流程"} ·{" "}
-                {node.subtitle || "多步骤流程"}
-              </span>
-            </div>
-            <div className="ws-node-settings-actions">
-              <NodeSettingButton icon={Compass} label="查看内部流程" />
-              <button
-                type="button"
-                className="ws-node-flow-run"
-                disabled={running}
-                onClick={handleRun}
-                style={{ cursor: "pointer" }}
-              >
-                {running ? (
-                  <Loader2 size={12} className="ws-spin" />
-                ) : (
-                  <Play size={12} fill="currentColor" />
-                )}
-                <span>启动该流程</span>
-              </button>
-            </div>
           </div>
         )}
 
@@ -4264,101 +6084,261 @@ function NodeBottomSettings({
   );
 }
 
-function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
-  if (node.type === "asset") {
-    return (
-      <div className="ws-node-settings-row">
-        <div className="ws-node-settings-actions">
-          <NodeSettingButton icon={Eye} label="放大预览" accent="green" />
-          <NodeSettingButton icon={Compass} label="查看来源" />
-          <NodeSettingButton icon={History} label="查看版本" />
-          <NodeSettingButton icon={GitBranch} label="查看引用关系" />
-          <NodeSettingButton icon={FileSearch} label="查看生成记录" />
-        </div>
-        <span className="ws-node-settings-state">资产就绪</span>
-      </div>
-    );
+function FlowFeedbackDialog({
+  prompt,
+  running,
+  onClose,
+  onSubmit,
+}: {
+  prompt: FlowFeedbackPrompt;
+  running: boolean;
+  onClose: () => void;
+  onSubmit: (values: Record<string, unknown>) => void;
+}) {
+  const [values, setValues] = useState<Record<string, unknown>>(
+    () => prompt.values || defaultPowerParamValues(prompt.fields),
+  );
+
+  useEffect(() => {
+    setValues(prompt.values || defaultPowerParamValues(prompt.fields));
+  }, [prompt]);
+
+  function setValue(key: string, value: unknown) {
+    setValues((current) => ({
+      ...current,
+      [key]: value,
+    }));
   }
-  if (node.type === "power") {
-    return (
-      <div className="ws-node-settings-stack">
-        <textarea
-          defaultValue=""
-          placeholder="在此处为该能力输入生成提示词或逻辑控制文本..."
-        />
-        <div className="ws-node-settings-row">
-          <div className="ws-node-settings-actions">
-            <NodeSettingButton
-              icon={Cpu}
-              label={String(node.power?.name || "全能大模型G2")}
-              accent="green"
-              menu
-            />
-            <NodeSettingButton icon={Tv} label="自适应 / 1k" menu />
-            <NodeSettingButton icon={Video} label="摄影机控制" />
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (running) {
+      return;
+    }
+    onSubmit(values);
+  }
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="ws-flow-feedback-backdrop" onMouseDown={onClose}>
+      <form
+        className="ws-flow-feedback-modal"
+        onSubmit={submit}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="ws-flow-feedback-head">
+          <div>
+            <strong>{prompt.title || "补充信息"}</strong>
+            {prompt.description ? <span>{prompt.description}</span> : null}
           </div>
-          <span className="ws-node-run-cluster">
-            <button type="button" className="ws-node-run-button">
-              <ArrowUp size={16} />
-            </button>
-          </span>
+          <button
+            type="button"
+            className="ws-flow-feedback-close"
+            disabled={running}
+            onClick={onClose}
+            aria-label="关闭"
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="ws-flow-feedback-body custom-scrollbar">
+          {prompt.fields.length > 0 ? (
+            prompt.fields.map((field) => (
+              <FlowFeedbackField
+                key={field.key || field.id}
+                field={field}
+                value={values[field.key]}
+                disabled={running}
+                onChange={(value) => setValue(field.key, value)}
+              />
+            ))
+          ) : (
+            <FlowFeedbackField
+              field={{
+                id: 0,
+                key: "text",
+                name: "补充信息",
+                type: "textarea",
+                required: true,
+              }}
+              value={values.text}
+              disabled={running}
+              onChange={(value) => setValue("text", value)}
+            />
+          )}
         </div>
-      </div>
+        <footer className="ws-flow-feedback-foot">
+          <button
+            type="submit"
+            className="ws-flow-feedback-submit"
+            disabled={running}
+          >
+            {running ? <Loader2 size={16} className="ws-spin" /> : <Send size={16} />}
+            <span>{running ? "提交中" : "提交并继续"}</span>
+          </button>
+        </footer>
+      </form>
+    </div>,
+    document.body,
+  );
+}
+
+function FlowFeedbackField({
+  field,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: PowerParam;
+  value: unknown;
+  disabled: boolean;
+  onChange: (value: unknown) => void;
+}) {
+  const required = field.required ? <i>*</i> : null;
+  const optionItems = field.options || [];
+  if (field.type === "option" || field.type === "select") {
+    if (optionItems.length > 0 && optionItems.length <= 6) {
+      return (
+        <fieldset className="ws-flow-feedback-field is-radio">
+          <legend>
+            {field.name}
+            {required}
+          </legend>
+          <div className="ws-flow-feedback-radios">
+            {optionItems.map((option) => {
+              const optionValue = String(option.value);
+              const active = String(value ?? "") === optionValue;
+              return (
+                <label
+                  key={option.id || option.value}
+                  className={active ? "is-active" : ""}
+                >
+                  <input
+                    type="radio"
+                    name={`flow-feedback-${field.key}`}
+                    value={optionValue}
+                    checked={active}
+                    disabled={disabled}
+                    onChange={() => onChange(optionValue)}
+                  />
+                  <span>{option.name || option.value}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      );
+    }
+    return (
+      <label className="ws-flow-feedback-field">
+        <span>
+          {field.name}
+          {required}
+        </span>
+        <select
+          value={String(value ?? "")}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {optionItems.map((option) => (
+            <option key={option.id || option.value} value={option.value}>
+              {option.name || option.value}
+            </option>
+          ))}
+        </select>
+      </label>
     );
   }
-  if (node.type === "agent") {
+  if (field.type === "multi_option") {
+    const selected = new Set(valueAsParamList(value));
     return (
-      <div className="ws-node-settings-stack">
-        <textarea defaultValue="" placeholder="向智能体发送任务指令..." />
-        <div className="ws-node-settings-row">
-          <span className="ws-node-settings-state">
-            智能体身份: {node.title || "小说助理"}
-          </span>
-          <button type="button" className="ws-node-agent-run">
-            <ArrowUp size={12} />
-            <span>执行任务</span>
-          </button>
+      <fieldset className="ws-flow-feedback-field is-choice">
+        <legend>
+          {field.name}
+          {required}
+        </legend>
+        <div className="ws-flow-feedback-options">
+          {(field.options || []).map((option) => {
+            const active = selected.has(option.value);
+            return (
+              <button
+                key={option.id || option.value}
+                type="button"
+                className={active ? "is-active" : ""}
+                disabled={disabled}
+                onClick={() => {
+                  const next = new Set(selected);
+                  if (active) {
+                    next.delete(option.value);
+                  } else {
+                    next.add(option.value);
+                  }
+                  onChange(Array.from(next));
+                }}
+              >
+                {option.name || option.value}
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </fieldset>
     );
   }
-  if (node.type === "flow") {
+  if (field.type === "textarea") {
     return (
-      <div className="ws-node-settings-row">
-        <div className="ws-node-settings-flow-copy">
-          <strong>{node.title || "团队流程"}</strong>
-          <span>
-            隶属于: {node.flow?.key || "团队流程"} ·{" "}
-            {node.subtitle || "多步骤流程"}
-          </span>
-        </div>
-        <div className="ws-node-settings-actions">
-          <NodeSettingButton icon={Compass} label="查看内部流程" />
-          <button type="button" className="ws-node-flow-run">
-            <Play size={12} fill="currentColor" />
-            <span>启动该流程</span>
-          </button>
-        </div>
-      </div>
+      <label className="ws-flow-feedback-field">
+        <span>
+          {field.name}
+          {required}
+        </span>
+        <textarea
+          value={String(value ?? "")}
+          disabled={disabled}
+          placeholder={field.name}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+    );
+  }
+  if (field.type === "switch") {
+    return (
+      <label className="ws-flow-feedback-switch">
+        <span>
+          {field.name}
+          {required}
+        </span>
+        <input
+          type="checkbox"
+          checked={Boolean(value)}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+      </label>
     );
   }
   return (
-    <div className="ws-node-settings-row">
-      <div className="ws-node-settings-flow-copy">
-        <strong>控制功能操作阀</strong>
-        <span>
-          子类型: {node.functionOption?.key || "save"} · 逻辑公式/参数
-        </span>
-      </div>
-      <button type="button" className="ws-node-save-run">
-        <Save size={12} />
-        <span>
-          {node.functionOption?.key === "confirm"
-            ? "人工点击确认运行"
-            : "保存绑定正式资产"}
-        </span>
-      </button>
-    </div>
+    <label className="ws-flow-feedback-field">
+      <span>
+        {field.name}
+        {required}
+      </span>
+      <input
+        type={field.value_type === "number" ? "number" : "text"}
+        value={String(value ?? "")}
+        disabled={disabled}
+        placeholder={field.name}
+        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+          onChange(
+            field.value_type === "number"
+              ? Number(event.target.value)
+              : event.target.value,
+          )
+        }
+      />
+    </label>
   );
 }
 
@@ -4476,8 +6456,12 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
 
   // 2. SVG Hexagon flow representation
   if (node.type === "flow") {
+    const showRunFrame =
+      runningNode?.status === "running" || runningNode?.status === "success";
     return (
-      <div className={`ws-node-flow-wrap ${selected ? "is-selected" : ""}`}>
+      <div
+        className={`ws-node-flow-wrap ${selected ? "is-selected" : ""} ${showRunFrame ? "is-running" : ""}`}
+      >
         <svg
           className="ws-hexagon-svg"
           viewBox="0 0 100 100"
@@ -4490,13 +6474,32 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
             strokeLinejoin="round"
           />
         </svg>
+        {showRunFrame ? (
+          <svg
+            className="ws-node-running-border is-spin is-hexagon"
+            aria-hidden="true"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <polygon
+              className="ws-node-running-track"
+              points="50,5 92,28 92,72 50,95 8,72 8,28"
+              pathLength="100"
+            />
+            <polygon
+              className="ws-node-running-progress"
+              points="50,5 92,28 92,72 50,95 8,72 8,28"
+              pathLength="100"
+              strokeDasharray="18 82"
+              strokeDashoffset="0"
+            />
+          </svg>
+        ) : null}
         <div className="ws-node-flow-content">
           <div className="ws-node-flow-avatar">
             <Workflow size={16} className="ws-icon-blue" />
           </div>
           <div className="ws-node-flow-title">{node.title}</div>
-          <div className="ws-node-flow-subtitle">{node.subtitle}</div>
-          <div className="ws-node-flow-step">{node.subtitle || "流程"}</div>
         </div>
         <NodeHandle
           id="input-0"
@@ -4511,10 +6514,6 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           position={Position.Right}
           className="is-out"
           style={{ right: "11px" }}
-        />
-        <NodeQuickDetailButton
-          node={node}
-          onShowNodeDetail={onShowNodeDetail}
         />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
@@ -4671,6 +6670,10 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
     }
 
     // Default text asset
+    const preview = nodeDetailPreview(node);
+    const rich = nodeRichDocument(node);
+    const displayOutput = nodeEnergonOutput(node);
+    const displayText = nodeDisplayText(node);
     return (
       <div className={`ws-node-text-wrap ${selected ? "is-selected" : ""}`}>
         <div className="ws-node-floating-label">
@@ -4678,7 +6681,20 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           <span>{node.title}</span>
         </div>
         <div className="ws-node-text-card">
-          <p className="ws-node-text-content">{node.description}</p>
+          {rich ? (
+            <RichDocumentView
+              value={rich}
+              className="ws-node-text-rich-preview"
+            />
+          ) : EnergonContentView && hasDisplayOutput(displayOutput) ? (
+            <div className="ws-node-text-energon-preview">
+              <EnergonContentView output={displayOutput} emptyText="暂无内容" />
+            </div>
+          ) : (
+            <p className="ws-node-text-content">
+              {displayText || displayTextFromOutput(preview.text, "") || "暂无内容"}
+            </p>
+          )}
         </div>
         <NodeHandle
           id="input-0"
@@ -5081,6 +7097,10 @@ function runStatusText(value: any, prefix: string) {
     return `${prefix}，请求：${requestId}`;
   }
   return prefix;
+}
+
+function isSuccessResponse(result: any) {
+  return result?.code === 0 || result?.status === 1;
 }
 
 function readProjectId() {
