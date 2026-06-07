@@ -74,6 +74,7 @@ import {
   Tv,
   Users,
   UserCheck,
+  Upload,
   Video,
   Workflow,
   X,
@@ -86,18 +87,22 @@ import {
   fetchSpaceBootstrap,
   fetchSpacePowerForm,
   fetchSpacePowers,
+  completeSpaceUpload,
+  initSpaceUpload,
   runSpacePower,
   runSpaceFlow,
+  saveSpaceCanvas,
   sendSpaceMessage,
+  SPACE_UPLOAD_RULE_ID,
+  uploadSpacePart,
 } from "./space-api";
 import {
   assetCateById,
-  assetKindLabel,
   assetsForCate,
-  buildCanvasModel,
-  cardinalityLabel,
   createLocalNode,
   defaultAssetCateId,
+  documentPreview,
+  emptyCanvasState,
   isExecutionRole,
   powerKindLabel,
   relatedFlows,
@@ -113,12 +118,16 @@ import type {
   PowerParam,
   ProjectAsset,
   SpaceBootstrap,
+  SpaceCanvasEdge,
   SpaceCanvasNode,
+  SpaceCanvasState,
   TeamFlow,
   TeamRole,
 } from "./types";
 import { SpaceAnimatedEdge } from "./space-edge";
 import {
+  type ComposerAssetItem,
+  type UploadPreview,
   PromptComposer,
   defaultPowerParamValue,
   isPromptPowerParam,
@@ -126,7 +135,7 @@ import {
   isUploadPowerParam,
 } from "./space-prompt-composer";
 
-type PanelMode = "assets" | "flows" | "chat" | null;
+type PanelMode = "assets" | "create" | "chat" | null;
 type WorkSpaceTheme = "dark" | "light";
 type RunningNodeState = {
   nodeId: string;
@@ -136,7 +145,23 @@ type RunningNodeState = {
   status: "running" | "success" | "error";
 };
 type RunningNodeSetter = Dispatch<SetStateAction<RunningNodeState | null>>;
-type NodeResultSetter = (nodeId: string, patch: Partial<SpaceCanvasNode>) => void;
+type NodeResultSetter = (
+  nodeId: string,
+  patch: Partial<SpaceCanvasNode>,
+) => void;
+type AddConfiguredNodeHandler = (
+  type: SpaceCanvasNode["type"],
+  position?: CanvasPoint,
+  options?: {
+    asset?: ProjectAsset;
+    flow?: TeamFlow;
+    functionOption?: CanvasFunctionOption;
+    power?: PowerOption;
+    role?: TeamRole;
+    connectToNodeId?: string;
+    selectCreated?: boolean;
+  },
+) => void;
 type CanvasPoint = { x: number; y: number };
 type GeneratedNodePreview = {
   text: string;
@@ -172,45 +197,53 @@ type AddNodeMenuState = {
   connection?: PendingNodeConnection;
 };
 
-type PaletteItem = {
-  type: SpaceCanvasNode["type"];
+type AddMenuAction = {
+  key: string;
   label: string;
-  desc: string;
+  description: string;
   icon: LucideIcon;
+  className: string;
 };
 
-const paletteItems: PaletteItem[] = [
-  { type: "asset", label: "资产引用", desc: "引用已有作品资产", icon: Folder },
-  { type: "power", label: "能力节点", desc: "生文、生图、生视频", icon: Zap },
-  { type: "agent", label: "智能体", desc: "调用团队角色", icon: UserCheck },
-  { type: "flow", label: "流程节点", desc: "执行团队流程", icon: Workflow },
-  { type: "function", label: "功能节点", desc: "条件、确认、保存", icon: Save },
-];
-
-const paletteSections = [
-  { title: "创建资产节点 (Asset)", types: ["asset"] as SpaceCanvasNode["type"][] },
-  { title: "部署能力节点 (Power)", types: ["power"] as SpaceCanvasNode["type"][] },
-  { title: "调用团队协作 (Agent & Flow)", types: ["agent", "flow"] as SpaceCanvasNode["type"][] },
-  { title: "控制功能节点 (Function)", types: ["function"] as SpaceCanvasNode["type"][] },
-];
-
 const functionOptions: CanvasFunctionOption[] = [
-  { key: "condition", label: "条件判断", description: "按条件把上游结果分流到不同后续节点。" },
-  { key: "confirm", label: "人工确认", description: "人工审查、确认或阻断当前节点结果。" },
-  { key: "save", label: "保存资产", description: "将上游临时结果正式写入作品资产。" },
-  { key: "context", label: "合并", description: "合并整合多个资产或节点结果作为统一上下文。" },
-];
-
-const agentComposerParams: PowerParam[] = [
   {
-    id: 0,
-    name: "上传",
-    key: "files",
-    type: "files",
-    usage: 2,
-    max_files: 6,
+    key: "condition",
+    label: "条件判断",
+    description: "按条件把上游结果分流到不同后续节点。",
+  },
+  {
+    key: "confirm",
+    label: "人工确认",
+    description: "人工审查、确认或阻断当前节点结果。",
+  },
+  {
+    key: "save",
+    label: "保存资产",
+    description: "将上游临时结果正式写入作品资产。",
+  },
+  {
+    key: "context",
+    label: "合并",
+    description: "合并整合多个资产或节点结果作为统一上下文。",
   },
 ];
+const importAction: AddMenuAction = {
+  key: "import",
+  label: "导入",
+  description: "",
+  icon: Upload,
+  className: "is-power is-import",
+};
+
+const uploadComposerParam: PowerParam = {
+  id: 0,
+  name: "上传",
+  key: "files",
+  type: "files",
+  usage: 2,
+  max_files: 6,
+};
+const agentComposerParams: PowerParam[] = [uploadComposerParam];
 const powerFormCache = new Map<string, PowerForm>();
 
 const flowNodeTypes = {
@@ -227,9 +260,9 @@ export function WorkSpacePage() {
   const [space, setSpace] = useState<SpaceBootstrap | null>(null);
   const [activeCateId, setActiveCateId] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [localNodes, setLocalNodes] = useState<SpaceCanvasNode[]>([]);
-  const [userEdges, setUserEdges] = useState<Edge[]>([]);
-  const [hiddenNodeIds, setHiddenNodeIds] = useState<Set<string>>(() => new Set());
+  const [canvasStates, setCanvasStates] = useState<
+    Record<string, SpaceCanvasState>
+  >({});
   const [prompt, setPrompt] = useState("");
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [theme, setTheme] = useState<WorkSpaceTheme>(() => readStoredTheme());
@@ -240,11 +273,16 @@ export function WorkSpacePage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [runningNode, setRunningNode] = useState<RunningNodeState | null>(null);
-  const [nodeResultOverrides, setNodeResultOverrides] = useState<Record<string, Partial<SpaceCanvasNode>>>({});
+  const [nodeResultOverrides, setNodeResultOverrides] = useState<
+    Record<string, Partial<SpaceCanvasNode>>
+  >({});
   const [nodeDetail, setNodeDetail] = useState<SpaceCanvasNode | null>(null);
-  const [focusNodeRequest, setFocusNodeRequest] = useState<NodeFocusRequest | null>(null);
+  const [focusNodeRequest, setFocusNodeRequest] =
+    useState<NodeFocusRequest | null>(null);
+  const [importPickerSignal, setImportPickerSignal] = useState(0);
   const [error, setError] = useState("");
   const [runStatus, setRunStatus] = useState("");
+  const loadedCanvasesRef = useRef<Record<string, string>>({});
 
   const loadSpace = useCallback(async () => {
     if (!projectId) {
@@ -257,6 +295,8 @@ export function WorkSpacePage() {
     try {
       const nextSpace = await fetchSpaceBootstrap(projectId);
       setSpace(nextSpace);
+      setCanvasStates(nextSpace.canvases || {});
+      loadedCanvasesRef.current = serializeCanvasMap(nextSpace.canvases || {});
       setActiveCateId(defaultAssetCateId(nextSpace));
       setPowers(nextSpace.powers || []);
       setPowerKinds(nextSpace.powerKinds || []);
@@ -276,60 +316,122 @@ export function WorkSpacePage() {
     () => (space ? assetCateById(space, activeCateId) : null),
     [activeCateId, space],
   );
-  const activeAssets = useMemo(
-    () => (space && activeCate ? assetsForCate(space, activeCate.id) : []),
-    [activeCate, space],
-  );
   const activeFlows = useMemo(
     () => (space && activeCate ? relatedFlows(space, activeCate.id) : []),
     [activeCate, space],
   );
   const menuAssets = useMemo(() => space?.assets || [], [space]);
-  const menuRoles = useMemo(
-    () => {
-      if (!space) return [];
-      const workerRoles = (space.roles || []).filter(isExecutionRole);
-      if (!activeCate) return workerRoles;
-      return workerRoles.filter(
-        (role) => role.asset_cate_id === 0 || role.asset_cate_id === activeCate.id,
-      );
-    },
-    [space, activeCate],
-  );
+  const menuRoles = useMemo(() => {
+    if (!space) return [];
+    const workerRoles = (space.roles || []).filter(isExecutionRole);
+    if (!activeCate) return workerRoles;
+    return workerRoles.filter(
+      (role) =>
+        role.asset_cate_id === 0 || role.asset_cate_id === activeCate.id,
+    );
+  }, [space, activeCate]);
   const menuFlows = useMemo(
     () => (activeFlows.length > 0 ? activeFlows : space?.flows || []),
     [activeFlows, space],
   );
-  const canvasModel = useMemo(() => {
-    if (!space || !activeCate) {
-      return { nodes: [], edges: [] };
-    }
-    const currentLocalNodes = localNodes.filter(
-      (node: SpaceCanvasNode) => node.assetCateId === activeCate.id || activeCate.id === 0,
-    );
-    const model = applyNodeResultOverrides(
-      buildCanvasModel(space, activeCate.id, currentLocalNodes),
-      nodeResultOverrides,
-    );
-    if (hiddenNodeIds.size === 0) {
-      return model;
-    }
-    const visibleNodeIds = new Set(model.nodes.filter((node) => !hiddenNodeIds.has(node.id)).map((node) => node.id));
-    return {
-      nodes: model.nodes.filter((node) => visibleNodeIds.has(node.id)),
-      edges: model.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to)),
-    };
-  }, [activeCate, hiddenNodeIds, localNodes, nodeResultOverrides, space]);
+  const activeCanvas = useMemo(
+    () =>
+      activeCate
+        ? canvasStates[String(activeCate.id)] || emptyCanvasState(activeCate.id)
+        : emptyCanvasState(0),
+    [activeCate, canvasStates],
+  );
+  const canvasModel = useMemo(
+    () => applyNodeResultOverrides(activeCanvas, nodeResultOverrides),
+    [activeCanvas, nodeResultOverrides],
+  );
 
-  const updateNodeResult = useCallback<NodeResultSetter>((nodeId, patch) => {
-    setNodeResultOverrides((current) => ({
-      ...current,
-      [nodeId]: {
-        ...(current[nodeId] || {}),
-        ...patch,
-      },
-    }));
-  }, []);
+  const updateActiveCanvas = useCallback(
+    (updater: (canvas: SpaceCanvasState) => SpaceCanvasState) => {
+      if (!activeCate) {
+        return;
+      }
+      setCanvasStates((current) => {
+        const key = String(activeCate.id);
+        const currentCanvas = current[key] || emptyCanvasState(activeCate.id);
+        const nextCanvas = normalizeCanvasForState(
+          updater(currentCanvas),
+          activeCate.id,
+        );
+        if (isSameCanvasState(currentCanvas, nextCanvas)) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: nextCanvas,
+        };
+      });
+    },
+    [activeCate],
+  );
+
+  const updateNodeResult = useCallback<NodeResultSetter>(
+    (nodeId, patch) => {
+      setNodeResultOverrides((current) => ({
+        ...current,
+        [nodeId]: {
+          ...(current[nodeId] || {}),
+          ...patch,
+        },
+      }));
+      updateActiveCanvas((canvas) => ({
+        ...canvas,
+        nodes: canvas.nodes.map((node) =>
+          node.id === nodeId ? { ...node, ...patch } : node,
+        ),
+      }));
+    },
+    [updateActiveCanvas],
+  );
+
+  useEffect(() => {
+    if (!space) {
+      return;
+    }
+    const dirtyCanvases = Object.entries(canvasStates).filter(
+      ([key, canvas]) =>
+        loadedCanvasesRef.current[key] !== stableStringifyCanvas(canvas),
+    );
+    if (dirtyCanvases.length === 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      for (const [key, canvas] of dirtyCanvases) {
+        const submittedCanvasSnapshot = stableStringifyCanvas(canvas);
+        void saveSpaceCanvas(space.project.id, canvas.assetCateId, canvas)
+          .then((savedCanvas) => {
+            const savedCanvasSnapshot = stableStringifyCanvas(savedCanvas);
+            loadedCanvasesRef.current[key] = savedCanvasSnapshot;
+            setCanvasStates((current) => {
+              const currentCanvas = current[key];
+              if (
+                !currentCanvas ||
+                stableStringifyCanvas(currentCanvas) !== submittedCanvasSnapshot
+              ) {
+                return current;
+              }
+              if (submittedCanvasSnapshot === savedCanvasSnapshot) {
+                return current;
+              }
+              return {
+                ...current,
+                [key]: savedCanvas,
+              };
+            });
+          })
+          .catch((err) => {
+            toast.error(err instanceof Error ? err.message : "保存画布失败");
+          });
+      }
+    }, 520);
+    return () => window.clearTimeout(timer);
+  }, [canvasStates, space]);
+
   function switchCate(cateId: number) {
     setActiveCateId(cateId);
     setSelectedNodeId("");
@@ -345,6 +447,18 @@ export function WorkSpacePage() {
       nonce: (current?.nonce || 0) + 1,
     }));
   }
+  const consumeFocusNodeRequest = useCallback((request: NodeFocusRequest) => {
+    setFocusNodeRequest((current) => {
+      if (
+        !current ||
+        current.nodeId !== request.nodeId ||
+        current.nonce !== request.nonce
+      ) {
+        return current;
+      }
+      return null;
+    });
+  }, []);
 
   function addConfiguredNode(
     type: SpaceCanvasNode["type"],
@@ -355,23 +469,39 @@ export function WorkSpacePage() {
       functionOption?: CanvasFunctionOption;
       power?: PowerOption;
       role?: TeamRole;
+      connectToNodeId?: string;
+      selectCreated?: boolean;
     },
   ) {
     if (!activeCate) {
       return;
     }
-    const node = createLocalNode(type, activeCate, localNodes.length, position, options);
-    setLocalNodes((items: SpaceCanvasNode[]) => [...items, node]);
+    const node = createLocalNode(
+      type,
+      activeCate,
+      activeCanvas.nodes.length,
+      position,
+      options,
+    );
     const connection = nodeMenu?.connection;
-    if (connection) {
-      const endpoints = connectedNodeEdgeEndpoints(connection, node.id);
-      const hasBaseEdge = canvasModel.edges.some((edge) => edge.from === endpoints.source && edge.to === endpoints.target);
-      if (!hasBaseEdge) {
-        setUserEdges((current) => appendUserEdge(current, endpoints.source, endpoints.target));
+    updateActiveCanvas((canvas) => {
+      let edges = canvas.edges;
+      if (connection) {
+        const endpoints = connectedNodeEdgeEndpoints(connection, node.id);
+        edges = appendCanvasEdge(edges, endpoints.source, endpoints.target);
+      } else if (options?.connectToNodeId) {
+        edges = appendCanvasEdge(edges, node.id, options.connectToNodeId || "");
       }
+      return {
+        ...canvas,
+        nodes: [...canvas.nodes, node],
+        edges,
+      };
+    });
+    if (options?.selectCreated !== false) {
+      setSelectedNodeId(node.id);
+      focusCanvasNode(node.id);
     }
-    setSelectedNodeId(node.id);
-    focusCanvasNode(node.id);
     setPanelMode(null);
     setNodeMenu(null);
   }
@@ -380,8 +510,16 @@ export function WorkSpacePage() {
     if (!activeCate) {
       return;
     }
-    const clone = cloneCanvasNode(node, activeCate.id, localNodes.length, position);
-    setLocalNodes((items: SpaceCanvasNode[]) => [...items, clone]);
+    const clone = cloneCanvasNode(
+      node,
+      activeCate.id,
+      activeCanvas.nodes.length,
+      position,
+    );
+    updateActiveCanvas((canvas) => ({
+      ...canvas,
+      nodes: [...canvas.nodes, clone],
+    }));
     setNodeResultOverrides((current) => {
       const patch = current[node.id];
       return patch ? { ...current, [clone.id]: patch } : current;
@@ -393,13 +531,13 @@ export function WorkSpacePage() {
   }
 
   function deleteCanvasNode(node: SpaceCanvasNode) {
-    setLocalNodes((items: SpaceCanvasNode[]) => items.filter((item) => item.id !== node.id));
-    setUserEdges((items) => items.filter((edge) => edge.source !== node.id && edge.target !== node.id));
-    setHiddenNodeIds((current) => {
-      const next = new Set(current);
-      next.add(node.id);
-      return next;
-    });
+    updateActiveCanvas((canvas) => ({
+      ...canvas,
+      nodes: canvas.nodes.filter((item) => item.id !== node.id),
+      edges: canvas.edges.filter(
+        (edge) => edge.from !== node.id && edge.to !== node.id,
+      ),
+    }));
     setNodeResultOverrides((current) => {
       if (!Object.prototype.hasOwnProperty.call(current, node.id)) {
         return current;
@@ -409,7 +547,9 @@ export function WorkSpacePage() {
       return next;
     });
     setSelectedNodeId("");
-    setFocusNodeRequest((current) => (current?.nodeId === node.id ? null : current));
+    setFocusNodeRequest((current) =>
+      current?.nodeId === node.id ? null : current,
+    );
     setNodeDetail((current) => (current?.id === node.id ? null : current));
     toast.success("已删除节点");
   }
@@ -422,6 +562,23 @@ export function WorkSpacePage() {
     addConfiguredNode("power", position, { power });
   }
 
+  function openImportPicker() {
+    setNodeMenu(null);
+    setPanelMode(null);
+    setImportPickerSignal((current) => current + 1);
+  }
+
+  async function uploadLocalFiles(
+    files: File[],
+    param: PowerParam,
+  ): Promise<UploadPreview[]> {
+    return uploadSpaceFiles(
+      projectId,
+      files,
+      param.upload_rule_id || SPACE_UPLOAD_RULE_ID,
+    );
+  }
+
   function addAgentNode(role: TeamRole, position?: CanvasPoint) {
     addConfiguredNode("agent", position, { role });
   }
@@ -430,11 +587,18 @@ export function WorkSpacePage() {
     addConfiguredNode("flow", position, { flow });
   }
 
-  function addFunctionNode(functionOption: CanvasFunctionOption, position?: CanvasPoint) {
+  function addFunctionNode(
+    functionOption: CanvasFunctionOption,
+    position?: CanvasPoint,
+  ) {
     addConfiguredNode("function", position, { functionOption });
   }
 
-  function openNodeMenu(screen: CanvasPoint, position: CanvasPoint, connection?: PendingNodeConnection) {
+  function openNodeMenu(
+    screen: CanvasPoint,
+    position: CanvasPoint,
+    connection?: PendingNodeConnection,
+  ) {
     setPanelMode(null);
     setNodeMenu({
       x: screen.x,
@@ -449,13 +613,18 @@ export function WorkSpacePage() {
   function openDockNodeMenu() {
     openNodeMenu(
       { x: 92, y: 122 },
-      defaultNodePosition(localNodes.length),
+      defaultNodePosition(activeCanvas.nodes.length),
     );
   }
 
-  function openNodeTypePicker(type: SpaceCanvasNode["type"], screen?: CanvasPoint, position?: CanvasPoint) {
+  function openNodeTypePicker(
+    type: SpaceCanvasNode["type"],
+    screen?: CanvasPoint,
+    position?: CanvasPoint,
+  ) {
     const menuScreen = screen || { x: 112, y: 122 };
-    const menuPosition = position || defaultNodePosition(localNodes.length);
+    const menuPosition =
+      position || defaultNodePosition(activeCanvas.nodes.length);
     setPanelMode(null);
     setNodeMenu({
       x: menuScreen.x,
@@ -475,7 +644,9 @@ export function WorkSpacePage() {
   }
 
   async function showPowerPicker() {
-    setNodeMenu((current: AddNodeMenuState | null) => (current ? { ...current, view: "powers" as const } : current));
+    setNodeMenu((current: AddNodeMenuState | null) =>
+      current ? { ...current, view: "powers" as const } : current,
+    );
     await loadPowerCatalog();
   }
 
@@ -500,7 +671,9 @@ export function WorkSpacePage() {
       void showPowerPicker();
       return;
     }
-    setNodeMenu((current: AddNodeMenuState | null) => (current ? { ...current, view: nodeMenuViewForType(type) } : current));
+    setNodeMenu((current: AddNodeMenuState | null) =>
+      current ? { ...current, view: nodeMenuViewForType(type) } : current,
+    );
   }
 
   async function submitMessage() {
@@ -510,7 +683,11 @@ export function WorkSpacePage() {
     setRunning(true);
     setRunStatus("");
     try {
-      const result = await sendSpaceMessage(space.project.id, activeCate.id, prompt.trim());
+      const result = await sendSpaceMessage(
+        space.project.id,
+        activeCate.id,
+        prompt.trim(),
+      );
       setRunStatus(runStatusText(result, "已提交给沟通角色"));
       toast.success("已提交给沟通角色");
     } catch (err) {
@@ -527,8 +704,15 @@ export function WorkSpacePage() {
     setRunning(true);
     setRunStatus("");
     try {
-      const result = await runSpaceFlow(space.project.id, activeCate.id, flow, prompt.trim());
-      setRunStatus(runStatusText(result, `已运行流程：${flow.name || "团队流程"}`));
+      const result = await runSpaceFlow(
+        space.project.id,
+        activeCate.id,
+        flow,
+        prompt.trim(),
+      );
+      setRunStatus(
+        runStatusText(result, `已运行流程：${flow.name || "团队流程"}`),
+      );
       toast.success("流程已提交运行");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "流程运行失败");
@@ -565,9 +749,9 @@ export function WorkSpacePage() {
       <WorkSpaceStyles />
       <CanvasWorkbench
         activeCate={activeCate}
-        assetsCount={activeAssets.length}
         nodes={canvasModel.nodes}
         edges={canvasModel.edges}
+        viewport={activeCanvas.viewport}
         selectedNodeId={selectedNodeId}
         onSelectNode={(nodeId) => {
           setSelectedNodeId(nodeId);
@@ -578,9 +762,22 @@ export function WorkSpacePage() {
         onCopyNode={copyCanvasNode}
         onDeleteNode={deleteCanvasNode}
         onShowNodeDetail={setNodeDetail}
-        userEdges={userEdges}
-        setUserEdges={setUserEdges}
+        onNodesCommit={(nodes) =>
+          updateActiveCanvas((canvas) => ({ ...canvas, nodes }))
+        }
+        onEdgesCommit={(edges) =>
+          updateActiveCanvas((canvas) => ({ ...canvas, edges }))
+        }
+        onViewportCommit={(viewport) =>
+          updateActiveCanvas((canvas) => {
+            if (canvas.nodes.length === 0 && canvas.edges.length === 0) {
+              return canvas;
+            }
+            return { ...canvas, viewport };
+          })
+        }
         focusNodeRequest={focusNodeRequest}
+        onFocusNodeRequestConsumed={consumeFocusNodeRequest}
         projectId={projectId}
         space={space}
         runningNode={runningNode}
@@ -599,11 +796,7 @@ export function WorkSpacePage() {
         onToggleTheme={toggleTheme}
       />
 
-      <LeftCanvasDock
-        panelMode={panelMode}
-        onAdd={openDockNodeMenu}
-        onOpenPanel={setPanelMode}
-      />
+      <LeftCanvasDock panelMode={panelMode} onOpenPanel={setPanelMode} />
 
       <button
         type="button"
@@ -614,27 +807,45 @@ export function WorkSpacePage() {
         <MessageSquare size={22} />
       </button>
 
+      <div className="ws-import-composer-host" aria-hidden="true">
+        <PromptComposer
+          value=""
+          placeholder=""
+          openAssetPickerSignal={importPickerSignal}
+          params={agentComposerParams}
+          assetLibrary={buildComposerAssetLibrary(space, null)}
+          onChange={() => undefined}
+          onParamChange={() => undefined}
+          onAssetReference={(asset) => {
+            if (asset.source === "asset" && asset.asset) {
+              addAssetNode(asset.asset as ProjectAsset);
+            }
+          }}
+          onLocalUpload={uploadLocalFiles}
+          onSubmit={() => undefined}
+        />
+      </div>
+
       {panelMode === "assets" ? (
-        <AssetFloatingPanel
+        <AssetWorkspacePanel
           space={space}
           activeCate={activeCate}
           onClose={() => setPanelMode(null)}
-          onSelectCate={switchCate}
-          onPickNodeType={openNodeTypePicker}
         />
       ) : null}
 
-      {panelMode === "flows" ? (
-        <FlowFloatingPanel
+      {panelMode === "create" ? (
+        <CreationWorkspacePanel
           flows={activeFlows}
           running={running}
           onClose={() => setPanelMode(null)}
+          onOpenCanvasMenu={openDockNodeMenu}
           onRunFlow={executeFlow}
         />
       ) : null}
 
       {panelMode === "chat" ? (
-        <ChatFloatingPanel
+        <CommunicationWorkspacePanel
           activeCate={activeCate}
           prompt={prompt}
           running={running}
@@ -657,10 +868,17 @@ export function WorkSpacePage() {
           powersLoading={powersLoading}
           roles={menuRoles}
           onClose={() => setNodeMenu(null)}
-          onBack={() => setNodeMenu((current: AddNodeMenuState | null) => (current ? { ...current, view: "types" as const } : current))}
+          onBack={() =>
+            setNodeMenu((current: AddNodeMenuState | null) =>
+              current ? { ...current, view: "types" as const } : current,
+            )
+          }
+          onImport={openImportPicker}
           onSelectAsset={(asset) => addAssetNode(asset, nodeMenu.position)}
           onSelectFlow={(flow) => addFlowNode(flow, nodeMenu.position)}
-          onSelectFunction={(functionOption) => addFunctionNode(functionOption, nodeMenu.position)}
+          onSelectFunction={(functionOption) =>
+            addFunctionNode(functionOption, nodeMenu.position)
+          }
           onSelect={selectMenuNodeType}
           onSelectRole={(role) => addAgentNode(role, nodeMenu.position)}
           onSelectPower={(power) => addPowerNode(power, nodeMenu.position)}
@@ -668,7 +886,10 @@ export function WorkSpacePage() {
       ) : null}
 
       {nodeDetail ? (
-        <NodeDetailDialog node={nodeDetail} onClose={() => setNodeDetail(null)} />
+        <NodeDetailDialog
+          node={nodeDetail}
+          onClose={() => setNodeDetail(null)}
+        />
       ) : null}
     </main>
   );
@@ -693,22 +914,45 @@ function TopCanvasToolbar({
   theme: WorkSpaceTheme;
   onToggleTheme: () => void;
 }) {
+  const activeIndex = Math.max(
+    0,
+    cates.findIndex((cate) => cate.id === activeCate.id),
+  );
   return (
     <header className="ws-topbar">
       <div className="ws-top-left">
-        <button type="button" className="ws-back" onClick={onBack} aria-label="返回工作台">
+        <button
+          type="button"
+          className="ws-back"
+          onClick={onBack}
+          aria-label="返回工作台"
+        >
           <ArrowLeft size={17} />
         </button>
         <div className="ws-project-meta">
           <div className="ws-project-title">{space.project.name}</div>
           <div className="ws-project-subtitle">
-            <span>{space.team.name || space.project.team?.name || "自由团队"}</span>
-            {space.release.version ? <span>v{space.release.version}</span> : null}
+            <span>
+              {space.team.name || space.project.team?.name || "自由团队"}
+            </span>
+            {space.release.version ? (
+              <span>v{space.release.version}</span>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <nav className="ws-cate-strip" aria-label="资产分类">
+      <nav
+        className="ws-cate-strip"
+        aria-label="资产分类"
+        style={
+          {
+            "--ws-cate-total": Math.max(cates.length, 1),
+            "--ws-cate-active": activeIndex,
+          } as CSSProperties
+        }
+      >
+        <span className="ws-cate-indicator" />
         {cates.map((cate) => (
           <button
             key={cate.id}
@@ -717,7 +961,6 @@ function TopCanvasToolbar({
             onClick={() => onSelectCate(cate.id)}
           >
             <span className="ws-cate-name">{cate.name}</span>
-            <span className="ws-cate-count">{assetsForCate(space, cate.id).length}</span>
           </button>
         ))}
       </nav>
@@ -747,6 +990,7 @@ function AddNodeMenu({
   powers,
   roles,
   onClose,
+  onImport,
   onSelectFlow,
   onSelectFunction,
   onSelectRole,
@@ -763,6 +1007,7 @@ function AddNodeMenu({
   roles: TeamRole[];
   onClose: () => void;
   onBack: () => void;
+  onImport: () => void;
   onSelectAsset: (asset: ProjectAsset) => void;
   onSelectFlow: (flow: TeamFlow) => void;
   onSelectFunction: (functionOption: CanvasFunctionOption) => void;
@@ -777,100 +1022,82 @@ function AddNodeMenu({
 
   const visibleSections: ReactNode[] = [];
 
-  if (safePowers.length > 0) {
+  const powerItems = [importAction, ...safePowers];
+  if (powerItems.length > 0) {
     visibleSections.push(
-      <div key="powers" className="ws-add-section">
-        <div className="ws-add-section-title">能力</div>
-        <div className="ws-add-menu-list">
-          {safePowers.map((power) => {
-            return (
-              <button
-                key={power.key || power.id}
-                type="button"
-                className="ws-add-item is-power"
-                onClick={() => onSelectPower(power)}
-              >
-                <span className="ws-add-icon">
-                  <PowerIcon power={power} size={16} />
-                </span>
-                <span className="ws-add-label">{power.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      renderAddMenuSection({
+        sectionKey: "powers",
+        title: "能力",
+        items: powerItems,
+        itemKey: (item) =>
+          isAddMenuAction(item) ? item.key : String(item.key || item.id),
+        itemClassName: (item) =>
+          isAddMenuAction(item) ? item.className : "is-power",
+        label: (item) => (isAddMenuAction(item) ? item.label : item.name),
+        description: (item) => (isAddMenuAction(item) ? item.description : ""),
+        icon: (item) => {
+          if (isAddMenuAction(item)) {
+            const Icon = item.icon;
+            return <Icon size={16} />;
+          }
+          return <PowerIcon power={item} size={16} />;
+        },
+        onSelect: (item) => {
+          if (isAddMenuAction(item)) {
+            onImport();
+            return;
+          }
+          onSelectPower(item);
+        },
+      }),
     );
   }
 
   if (safeRoles.length > 0) {
     visibleSections.push(
-      <div key="roles" className="ws-add-section">
-        <div className="ws-add-section-title">智能体</div>
-        <div className="ws-add-menu-list">
-          {safeRoles.map((role) => (
-            <button
-              key={role.id || role.role_key || role.name}
-              type="button"
-              className="ws-add-item is-agent"
-              onClick={() => onSelectRole(role)}
-            >
-              <span className="ws-add-icon">
-                <UserCheck size={16} />
-              </span>
-              <span className="ws-add-label">{role.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      renderAddMenuSection({
+        sectionKey: "roles",
+        title: "智能体",
+        items: safeRoles,
+        itemKey: (role) => String(role.id || role.role_key || role.name),
+        itemClassName: "is-agent",
+        label: (role) => role.name,
+        icon: () => <UserCheck size={16} />,
+        onSelect: onSelectRole,
+      }),
     );
   }
 
   if (safeFlows.length > 0) {
     visibleSections.push(
-      <div key="flows" className="ws-add-section">
-        <div className="ws-add-section-title">流程</div>
-        <div className="ws-add-menu-list">
-          {safeFlows.map((flow) => (
-            <button
-              key={flow.id || flow.key || flow.name}
-              type="button"
-              className="ws-add-item is-flow"
-              onClick={() => onSelectFlow(flow)}
-            >
-              <span className="ws-add-icon">
-                <Workflow size={16} />
-              </span>
-              <span className="ws-add-label">{flow.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      renderAddMenuSection({
+        sectionKey: "flows",
+        title: "流程",
+        items: safeFlows,
+        itemKey: (flow) => String(flow.id || flow.key || flow.name),
+        itemClassName: "is-flow",
+        label: (flow) => flow.name,
+        icon: () => <Workflow size={16} />,
+        onSelect: onSelectFlow,
+      }),
     );
   }
 
   if (functionOptions && functionOptions.length > 0) {
     visibleSections.push(
-      <div key="functions" className="ws-add-section">
-        <div className="ws-add-section-title">控制</div>
-        <div className="ws-add-menu-list">
-          {functionOptions.map((option) => {
-            const Icon = functionIcon(option.key);
-            return (
-              <button
-                key={option.key}
-                type="button"
-                className="ws-add-item is-function"
-                onClick={() => onSelectFunction(option)}
-              >
-                <span className="ws-add-icon">
-                  <Icon size={16} />
-                </span>
-                <span className="ws-add-label">{option.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      renderAddMenuSection({
+        sectionKey: "functions",
+        title: "控制",
+        items: functionOptions,
+        itemKey: (option) => option.key,
+        itemClassName: "is-function",
+        label: (option) => option.label,
+        icon: (option) => {
+          const Icon = functionIcon(option.key);
+          return <Icon size={16} />;
+        },
+        onSelect: onSelectFunction,
+      }),
     );
   }
 
@@ -886,7 +1113,7 @@ function AddNodeMenu({
       />
       <section
         className="ws-add-menu custom-scrollbar"
-        style={{ left: point.x, top: point.y }}
+        style={{ left: point.x, top: point.y, maxHeight: point.maxHeight }}
         onMouseDown={(event: any) => event.stopPropagation()}
       >
         <div className="ws-add-menu-head">
@@ -896,7 +1123,9 @@ function AddNodeMenu({
           {visibleSections.map((sec, index) => (
             <div key={index}>
               {sec}
-              {index < visibleSections.length - 1 && <div className="ws-add-divider" />}
+              {index < visibleSections.length - 1 && (
+                <div className="ws-add-divider" />
+              )}
             </div>
           ))}
         </div>
@@ -905,26 +1134,95 @@ function AddNodeMenu({
   );
 }
 
+function renderAddMenuSection<T>({
+  sectionKey,
+  title,
+  items,
+  itemKey,
+  itemClassName,
+  listClassName = "",
+  label,
+  description,
+  icon,
+  onSelect,
+}: {
+  sectionKey: string;
+  title: string;
+  items: T[];
+  itemKey: (item: T) => string;
+  itemClassName: string | ((item: T) => string);
+  listClassName?: string;
+  label: (item: T) => string;
+  description?: (item: T) => string;
+  icon: (item: T) => ReactNode;
+  onSelect: (item: T) => void;
+}) {
+  return (
+    <div key={sectionKey} className="ws-add-section">
+      <div className="ws-add-section-title">{title}</div>
+      <div className={`ws-add-menu-list ${listClassName}`.trim()}>
+        {items.map((item) => {
+          const itemDescription = description?.(item) || "";
+          const extraClassName =
+            typeof itemClassName === "function"
+              ? itemClassName(item)
+              : itemClassName;
+          return (
+            <button
+              key={itemKey(item)}
+              type="button"
+              className={`ws-add-item ${extraClassName}`.trim()}
+              title={itemDescription || label(item)}
+              onClick={() => onSelect(item)}
+            >
+              <span className="ws-add-icon">{icon(item)}</span>
+              <span className="ws-add-copy">
+                <span className="ws-add-label">{label(item)}</span>
+                {itemDescription ? (
+                  <span className="ws-add-desc">{itemDescription}</span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function isAddMenuAction(
+  item: PowerOption | AddMenuAction,
+): item is AddMenuAction {
+  return "className" in item;
+}
 
 function LeftCanvasDock({
   panelMode,
-  onAdd,
   onOpenPanel,
 }: {
   panelMode: PanelMode;
-  onAdd: () => void;
   onOpenPanel: (mode: PanelMode) => void;
 }) {
   return (
     <aside className="ws-dock ws-glass-panel" aria-label="画布工具">
-      <button type="button" className="ws-dock-add" onClick={onAdd} aria-label="添加节点">
-        <Plus size={22} />
-      </button>
-      <div className="ws-dock-divider" style={{ width: "24px", height: "1px", background: "var(--ws-border)", margin: "4px 0" }} />
-      <DockButton active={panelMode === "assets"} icon={Folder} label="资产" onClick={() => onOpenPanel(panelMode === "assets" ? null : "assets")} />
-      <DockButton active={panelMode === "flows"} icon={Workflow} label="流程" onClick={() => onOpenPanel(panelMode === "flows" ? null : "flows")} />
-      <DockButton active={panelMode === "chat"} icon={MessageSquare} label="沟通" onClick={() => onOpenPanel(panelMode === "chat" ? null : "chat")} />
-      <DockButton active={false} icon={History} label="历史" onClick={() => onOpenPanel(null)} />
+      <DockButton
+        active={panelMode === "assets"}
+        icon={Folder}
+        label="资产"
+        onClick={() => onOpenPanel(panelMode === "assets" ? null : "assets")}
+      />
+      <DockButton
+        active={panelMode === "create"}
+        icon={PenTool}
+        label="创作"
+        onClick={() => onOpenPanel(panelMode === "create" ? null : "create")}
+      />
+      <DockButton
+        active={panelMode === "chat"}
+        icon={MessageSquare}
+        label="沟通"
+        onClick={() => onOpenPanel(panelMode === "chat" ? null : "chat")}
+      />
     </aside>
   );
 }
@@ -941,166 +1239,123 @@ function DockButton({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className={`ws-dock-button ${active ? "is-active" : ""}`} onClick={onClick}>
+    <button
+      type="button"
+      className={`ws-dock-button ${active ? "is-active" : ""}`}
+      onClick={onClick}
+    >
       <Icon size={18} />
       <span>{label}</span>
     </button>
   );
 }
 
-function AssetFloatingPanel({
+function AssetWorkspacePanel({
   space,
   activeCate,
   onClose,
-  onSelectCate,
-  onPickNodeType,
 }: {
   space: SpaceBootstrap;
   activeCate: AssetCate;
   onClose: () => void;
-  onSelectCate: (cateId: number) => void;
-  onPickNodeType: (type: SpaceCanvasNode["type"]) => void;
 }) {
-  const cates = visibleAssetCates(space);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
+  const assets = assetsForCate(space, activeCate.id);
+  const showList = activeCate.cardinality !== "single" || assets.length > 1;
+  const [selectedAssetId, setSelectedAssetId] = useState(assets[0]?.id || 0);
+  const selectedAsset =
+    assets.find((asset) => asset.id === selectedAssetId) || assets[0] || null;
 
-  const handleDragStart = (e: React.DragEvent, nodeType: string, detail?: any) => {
-    e.dataTransfer.setData("application/shemic-nodetype", nodeType);
-    if (detail) {
-      e.dataTransfer.setData("application/shemic-detail", JSON.stringify(detail));
-    }
-    e.dataTransfer.effectAllowed = "move";
-  };
+  useEffect(() => {
+    setSelectedAssetId(assets[0]?.id || 0);
+  }, [activeCate.id, assets[0]?.id]);
 
   return (
-    <FloatingPanel title="节点组件库" subtitle="资产树 / 节点库" side="left" onClose={onClose}>
-      <div className="ws-drawer-search" style={{ padding: "10px" }}>
-        <input
-          type="text"
-          placeholder="搜索组件/资产..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "6px 12px",
-            border: "1px solid var(--ws-border)",
-            borderRadius: "8px",
-            background: "rgba(0,0,0,0.2)",
-            color: "#fff",
-            fontSize: "12px",
-            outline: "none"
-          }}
-        />
-      </div>
-
-      <div className="ws-asset-tree custom-scrollbar" style={{ flex: 1, overflowY: "auto" }}>
-        {cates.map((cate) => {
-          const isCollapsed = collapsed[cate.id] ?? false;
-          const assets = assetsForCate(space, cate.id).filter(a =>
-            a.name.toLowerCase().includes(searchQuery.toLowerCase())
-          );
-
-          return (
-            <div key={cate.id} className="ws-tree-group">
-              <button
-                type="button"
-                className={`ws-tree-head ${cate.id === activeCate.id ? "is-active" : ""}`}
-                onClick={() => {
-                  onSelectCate(cate.id);
-                  setCollapsed(prev => ({ ...prev, [cate.id]: !isCollapsed }));
-                }}
-              >
-                <span className="ws-tree-label">
-                  {assetIcon(cate.kind)}
-                  {cate.name}
-                </span>
-                <span>{assets.length}</span>
-              </button>
-
-              {!isCollapsed && (
-                <div className="ws-tree-list">
-                  {assets.length > 0 ? (
-                    assets.slice(0, 8).map((asset) => (
-                      <div
-                        key={asset.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, "asset", asset)}
-                        className="ws-tree-asset draggable-item"
-                        style={{ cursor: "grab", padding: "6px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.03)", marginBottom: "4px" }}
-                      >
-                        {asset.name || "未命名资产"}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="ws-tree-empty">暂无资产</div>
-                  )}
-                </div>
+    <WorkspaceOverlay onClose={onClose} className="ws-asset-workspace">
+      <section
+        className={`ws-asset-editor-shell ${showList ? "has-list" : "is-single"}`}
+      >
+        {showList ? (
+          <aside className="ws-asset-list-pane">
+            <div className="ws-asset-list-title">{activeCate.name}</div>
+            <div className="ws-asset-list custom-scrollbar">
+              {assets.length > 0 ? (
+                assets.map((asset, index) => (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    className={`ws-asset-list-item ${asset.id === selectedAsset?.id ? "is-active" : ""}`}
+                    onClick={() => setSelectedAssetId(asset.id)}
+                  >
+                    <span>
+                      {asset.name || `${activeCate.name} ${index + 1}`}
+                    </span>
+                    <small>{asset.created_at || "未保存时间"}</small>
+                  </button>
+                ))
+              ) : (
+                <div className="ws-asset-list-empty">暂无资产</div>
               )}
             </div>
-          );
-        })}
-      </div>
-
-      <div className="ws-panel-divider" />
-      <div className="ws-node-palette">
-        {paletteItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.type}
-              type="button"
-              draggable
-              onDragStart={(e) => handleDragStart(e, item.type)}
-              className="ws-palette-button"
-              onClick={() => onPickNodeType(item.type)}
-              style={{ cursor: "grab" }}
-            >
-              <Icon size={16} />
-              <span>{item.label}</span>
-              <small>{item.desc}</small>
-            </button>
-          );
-        })}
-      </div>
-    </FloatingPanel>
+          </aside>
+        ) : null}
+        <AssetEditorSurface activeCate={activeCate} asset={selectedAsset} />
+      </section>
+    </WorkspaceOverlay>
   );
 }
 
-function FlowFloatingPanel({
+function CreationWorkspacePanel({
   flows,
   running,
   onClose,
+  onOpenCanvasMenu,
   onRunFlow,
 }: {
   flows: TeamFlow[];
   running: boolean;
   onClose: () => void;
+  onOpenCanvasMenu: () => void;
   onRunFlow: (flow: TeamFlow) => void;
 }) {
   return (
-    <FloatingPanel title="相关流程" subtitle={`${flows.length} 个团队流程`} side="right" onClose={onClose}>
-      <div className="ws-flow-list">
-        {flows.length > 0 ? (
-          flows.map((flow) => (
-            <div key={flow.id} className="ws-flow-card">
-              <h4>{flow.name || "未命名流程"}</h4>
-              <p>{flow.goal || "运行团队预设流程，产出由保存节点写入作品资产。"}</p>
-              <button type="button" disabled={running} onClick={() => onRunFlow(flow)}>
-                <Play size={13} />
-                运行流程
+    <WorkspaceOverlay onClose={onClose} className="ws-create-workspace">
+      <section className="ws-create-card">
+        <button
+          type="button"
+          className="ws-create-option is-canvas"
+          onClick={() => {
+            onClose();
+            onOpenCanvasMenu();
+          }}
+        >
+          <span>自由画布</span>
+          <small>添加资产、能力、控制节点并自由连线。</small>
+        </button>
+        <div className="ws-create-flow-list custom-scrollbar">
+          <div className="ws-create-section-title">流程列表</div>
+          {flows.length > 0 ? (
+            flows.map((flow) => (
+              <button
+                key={flow.id}
+                type="button"
+                className="ws-create-flow-item"
+                disabled={running}
+                onClick={() => onRunFlow(flow)}
+              >
+                <span>{flow.name || "未命名流程"}</span>
+                <small>{flow.goal || "运行团队预设流程"}</small>
               </button>
-            </div>
-          ))
-        ) : (
-          <div className="ws-tree-empty">当前团队还没有流程，可以先使用自由节点。</div>
-        )}
-      </div>
-    </FloatingPanel>
+            ))
+          ) : (
+            <div className="ws-create-empty">暂无流程</div>
+          )}
+        </div>
+      </section>
+    </WorkspaceOverlay>
   );
 }
 
-function ChatFloatingPanel({
+function CommunicationWorkspacePanel({
   activeCate,
   prompt,
   running,
@@ -1118,62 +1373,120 @@ function ChatFloatingPanel({
   onSubmitMessage: () => void;
 }) {
   return (
-    <FloatingPanel title="沟通角色" subtitle={activeCate.name} side="right" onClose={onClose}>
-      <div className="ws-chat-box">
-        <textarea
-          value={prompt}
-          onChange={(event) => onPromptChange(event.target.value)}
-          placeholder={`告诉沟通角色你想怎么做${activeCate.name}...`}
-        />
-        <button
-          type="button"
-          className="ws-panel-button"
-          disabled={running || !prompt.trim()}
-          onClick={onSubmitMessage}
-        >
-          {running ? <Loader2 size={14} /> : <Send size={14} />}
-          发送
-        </button>
-        {runStatus ? <div className="ws-run-status">{runStatus}</div> : null}
-      </div>
-    </FloatingPanel>
+    <WorkspaceOverlay onClose={onClose} className="ws-communication-workspace">
+      <section className="ws-chat-stage">
+        <div className="ws-chat-thread">
+          <div className="ws-chat-message is-assistant">
+            <div className="ws-chat-avatar">AI</div>
+            <div>
+              <strong>创作助手</strong>
+              <p>可以直接说你想怎么处理{activeCate.name}。</p>
+            </div>
+          </div>
+          {prompt.trim() ? (
+            <div className="ws-chat-message is-user">
+              <p>{prompt}</p>
+            </div>
+          ) : null}
+          {runStatus ? <div className="ws-run-status">{runStatus}</div> : null}
+        </div>
+        <div className="ws-chat-composer">
+          <textarea
+            value={prompt}
+            onChange={(event) => onPromptChange(event.target.value)}
+            placeholder="可以向我提问或布置创作任务，输入 @ 使用资产"
+          />
+          <div className="ws-chat-composer-actions">
+            <button type="button">Agent</button>
+            <button type="button">+</button>
+            <button
+              type="button"
+              className="is-send"
+              disabled={running || !prompt.trim()}
+              onClick={onSubmitMessage}
+              aria-label="发送"
+            >
+              {running ? <Loader2 size={16} /> : <Send size={16} />}
+            </button>
+          </div>
+        </div>
+      </section>
+    </WorkspaceOverlay>
   );
 }
 
-function FloatingPanel({
-  title,
-  subtitle,
-  side,
+function WorkspaceOverlay({
   onClose,
+  className,
   children,
 }: {
-  title: string;
-  subtitle: string;
-  side: "left" | "right";
   onClose: () => void;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section className={`ws-floating-panel is-${side}`}>
-      <div className="ws-floating-head">
-        <div>
-          <h3>{title}</h3>
-          <span>{subtitle}</span>
-        </div>
-        <button type="button" onClick={onClose} aria-label="关闭">
-          <X size={15} />
-        </button>
-      </div>
+    <div className={`ws-workspace-overlay ${className || ""}`.trim()}>
+      <button
+        type="button"
+        className="ws-workspace-close"
+        onClick={onClose}
+        aria-label="关闭"
+      >
+        <X size={18} />
+      </button>
       {children}
-    </section>
+    </div>
   );
+}
+
+function AssetEditorSurface({
+  activeCate,
+  asset,
+}: {
+  activeCate: AssetCate;
+  asset: ProjectAsset | null;
+}) {
+  const content = assetContentText(asset);
+  return (
+    <article className="ws-asset-editor">
+      <header className="ws-asset-editor-head">
+        <span>{activeCate.name}</span>
+        <strong>{asset?.name || activeCate.name}</strong>
+      </header>
+      <textarea
+        value={content}
+        readOnly
+        placeholder={`暂无${activeCate.name}内容`}
+      />
+    </article>
+  );
+}
+
+function assetContentText(asset: ProjectAsset | null) {
+  if (!asset) {
+    return "";
+  }
+  const content = asset.version?.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (content && typeof content === "object") {
+    const record = content as Record<string, unknown>;
+    for (const key of ["text", "content", "body", "markdown", "value"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+    }
+  }
+  return documentPreview(content);
 }
 
 function CanvasWorkbench({
   activeCate,
-  assetsCount,
   nodes,
   edges,
+  viewport,
   selectedNodeId,
   onSelectNode,
   onOpenNodeMenu,
@@ -1181,9 +1494,11 @@ function CanvasWorkbench({
   onCopyNode,
   onDeleteNode,
   onShowNodeDetail,
-  userEdges,
-  setUserEdges,
+  onNodesCommit,
+  onEdgesCommit,
+  onViewportCommit,
   focusNodeRequest,
+  onFocusNodeRequestConsumed,
   projectId,
   space,
   runningNode,
@@ -1191,43 +1506,41 @@ function CanvasWorkbench({
   onNodeResult,
 }: {
   activeCate: AssetCate;
-  assetsCount: number;
   nodes: SpaceCanvasNode[];
   edges: { id: string; from: string; to: string }[];
+  viewport: SpaceCanvasState["viewport"];
   selectedNodeId: string;
   onSelectNode: (id: string) => void;
-  onOpenNodeMenu: (screen: CanvasPoint, position: CanvasPoint, connection?: PendingNodeConnection) => void;
-  onAddConfiguredNode?: (
-    type: SpaceCanvasNode["type"],
-    position?: CanvasPoint,
-    options?: {
-      asset?: ProjectAsset;
-      flow?: TeamFlow;
-      functionOption?: CanvasFunctionOption;
-      power?: PowerOption;
-      role?: TeamRole;
-    },
+  onOpenNodeMenu: (
+    screen: CanvasPoint,
+    position: CanvasPoint,
+    connection?: PendingNodeConnection,
   ) => void;
+  onAddConfiguredNode?: AddConfiguredNodeHandler;
   onCopyNode: (node: SpaceCanvasNode, position?: CanvasPoint) => void;
   onDeleteNode: (node: SpaceCanvasNode) => void;
   onShowNodeDetail: (node: SpaceCanvasNode) => void;
-  userEdges: Edge[];
-  setUserEdges: Dispatch<SetStateAction<Edge[]>>;
+  onNodesCommit: (nodes: SpaceCanvasNode[]) => void;
+  onEdgesCommit: (edges: SpaceCanvasEdge[]) => void;
+  onViewportCommit: (viewport: SpaceCanvasState["viewport"]) => void;
   focusNodeRequest: NodeFocusRequest | null;
+  onFocusNodeRequestConsumed: (request: NodeFocusRequest) => void;
   projectId: number;
   space: SpaceBootstrap;
   runningNode: RunningNodeState | null;
   setRunningNode: RunningNodeSetter;
   onNodeResult: NodeResultSetter;
 }) {
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [flowInstance, setFlowInstance] = useState<FlowViewport | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [draggingNodeId, setDraggingNodeId] = useState("");
   const [proximityEdge, setProximityEdge] = useState<Edge | null>(null);
-  const [nodeActionMenu, setNodeActionMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  const [nodeActionMenu, setNodeActionMenu] = useState<{
+    nodeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState("");
-  const [hiddenEdgeIds, setHiddenEdgeIds] = useState<Set<string>>(() => new Set());
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [viewportZoom, setViewportZoom] = useState(1);
@@ -1245,14 +1558,13 @@ function CanvasWorkbench({
 
   const flowNodes = useMemo<Node[]>(() => {
     const activeIds = new Set<string>();
-    const visibleBaseEdges = edges.filter((edge) => !hiddenEdgeIds.has(edge.id));
-    const contextEdges = [
-      ...visibleBaseEdges.map((edge) => ({ source: edge.from, target: edge.to })),
-      ...userEdges.map((edge) => ({ source: edge.source, target: edge.target })),
-    ];
+    const contextEdges = edges.map((edge) => ({
+      source: edge.from,
+      target: edge.to,
+    }));
     const nextNodes = nodes.map((node) => {
       activeIds.add(node.id);
-      const position = nodePositions[node.id] || { x: node.x, y: node.y };
+      const position = { x: node.x, y: node.y };
       const selected = node.id === selectedNodeId;
 
       const nodeData = {
@@ -1261,6 +1573,7 @@ function CanvasWorkbench({
         space,
         runningNode: runningNode?.nodeId === node.id ? runningNode : null,
         setRunningNode,
+        onAddConfiguredNode,
         onNodeResult,
         onShowNodeDetail,
         viewportZoom,
@@ -1302,26 +1615,32 @@ function CanvasWorkbench({
       }
     }
     return nextNodes;
-  }, [edges, hiddenEdgeIds, nodePositions, nodes, onNodeResult, onShowNodeDetail, projectId, runningNode, selectedNodeId, setRunningNode, space, userEdges, viewportZoom]);
+  }, [
+    edges,
+    nodes,
+    onAddConfiguredNode,
+    onNodeResult,
+    onShowNodeDetail,
+    projectId,
+    runningNode,
+    selectedNodeId,
+    setRunningNode,
+    space,
+    viewportZoom,
+  ]);
 
-  const deleteEdge = useCallback((edgeId: string) => {
-    setSelectedEdgeId("");
-    setUserEdges((current) => current.filter((edge) => edge.id !== edgeId));
-    setHiddenEdgeIds((current) => {
-      if (current.has(edgeId)) {
-        return current;
-      }
-      const next = new Set(current);
-      next.add(edgeId);
-      return next;
-    });
-  }, [setUserEdges]);
+  const deleteEdge = useCallback(
+    (edgeId: string) => {
+      setSelectedEdgeId("");
+      onEdgesCommit(edges.filter((edge) => edge.id !== edgeId));
+    },
+    [edges, onEdgesCommit],
+  );
 
   const flowEdges = useMemo<Edge[]>(() => {
-    const nodeIds = new Set(nodes.map((node) => node.id));
     const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-    const baseEdges: Edge[] = edges
-      .filter((edge) => !hiddenEdgeIds.has(edge.id))
+    return edges
+      .filter((edge) => nodeMap.has(edge.from) && nodeMap.has(edge.to))
       .map((edge) => ({
         id: edge.id,
         source: edge.from,
@@ -1330,13 +1649,18 @@ function CanvasWorkbench({
         targetHandle: "input-0",
         type: "animated",
         animated: false,
-      }));
-    const activeEdges = [
-      ...baseEdges,
-      ...userEdges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
-    ];
-    return activeEdges.map((edge) => decorateFlowEdge(edge, nodeMap, hoveredNodeId, selectedNodeId, selectedEdgeId, deleteEdge));
-  }, [deleteEdge, edges, hiddenEdgeIds, hoveredNodeId, nodes, selectedEdgeId, selectedNodeId, userEdges]);
+      }))
+      .map((edge) =>
+        decorateFlowEdge(
+          edge,
+          nodeMap,
+          hoveredNodeId,
+          selectedNodeId,
+          selectedEdgeId,
+          deleteEdge,
+        ),
+      );
+  }, [deleteEdge, edges, hoveredNodeId, nodes, selectedEdgeId, selectedNodeId]);
 
   const renderedEdges = useMemo(
     () => (proximityEdge ? [...flowEdges, proximityEdge] : flowEdges),
@@ -1344,14 +1668,20 @@ function CanvasWorkbench({
   );
 
   useEffect(() => {
-    if (!flowInstance || !fitKey || focusNodeRequest || typeof window === "undefined") {
+    if (
+      !flowInstance ||
+      !fitKey ||
+      focusNodeRequest ||
+      viewport.zoom != null ||
+      typeof window === "undefined"
+    ) {
       return;
     }
     const timer = setTimeout(() => {
       flowInstance.fitView?.({ padding: 0.32, duration: 250, maxZoom: 0.72 });
     }, 150);
     return () => clearTimeout(timer);
-  }, [fitKey, flowInstance, focusNodeRequest]);
+  }, [fitKey, flowInstance, focusNodeRequest, viewport.zoom]);
 
   useEffect(() => {
     if (!flowInstance || !focusNodeRequest || typeof window === "undefined") {
@@ -1359,10 +1689,11 @@ function CanvasWorkbench({
     }
     const node = nodes.find((item) => item.id === focusNodeRequest.nodeId);
     if (!node) {
+      onFocusNodeRequestConsumed(focusNodeRequest);
       return;
     }
     const timer = window.setTimeout(() => {
-      const position = nodePositions[node.id] || { x: node.x, y: node.y };
+      const position = { x: node.x, y: node.y };
       const nextZoom = node.type === "power" ? 1.02 : 0.96;
       flowInstance.setCenter?.(
         position.x + (node.width || 180) / 2,
@@ -1370,24 +1701,30 @@ function CanvasWorkbench({
         { zoom: nextZoom, duration: 320 },
       );
       setViewportZoom(nextZoom);
+      onFocusNodeRequestConsumed(focusNodeRequest);
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [flowInstance, focusNodeRequest, nodePositions, nodes]);
+  }, [flowInstance, focusNodeRequest, nodes, onFocusNodeRequestConsumed]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const nextNodes = applyNodeChanges(changes, flowNodes);
-      setNodePositions((current: Record<string, { x: number; y: number }>) => {
-        let changed = false;
-        const next = { ...current };
-        for (const node of nextNodes) {
-          if (!current[node.id] || current[node.id].x !== node.position.x || current[node.id].y !== node.position.y) {
-            next[node.id] = node.position;
-            changed = true;
+      const positionsById = new Map(
+        nextNodes.map((node) => [node.id, node.position]),
+      );
+      onNodesCommit(
+        nodes.map((node) => {
+          const position = positionsById.get(node.id);
+          if (!position || (node.x === position.x && node.y === position.y)) {
+            return node;
           }
-        }
-        return changed ? next : current;
-      });
+          return {
+            ...node,
+            x: position.x,
+            y: position.y,
+          };
+        }),
+      );
 
       let hasSelect = false;
       let selectedId = "";
@@ -1412,86 +1749,112 @@ function CanvasWorkbench({
         flowNodeCache.current.set(node.id, node);
       }
     },
-    [flowNodes, onSelectNode],
+    [flowNodes, nodes, onNodesCommit, onSelectNode],
   );
 
-  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-    let nextSelectedEdgeId = "";
-    let hasSelectionChange = false;
-    for (const change of changes) {
-      if (change.type === "select") {
-        hasSelectionChange = true;
-        if (change.selected) {
-          nextSelectedEdgeId = change.id;
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      let nextSelectedEdgeId = "";
+      let hasSelectionChange = false;
+      for (const change of changes) {
+        if (change.type === "select") {
+          hasSelectionChange = true;
+          if (change.selected) {
+            nextSelectedEdgeId = change.id;
+          }
         }
       }
-    }
-    if (hasSelectionChange) {
-      setSelectedEdgeId(nextSelectedEdgeId);
-    }
-    setUserEdges((current: Edge[]) => applyEdgeChanges(changes, current));
-  }, [setUserEdges]);
-
-  const handleConnect = useCallback<OnConnect>((connection) => {
-    connectionCompletedRef.current = true;
-    if (!connection.source || !connection.target || connection.source === connection.target) {
-      return;
-    }
-    const hasBaseEdge = edges.some((edge) => edge.from === connection.source && edge.to === connection.target);
-    if (hasBaseEdge) {
-      return;
-    }
-    setUserEdges((current: Edge[]) => appendUserEdge(current, connection.source || "", connection.target || ""));
-  }, [edges, setUserEdges]);
-
-  const handleConnectStart = useCallback((_event: unknown, params: any) => {
-    const nodeId = String(params?.nodeId || "");
-    if (nodeId) {
-      skipNextNodeClickRef.current = true;
-      onSelectNode("");
-      setNodeActionMenu(null);
-    }
-    pendingConnectionRef.current = nodeId
-      ? {
-        nodeId,
-        handleId: params?.handleId || null,
-        handleType: params?.handleType || null,
+      if (hasSelectionChange) {
+        setSelectedEdgeId(nextSelectedEdgeId);
       }
-      : null;
-    connectionCompletedRef.current = false;
-    setSelectedEdgeId("");
-  }, [onSelectNode]);
+      const nextEdges = applyEdgeChanges(changes, flowEdges);
+      onEdgesCommit(flowEdgesToCanvasEdges(nextEdges));
+    },
+    [flowEdges, onEdgesCommit],
+  );
 
-  const handleConnectEnd = useCallback((event: any) => {
-    const pendingConnection = pendingConnectionRef.current;
-    pendingConnectionRef.current = null;
-    if (pendingConnection?.nodeId && typeof window !== "undefined") {
-      window.setTimeout(() => {
-        skipNextNodeClickRef.current = false;
-      }, 0);
-    }
-    if (connectionCompletedRef.current) {
+  const handleConnect = useCallback<OnConnect>(
+    (connection) => {
+      connectionCompletedRef.current = true;
+      if (
+        !connection.source ||
+        !connection.target ||
+        connection.source === connection.target
+      ) {
+        return;
+      }
+      onEdgesCommit(
+        appendCanvasEdge(
+          edges,
+          connection.source || "",
+          connection.target || "",
+        ),
+      );
+    },
+    [edges, onEdgesCommit],
+  );
+
+  const handleConnectStart = useCallback(
+    (_event: unknown, params: any) => {
+      const nodeId = String(params?.nodeId || "");
+      if (nodeId) {
+        skipNextNodeClickRef.current = true;
+        onSelectNode("");
+        setNodeActionMenu(null);
+      }
+      pendingConnectionRef.current = nodeId
+        ? {
+            nodeId,
+            handleId: params?.handleId || null,
+            handleType: params?.handleType || null,
+          }
+        : null;
       connectionCompletedRef.current = false;
-      return;
-    }
-    if (!pendingConnection?.nodeId) {
-      return;
-    }
-    const screen = pointerFromConnectEndEvent(event);
-    if (!screen) {
-      return;
-    }
-    skipNextPaneClickRef.current = true;
-    onOpenNodeMenu(screen, flowPositionFromScreen(flowInstance, screen), pendingConnection);
-  }, [flowInstance, onOpenNodeMenu]);
+      setSelectedEdgeId("");
+    },
+    [onSelectNode],
+  );
 
-  const handleEdgeClick = useCallback((event: ReactMouseEvent | MouseEvent, edge: Edge) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setNodeActionMenu(null);
-    onSelectNode("");
-    setSelectedEdgeId(edge.id);
-  }, [onSelectNode]);
+  const handleConnectEnd = useCallback(
+    (event: any) => {
+      const pendingConnection = pendingConnectionRef.current;
+      pendingConnectionRef.current = null;
+      if (pendingConnection?.nodeId && typeof window !== "undefined") {
+        window.setTimeout(() => {
+          skipNextNodeClickRef.current = false;
+        }, 0);
+      }
+      if (connectionCompletedRef.current) {
+        connectionCompletedRef.current = false;
+        return;
+      }
+      if (!pendingConnection?.nodeId) {
+        return;
+      }
+      const screen = pointerFromConnectEndEvent(event);
+      if (!screen) {
+        return;
+      }
+      skipNextPaneClickRef.current = true;
+      onOpenNodeMenu(
+        screen,
+        flowPositionFromScreen(flowInstance, screen),
+        pendingConnection,
+      );
+    },
+    [flowInstance, onOpenNodeMenu],
+  );
+
+  const handleEdgeClick = useCallback(
+    (event: ReactMouseEvent | MouseEvent, edge: Edge) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setNodeActionMenu(null);
+      onSelectNode("");
+      setSelectedEdgeId(edge.id);
+    },
+    [onSelectNode],
+  );
 
   useEffect(() => {
     if (!selectedEdgeId || typeof window === "undefined") {
@@ -1512,19 +1875,29 @@ function CanvasWorkbench({
   }, [deleteEdge, selectedEdgeId]);
 
   const updateProximityEdge = useCallback((nextEdge: Edge | null) => {
-    setProximityEdge((current: Edge | null) => (isSamePreviewEdge(current, nextEdge) ? current : nextEdge));
+    setProximityEdge((current: Edge | null) =>
+      isSamePreviewEdge(current, nextEdge) ? current : nextEdge,
+    );
   }, []);
 
-  const checkValidConnection = useCallback((connection: any) => {
-    const sourceNode = nodes.find((n: SpaceCanvasNode) => n.id === connection.source);
-    const targetNode = nodes.find((n: SpaceCanvasNode) => n.id === connection.target);
-    return canConnectNodes(sourceNode, targetNode);
-  }, [nodes]);
+  const checkValidConnection = useCallback(
+    (connection: any) => {
+      const sourceNode = nodes.find(
+        (n: SpaceCanvasNode) => n.id === connection.source,
+      );
+      const targetNode = nodes.find(
+        (n: SpaceCanvasNode) => n.id === connection.target,
+      );
+      return canConnectNodes(sourceNode, targetNode);
+    },
+    [nodes],
+  );
 
   const handleNodeDrag = useCallback(
     (_event: ReactMouseEvent | MouseEvent, draggedNode: Node) => {
       const hasConnections = flowEdges.some(
-        (edge) => edge.source === draggedNode.id || edge.target === draggedNode.id,
+        (edge) =>
+          edge.source === draggedNode.id || edge.target === draggedNode.id,
       );
       if (hasConnections) {
         updateProximityEdge(null);
@@ -1540,7 +1913,10 @@ function CanvasWorkbench({
         updateProximityEdge(null);
         return;
       }
-      const connection = resolveProximityConnection(sourceNode, closest.domainNode);
+      const connection = resolveProximityConnection(
+        sourceNode,
+        closest.domainNode,
+      );
       if (!connection) {
         updateProximityEdge(null);
         return;
@@ -1557,13 +1933,17 @@ function CanvasWorkbench({
       return;
     }
     const exists = flowEdges.some(
-      (edge) => edge.source === proximityEdge.source && edge.target === proximityEdge.target,
+      (edge) =>
+        edge.source === proximityEdge.source &&
+        edge.target === proximityEdge.target,
     );
     if (!exists) {
-      setUserEdges((current: Edge[]) => appendUserEdge(current, proximityEdge.source, proximityEdge.target));
+      onEdgesCommit(
+        appendCanvasEdge(edges, proximityEdge.source, proximityEdge.target),
+      );
     }
     updateProximityEdge(null);
-  }, [flowEdges, proximityEdge, setUserEdges, updateProximityEdge]);
+  }, [edges, flowEdges, onEdgesCommit, proximityEdge, updateProximityEdge]);
 
   const handlePaneClick = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
@@ -1601,13 +1981,21 @@ function CanvasWorkbench({
       event.stopPropagation();
       setSelectedEdgeId("");
       onSelectNode(node.id);
-      setNodeActionMenu({ nodeId: node.id, x: event.clientX, y: event.clientY });
+      setNodeActionMenu({
+        nodeId: node.id,
+        x: event.clientX,
+        y: event.clientY,
+      });
     },
     [onSelectNode],
   );
 
-  const actionNode = nodeActionMenu ? nodes.find((node) => node.id === nodeActionMenu.nodeId) || null : null;
-  const actionNodePosition = actionNode ? nodePositions[actionNode.id] || { x: actionNode.x, y: actionNode.y } : undefined;
+  const actionNode = nodeActionMenu
+    ? nodes.find((node) => node.id === nodeActionMenu.nodeId) || null
+    : null;
+  const actionNodePosition = actionNode
+    ? { x: actionNode.x, y: actionNode.y }
+    : undefined;
 
   function closeNodeActionMenu() {
     setNodeActionMenu(null);
@@ -1617,7 +2005,12 @@ function CanvasWorkbench({
     if (!actionNode) {
       return;
     }
-    onCopyNode(actionNode, actionNodePosition ? { x: actionNodePosition.x + 34, y: actionNodePosition.y + 34 } : undefined);
+    onCopyNode(
+      actionNode,
+      actionNodePosition
+        ? { x: actionNodePosition.x + 34, y: actionNodePosition.y + 34 }
+        : undefined,
+    );
     closeNodeActionMenu();
   }
 
@@ -1625,10 +2018,12 @@ function CanvasWorkbench({
     if (!actionNode) {
       return;
     }
-    if (typeof window !== "undefined" && !window.confirm(`确定删除「${actionNode.title}」吗？`)) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`确定删除「${actionNode.title}」吗？`)
+    ) {
       return;
     }
-    setUserEdges((current) => current.filter((edge) => edge.source !== actionNode.id && edge.target !== actionNode.id));
     setSelectedEdgeId("");
     onDeleteNode(actionNode);
     closeNodeActionMenu();
@@ -1649,50 +2044,58 @@ function CanvasWorkbench({
     }
   }, []);
 
-  const onDrop = useCallback((event: DragEvent) => {
-    event.preventDefault();
-    if (!flowInstance || !onAddConfiguredNode) return;
+  const onDrop = useCallback(
+    (event: DragEvent) => {
+      event.preventDefault();
+      if (!flowInstance || !onAddConfiguredNode) return;
 
-    const nodeType = event.dataTransfer.getData("application/shemic-nodetype") as SpaceCanvasNode["type"];
-    if (!nodeType) return;
+      const nodeType = event.dataTransfer.getData(
+        "application/shemic-nodetype",
+      ) as SpaceCanvasNode["type"];
+      if (!nodeType) return;
 
-    const detailRaw = event.dataTransfer.getData("application/shemic-detail");
-    const detail = detailRaw ? JSON.parse(detailRaw) : undefined;
+      const detailRaw = event.dataTransfer.getData("application/shemic-detail");
+      const detail = detailRaw ? JSON.parse(detailRaw) : undefined;
 
-    const position = flowInstance.screenToFlowPosition
-      ? flowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      })
-      : flowPositionFromScreen(flowInstance, {
-        x: event.clientX,
-        y: event.clientY,
-      });
+      const position = flowInstance.screenToFlowPosition
+        ? flowInstance.screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          })
+        : flowPositionFromScreen(flowInstance, {
+            x: event.clientX,
+            y: event.clientY,
+          });
 
-    if (nodeType === "asset" && detail) {
-      onAddConfiguredNode("asset", position, { asset: detail });
-    } else if (nodeType === "power" && detail) {
-      onAddConfiguredNode("power", position, { power: detail });
-    } else if (nodeType === "agent" && detail) {
-      onAddConfiguredNode("agent", position, { role: detail });
-    } else if (nodeType === "flow" && detail) {
-      onAddConfiguredNode("flow", position, { flow: detail });
-    } else if (nodeType === "function" && detail) {
-      onAddConfiguredNode("function", position, { functionOption: detail });
-    } else {
-      onAddConfiguredNode(nodeType, position);
-    }
-  }, [flowInstance, onAddConfiguredNode]);
+      if (nodeType === "asset" && detail) {
+        onAddConfiguredNode("asset", position, { asset: detail });
+      } else if (nodeType === "power" && detail) {
+        onAddConfiguredNode("power", position, { power: detail });
+      } else if (nodeType === "agent" && detail) {
+        onAddConfiguredNode("agent", position, { role: detail });
+      } else if (nodeType === "flow" && detail) {
+        onAddConfiguredNode("flow", position, { flow: detail });
+      } else if (nodeType === "function" && detail) {
+        onAddConfiguredNode("function", position, { functionOption: detail });
+      } else {
+        onAddConfiguredNode(nodeType, position);
+      }
+    },
+    [flowInstance, onAddConfiguredNode],
+  );
 
   const resetCanvasView = useCallback(() => {
     flowInstance?.fitView?.({ padding: 0.32, duration: 260, maxZoom: 0.9 });
   }, [flowInstance]);
 
-  const zoomCanvasTo = useCallback((zoom: number) => {
-    const nextZoom = Math.max(0.35, Math.min(1.45, zoom));
-    setViewportZoom(nextZoom);
-    flowInstance?.zoomTo?.(nextZoom, { duration: 120 });
-  }, [flowInstance]);
+  const zoomCanvasTo = useCallback(
+    (zoom: number) => {
+      const nextZoom = Math.max(0.35, Math.min(1.45, zoom));
+      setViewportZoom(nextZoom);
+      flowInstance?.zoomTo?.(nextZoom, { duration: 120 });
+    },
+    [flowInstance],
+  );
 
   const zoomCanvasIn = useCallback(() => {
     const nextZoom = Math.min(1.45, viewportZoom + 0.12);
@@ -1707,7 +2110,9 @@ function CanvasWorkbench({
   }, [flowInstance, viewportZoom]);
 
   return (
-    <section className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""}`}>
+    <section
+      className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""}`}
+    >
       <ReactFlow
         nodes={flowNodes}
         edges={renderedEdges}
@@ -1740,10 +2145,30 @@ function CanvasWorkbench({
         onInit={(instance) => {
           const nextInstance = instance as FlowViewport;
           setFlowInstance(nextInstance);
-          setViewportZoom(nextInstance.getZoom?.() || 1);
+          if (
+            viewport.x != null &&
+            viewport.y != null &&
+            viewport.zoom != null
+          ) {
+            nextInstance.setViewport?.({
+              x: viewport.x,
+              y: viewport.y,
+              zoom: viewport.zoom,
+            });
+            setViewportZoom(viewport.zoom);
+          } else {
+            setViewportZoom(nextInstance.getZoom?.() || 1);
+          }
         }}
         onMove={(_, viewport) => {
-          setViewportZoom((current) => (Math.abs(current - viewport.zoom) > 0.005 ? viewport.zoom : current));
+          setViewportZoom((current) =>
+            Math.abs(current - viewport.zoom) > 0.005 ? viewport.zoom : current,
+          );
+          onViewportCommit({
+            x: viewport.x,
+            y: viewport.y,
+            zoom: viewport.zoom,
+          });
         }}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
@@ -1756,16 +2181,23 @@ function CanvasWorkbench({
           type: "animated",
           animated: false,
         }}
-        fitView
+        fitView={viewport.zoom == null}
         fitViewOptions={{ padding: 0.32, maxZoom: 0.72 }}
       >
-        <Background variant="dots" color="var(--ws-flow-dot)" gap={18} size={1.5} />
-        {showMiniMap ? (
+        <Background
+          variant="dots"
+          color="var(--ws-flow-dot)"
+          gap={18}
+          size={1.5}
+        />
+        {showMiniMap && nodes.length > 0 ? (
           <MiniMap
             position="bottom-left"
             pannable
             zoomable
-            nodeColor={(node: Node) => miniMapNodeColor(node.data as SpaceCanvasNode)}
+            nodeColor={(node: Node) =>
+              miniMapNodeColor(node.data as SpaceCanvasNode)
+            }
           />
         ) : null}
       </ReactFlow>
@@ -1782,10 +2214,13 @@ function CanvasWorkbench({
         onZoomChange={zoomCanvasTo}
       />
 
-      {assetsCount === 0 ? (
-        <div className="ws-empty-note">
-          <MessageSquare size={17} />
-          空的{activeCate.name}工作区。可以和沟通角色说目标，也可以直接添加节点或运行流程。
+      {nodes.length === 0 ? (
+        <div className="ws-empty-note" role="note">
+          <span className="ws-empty-action">
+            <MousePointer2 size={16} />
+            <strong>双击屏幕</strong>
+          </span>
+          <span className="ws-empty-copy">画布自由生成</span>
         </div>
       ) : null}
 
@@ -1886,11 +2321,21 @@ function CanvasViewControls({
       >
         <MousePointer2 size={16} />
       </button>
-      <button type="button" onClick={onReset} aria-label="重置视图" title="重置视图">
+      <button
+        type="button"
+        onClick={onReset}
+        aria-label="重置视图"
+        title="重置视图"
+      >
         <Maximize2 size={15} />
       </button>
       <div className="ws-view-zoom">
-        <button type="button" onClick={onZoomOut} aria-label="缩小" title="缩小">
+        <button
+          type="button"
+          onClick={onZoomOut}
+          aria-label="缩小"
+          title="缩小"
+        >
           <Minus size={15} />
         </button>
         <input
@@ -1910,14 +2355,25 @@ function CanvasViewControls({
   );
 }
 
-function NodeDetailDialog({ node, onClose }: { node: SpaceCanvasNode; onClose: () => void }) {
+function NodeDetailDialog({
+  node,
+  onClose,
+}: {
+  node: SpaceCanvasNode;
+  onClose: () => void;
+}) {
   const preview = nodeDetailPreview(node);
-  const typeLabel = node.subtitle || powerKindLabel(String(node.kind || node.type));
-  const downloadUrl = preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl;
+  const typeLabel =
+    node.subtitle || powerKindLabel(String(node.kind || node.type));
+  const downloadUrl =
+    preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl;
 
   return (
     <div className="ws-node-detail-backdrop" onMouseDown={onClose}>
-      <section className="ws-node-detail-modal" onMouseDown={(event) => event.stopPropagation()}>
+      <section
+        className="ws-node-detail-modal"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header className="ws-node-detail-head">
           <div className="ws-node-detail-meta">
             <span>名称:</span>
@@ -1967,8 +2423,20 @@ function NodeDetailDialog({ node, onClose }: { node: SpaceCanvasNode; onClose: (
 type FlowViewport = {
   screenToFlowPosition?: (position: CanvasPoint) => CanvasPoint;
   project?: (position: CanvasPoint) => CanvasPoint;
-  fitView?: (options?: { padding?: number; duration?: number; maxZoom?: number }) => void;
-  setCenter?: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+  fitView?: (options?: {
+    padding?: number;
+    duration?: number;
+    maxZoom?: number;
+  }) => void;
+  setViewport?: (
+    viewport: { x: number; y: number; zoom: number },
+    options?: { duration?: number },
+  ) => void;
+  setCenter?: (
+    x: number,
+    y: number,
+    options?: { zoom?: number; duration?: number },
+  ) => void;
   zoomIn?: (options?: { duration?: number }) => void;
   zoomOut?: (options?: { duration?: number }) => void;
   zoomTo?: (zoom: number, options?: { duration?: number }) => void;
@@ -1976,7 +2444,10 @@ type FlowViewport = {
 };
 
 function applyNodeResultOverrides(
-  model: { nodes: SpaceCanvasNode[]; edges: { id: string; from: string; to: string }[] },
+  model: {
+    nodes: SpaceCanvasNode[];
+    edges: { id: string; from: string; to: string }[];
+  },
   overrides: Record<string, Partial<SpaceCanvasNode>>,
 ) {
   if (Object.keys(overrides).length === 0) {
@@ -2005,7 +2476,10 @@ function buildGeneratedNodeResultPatch(
     result?.data?.result,
     result?.data,
   );
-  const preview = generatedPreviewFromValue(output, String(node.power?.kind || node.kind || ""));
+  const preview = generatedPreviewFromValue(
+    output,
+    String(node.power?.kind || node.kind || ""),
+  );
   const summary =
     preview.text ||
     preview.imageUrl ||
@@ -2044,8 +2518,14 @@ function generatedNodePreview(node: SpaceCanvasNode): GeneratedNodePreview {
     (node as any).version?.content,
     (node as any).asset?.version?.content,
   );
-  const preview = generatedPreviewFromValue(output, String(node.power?.kind || node.kind || ""));
-  if (!hasGeneratedPreview(preview) && (node.hasResult === true || node.status === "已生成")) {
+  const preview = generatedPreviewFromValue(
+    output,
+    String(node.power?.kind || node.kind || ""),
+  );
+  if (
+    !hasGeneratedPreview(preview) &&
+    (node.hasResult === true || node.status === "已生成")
+  ) {
     preview.text = node.description;
   }
   return preview;
@@ -2056,14 +2536,21 @@ function nodeDetailPreview(node: SpaceCanvasNode): GeneratedNodePreview {
   if (hasGeneratedPreview(preview)) {
     return preview;
   }
-  const assetPreview = generatedPreviewFromValue(nodeContextOutput(node), String(node.kind || node.power?.kind || ""));
+  const assetPreview = generatedPreviewFromValue(
+    nodeContextOutput(node),
+    String(node.kind || node.power?.kind || ""),
+  );
   if (!hasGeneratedPreview(assetPreview)) {
-    assetPreview.text = node.description || stringifyContextValue(nodeContextOutput(node));
+    assetPreview.text =
+      node.description || stringifyContextValue(nodeContextOutput(node));
   }
   return assetPreview;
 }
 
-function generatedPreviewFromValue(value: any, kind: string): GeneratedNodePreview {
+function generatedPreviewFromValue(
+  value: any,
+  kind: string,
+): GeneratedNodePreview {
   const preview: GeneratedNodePreview = {
     text: "",
     imageUrl: "",
@@ -2075,7 +2562,11 @@ function generatedPreviewFromValue(value: any, kind: string): GeneratedNodePrevi
   return preview;
 }
 
-function fillGeneratedPreview(preview: GeneratedNodePreview, value: any, kind: string) {
+function fillGeneratedPreview(
+  preview: GeneratedNodePreview,
+  value: any,
+  kind: string,
+) {
   if (value == null) {
     return;
   }
@@ -2109,7 +2600,11 @@ function fillGeneratedPreview(preview: GeneratedNodePreview, value: any, kind: s
     row.choices?.[0]?.message?.content,
     row.choices?.[0]?.text,
   );
-  preview.imageUrl ||= firstMediaText(row.image, row.url, firstArrayValue(row.images));
+  preview.imageUrl ||= firstMediaText(
+    row.image,
+    row.url,
+    firstArrayValue(row.images),
+  );
   preview.videoUrl ||= firstMediaText(row.video, firstArrayValue(row.videos));
   preview.audioUrl ||= firstMediaText(row.audio, firstArrayValue(row.audios));
   preview.fileUrl ||= firstMediaText(row.file, firstArrayValue(row.files));
@@ -2133,22 +2628,36 @@ function fillGeneratedPreview(preview: GeneratedNodePreview, value: any, kind: s
   }
 }
 
-function setPreviewString(preview: GeneratedNodePreview, value: string, kind: string) {
+function setPreviewString(
+  preview: GeneratedNodePreview,
+  value: string,
+  kind: string,
+) {
   const text = value.trim();
   if (!text) {
     return;
   }
   if (looksLikeURL(text)) {
     const normalizedKind = kind.toLowerCase();
-    if (normalizedKind === "image" || /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(text)) {
+    if (
+      normalizedKind === "image" ||
+      /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(text)
+    ) {
       preview.imageUrl ||= text;
       return;
     }
-    if (normalizedKind === "video" || /\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(text)) {
+    if (
+      normalizedKind === "video" ||
+      /\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(text)
+    ) {
       preview.videoUrl ||= text;
       return;
     }
-    if (normalizedKind === "audio" || normalizedKind === "music" || /\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i.test(text)) {
+    if (
+      normalizedKind === "audio" ||
+      normalizedKind === "music" ||
+      /\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i.test(text)
+    ) {
       preview.audioUrl ||= text;
       return;
     }
@@ -2159,7 +2668,13 @@ function setPreviewString(preview: GeneratedNodePreview, value: string, kind: st
 }
 
 function hasGeneratedPreview(preview: GeneratedNodePreview) {
-  return Boolean(preview.text || preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl);
+  return Boolean(
+    preview.text ||
+    preview.imageUrl ||
+    preview.videoUrl ||
+    preview.audioUrl ||
+    preview.fileUrl,
+  );
 }
 
 function firstDefined(...values: any[]) {
@@ -2181,7 +2696,15 @@ function firstMediaText(...values: any[]) {
       return value.trim();
     }
     if (value && typeof value === "object") {
-      const text = firstText(value.url, value.src, value.path, value.file, value.image, value.video, value.audio);
+      const text = firstText(
+        value.url,
+        value.src,
+        value.path,
+        value.file,
+        value.image,
+        value.video,
+        value.audio,
+      );
       if (text) {
         return text;
       }
@@ -2198,7 +2721,10 @@ function looksLikeURL(text: string) {
   return /^(https?:\/\/|\/|data:|blob:)/i.test(text);
 }
 
-function flowPositionFromScreen(flow: FlowViewport | null, screen: CanvasPoint) {
+function flowPositionFromScreen(
+  flow: FlowViewport | null,
+  screen: CanvasPoint,
+) {
   if (flow?.screenToFlowPosition) {
     return flow.screenToFlowPosition(screen);
   }
@@ -2215,7 +2741,12 @@ function defaultNodePosition(index: number): CanvasPoint {
   };
 }
 
-function cloneCanvasNode(node: SpaceCanvasNode, assetCateId: number, index: number, position?: CanvasPoint): SpaceCanvasNode {
+function cloneCanvasNode(
+  node: SpaceCanvasNode,
+  assetCateId: number,
+  index: number,
+  position?: CanvasPoint,
+): SpaceCanvasNode {
   const x = position?.x ?? node.x + 34;
   const y = position?.y ?? node.y + 34;
   return {
@@ -2241,7 +2772,10 @@ function buildNodeInputContext(
     .filter((node): node is SpaceCanvasNode => Boolean(node))
     .map((node) => {
       const output = nodeContextOutput(node);
-      const preview = generatedPreviewFromValue(output, String(node.power?.kind || node.kind || ""));
+      const preview = generatedPreviewFromValue(
+        output,
+        String(node.power?.kind || node.kind || ""),
+      );
       if (!hasGeneratedPreview(preview)) {
         preview.text = node.description || node.title;
       }
@@ -2264,7 +2798,13 @@ function buildNodeInputContext(
 
 function nodeInputContextLine(source: NodeInputContext["sources"][number]) {
   const preview = source.preview;
-  const text = preview.text || preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl || stringifyContextValue(source.output);
+  const text =
+    preview.text ||
+    preview.imageUrl ||
+    preview.videoUrl ||
+    preview.audioUrl ||
+    preview.fileUrl ||
+    stringifyContextValue(source.output);
   return `[${source.title}]\n${text}`;
 }
 
@@ -2278,6 +2818,116 @@ function nodeContextOutput(node: SpaceCanvasNode) {
     node.asset?.version?.content,
     node.description,
   );
+}
+
+function buildComposerAssetLibrary(
+  space: SpaceBootstrap | null,
+  inputContext: NodeInputContext | null,
+): { current: ComposerAssetItem[]; assets: ComposerAssetItem[] } {
+  const current = (inputContext?.sources || []).map((source) => ({
+    id: source.nodeId,
+    title: source.title,
+    kind: composerKindFromPreview(source.preview, String(source.type || "")),
+    source: "current" as const,
+    output: source.output,
+    preview: source.preview,
+  }));
+  const assets = (space?.assets || []).map((asset) => {
+    const output = asset.version?.content ?? asset.name;
+    const preview = generatedPreviewFromValue(output, String(asset.kind || ""));
+    if (!hasGeneratedPreview(preview)) {
+      preview.text = asset.name;
+    }
+    return {
+      id: String(asset.id),
+      title: asset.name || `资产 ${asset.id}`,
+      kind: composerKindFromPreview(preview, String(asset.kind || "")),
+      source: "asset" as const,
+      output,
+      preview,
+      asset,
+    };
+  });
+  return { current, assets };
+}
+
+function composerKindFromPreview(
+  preview: GeneratedNodePreview,
+  fallback: string,
+) {
+  if (preview.imageUrl) return "image";
+  if (preview.videoUrl) return "video";
+  if (preview.audioUrl) return "audio";
+  if (preview.fileUrl) return "file";
+  if (preview.text) return "text";
+  return String(fallback || "file").toLowerCase();
+}
+
+async function uploadSpaceFiles(
+  projectId: number,
+  files: File[],
+  ruleId: number,
+): Promise<UploadPreview[]> {
+  const previews: UploadPreview[] = [];
+  for (const file of files) {
+    const init = await initSpaceUpload({
+      projectId,
+      ruleId,
+      name: file.name,
+      size: file.size,
+      mime: file.type,
+      kind: uploadKindFromFile(file),
+    });
+    if (String(init.transport || "relay").toLowerCase() === "direct") {
+      throw new Error("当前导入入口暂不支持前端直传规则");
+    }
+    const chunkSize = Math.max(1, Number(init.chunk_size || file.size || 1));
+    const chunkTotal = Math.max(
+      1,
+      Number(init.chunk_total || Math.ceil(file.size / chunkSize)),
+    );
+    for (let index = 0; index < chunkTotal; index += 1) {
+      const start = index * chunkSize;
+      const end = Math.min(file.size, start + chunkSize);
+      await uploadSpacePart({
+        projectId,
+        sessionId: Number(init.session_id || 0),
+        partNumber: index + 1,
+        file: file.slice(start, end),
+      });
+    }
+    const completed = await completeSpaceUpload({
+      projectId,
+      sessionId: Number(init.session_id || 0),
+    });
+    previews.push(uploadPreviewFromPayload(completed, file));
+  }
+  return previews;
+}
+
+function uploadKindFromFile(file: File) {
+  const mime = String(file.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  return "file";
+}
+
+function uploadPreviewFromPayload(payload: any, file: File): UploadPreview {
+  const url = String(
+    payload?.url || payload?.open_url || payload?.download || "",
+  );
+  const kind = String(payload?.kind || uploadKindFromFile(file));
+  return {
+    name: String(payload?.name || file.name),
+    alias: String(payload?.name || file.name),
+    kind,
+    source: "upload",
+    type: String(payload?.mime || file.type || kind),
+    url,
+    text: String(payload?.name || file.name),
+    output: payload,
+  };
 }
 
 function stringifyContextValue(value: unknown) {
@@ -2294,7 +2944,9 @@ function stringifyContextValue(value: unknown) {
   }
 }
 
-function nodeMenuViewForType(type: SpaceCanvasNode["type"]): AddNodeMenuState["view"] {
+function nodeMenuViewForType(
+  type: SpaceCanvasNode["type"],
+): AddNodeMenuState["view"] {
   if (type === "asset") return "assets";
   if (type === "power") return "powers";
   if (type === "agent") return "agents";
@@ -2302,7 +2954,10 @@ function nodeMenuViewForType(type: SpaceCanvasNode["type"]): AddNodeMenuState["v
   return "functions";
 }
 
-function canConnectNodes(sourceNode?: SpaceCanvasNode, targetNode?: SpaceCanvasNode) {
+function canConnectNodes(
+  sourceNode?: SpaceCanvasNode,
+  targetNode?: SpaceCanvasNode,
+) {
   if (!sourceNode || !targetNode) {
     return false;
   }
@@ -2312,7 +2967,10 @@ function canConnectNodes(sourceNode?: SpaceCanvasNode, targetNode?: SpaceCanvasN
   return true;
 }
 
-function connectedNodeEdgeEndpoints(connection: PendingNodeConnection, newNodeId: string) {
+function connectedNodeEdgeEndpoints(
+  connection: PendingNodeConnection,
+  newNodeId: string,
+) {
   if (connection.handleType === "target") {
     return {
       source: newNodeId,
@@ -2325,11 +2983,17 @@ function connectedNodeEdgeEndpoints(connection: PendingNodeConnection, newNodeId
   };
 }
 
-function appendUserEdge(current: Edge[], source: string, target: string) {
+function appendCanvasEdge(
+  current: SpaceCanvasEdge[],
+  source: string,
+  target: string,
+) {
   if (!source || !target || source === target) {
     return current;
   }
-  const edgeExists = current.some((edge) => edge.source === source && edge.target === target);
+  const edgeExists = current.some(
+    (edge) => edge.from === source && edge.to === target,
+  );
   if (edgeExists) {
     return current;
   }
@@ -2337,17 +3001,66 @@ function appendUserEdge(current: Edge[], source: string, target: string) {
     ...current,
     {
       id: `edge-${source}-${target}-${Date.now()}`,
-      source,
-      sourceHandle: "output-0",
-      target,
-      targetHandle: "input-0",
-      type: "animated",
-      animated: false,
+      from: source,
+      to: target,
     },
   ];
 }
 
-function resolveProximityConnection(sourceNode: SpaceCanvasNode, targetNode: SpaceCanvasNode) {
+function flowEdgesToCanvasEdges(edges: Edge[]): SpaceCanvasEdge[] {
+  return edges
+    .map((edge) => ({
+      id: String(edge.id || `edge-${edge.source}-${edge.target}`),
+      from: String(edge.source || ""),
+      to: String(edge.target || ""),
+    }))
+    .filter((edge) => edge.from && edge.to && edge.from !== edge.to);
+}
+
+function normalizeCanvasForState(
+  canvas: SpaceCanvasState,
+  assetCateId: number,
+): SpaceCanvasState {
+  const nodeIds = new Set(canvas.nodes.map((node) => node.id));
+  return {
+    assetCateId,
+    nodes: canvas.nodes.map((node) => ({
+      ...node,
+      assetCateId: Number(node.assetCateId ?? assetCateId),
+      local: node.local !== false,
+    })),
+    edges: canvas.edges.filter(
+      (edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to),
+    ),
+    viewport: canvas.viewport || {},
+  };
+}
+
+function isSameCanvasState(left: SpaceCanvasState, right: SpaceCanvasState) {
+  return stableStringifyCanvas(left) === stableStringifyCanvas(right);
+}
+
+function serializeCanvasMap(canvases: Record<string, SpaceCanvasState>) {
+  const result: Record<string, string> = {};
+  for (const [key, canvas] of Object.entries(canvases)) {
+    result[key] = stableStringifyCanvas(canvas);
+  }
+  return result;
+}
+
+function stableStringifyCanvas(canvas: SpaceCanvasState) {
+  return JSON.stringify({
+    assetCateId: canvas.assetCateId,
+    nodes: canvas.nodes,
+    edges: canvas.edges,
+    viewport: canvas.viewport || {},
+  });
+}
+
+function resolveProximityConnection(
+  sourceNode: SpaceCanvasNode,
+  targetNode: SpaceCanvasNode,
+) {
   if (canConnectNodes(sourceNode, targetNode)) {
     return { source: sourceNode.id, target: targetNode.id };
   }
@@ -2357,7 +3070,10 @@ function resolveProximityConnection(sourceNode: SpaceCanvasNode, targetNode: Spa
   return null;
 }
 
-function createProximityPreviewEdge(connection: { source: string; target: string }): Edge {
+function createProximityPreviewEdge(connection: {
+  source: string;
+  target: string;
+}): Edge {
   return {
     id: "proximity-preview",
     source: connection.source,
@@ -2431,7 +3147,10 @@ function decorateFlowEdge(
     edge.target === hoveredNodeId ||
     edge.source === selectedNodeId ||
     edge.target === selectedNodeId;
-  const activeNodeId = edge.source === hoveredNodeId || edge.target === hoveredNodeId ? hoveredNodeId : selectedNodeId;
+  const activeNodeId =
+    edge.source === hoveredNodeId || edge.target === hoveredNodeId
+      ? hoveredNodeId
+      : selectedNodeId;
   return {
     ...edge,
     data: {
@@ -2439,7 +3158,9 @@ function decorateFlowEdge(
       isHighlighted: highlighted,
       isSelected: selected,
       onDelete: onDeleteEdge,
-      highlightColor: highlighted ? nodeHighlightColor(nodeMap.get(activeNodeId)) : "var(--ws-edge)",
+      highlightColor: highlighted
+        ? nodeHighlightColor(nodeMap.get(activeNodeId))
+        : "var(--ws-edge)",
     },
   };
 }
@@ -2458,7 +3179,10 @@ function pointerFromConnectEndEvent(event: any): CanvasPoint | null {
   if (touch) {
     return { x: touch.clientX, y: touch.clientY };
   }
-  if (typeof event?.clientX === "number" && typeof event?.clientY === "number") {
+  if (
+    typeof event?.clientX === "number" &&
+    typeof event?.clientY === "number"
+  ) {
     return { x: event.clientX, y: event.clientY };
   }
   return null;
@@ -2468,7 +3192,9 @@ function isEditableEventTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false;
   }
-  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+  return Boolean(
+    target.closest("input, textarea, select, [contenteditable='true']"),
+  );
 }
 
 function groupedAssets(assets: ProjectAsset[], assetCates: AssetCate[]) {
@@ -2496,19 +3222,15 @@ function groupedPowers(powers: PowerOption[], powerKinds: PowerKindOption[]) {
   }
   const orderedKinds = [
     ...powerKinds.map((item) => item.id).filter((kind) => groups.has(kind)),
-    ...Array.from(groups.keys()).filter((kind) => !labels.has(kind)).sort(),
+    ...Array.from(groups.keys())
+      .filter((kind) => !labels.has(kind))
+      .sort(),
   ];
   return orderedKinds.map((kind) => ({
     kind,
     label: labels.get(kind) || powerKindLabel(kind),
     items: groups.get(kind) || [],
   }));
-}
-
-function assetIconType(kind: string): LucideIcon {
-  if (kind === "image") return ImageIcon;
-  if (kind === "video") return Video;
-  return FileText;
 }
 
 function functionIcon(key: string): LucideIcon {
@@ -2533,18 +3255,35 @@ function NodeHandle({
   style?: CSSProperties;
 }) {
   return (
-    <Handle id={id} type={type} position={position} className={`ws-rf-handle ${className}`} style={style}>
+    <Handle
+      id={id}
+      type={type}
+      position={position}
+      className={`ws-rf-handle ${className}`}
+      style={style}
+    >
       <span>+</span>
     </Handle>
   );
 }
 
-function NodeSelectionOverlays({ node, selected }: { node: SpaceCanvasNode; selected?: boolean }) {
+function NodeSelectionOverlays({
+  node,
+  selected,
+}: {
+  node: SpaceCanvasNode;
+  selected?: boolean;
+}) {
   if (!selected) {
     return null;
   }
   const { projectId, runningNode, setRunningNode } = node as any;
-  const onNodeResult = (node as any).onNodeResult as NodeResultSetter | undefined;
+  const onNodeResult = (node as any).onNodeResult as
+    | NodeResultSetter
+    | undefined;
+  const onAddConfiguredNode = (node as any).onAddConfiguredNode as
+    | AddConfiguredNodeHandler
+    | undefined;
   return (
     <>
       <NodeBottomSettings
@@ -2554,6 +3293,7 @@ function NodeSelectionOverlays({ node, selected }: { node: SpaceCanvasNode; sele
         runningNode={runningNode}
         setRunningNode={setRunningNode}
         onNodeResult={onNodeResult || (() => undefined)}
+        onAddConfiguredNode={onAddConfiguredNode}
       />
     </>
   );
@@ -2601,12 +3341,22 @@ function nodeHasResultContent(node: SpaceCanvasNode) {
   if (output == null) {
     return false;
   }
-  const preview = generatedPreviewFromValue(output, String(node.kind || node.power?.kind || ""));
-  return hasGeneratedPreview(preview) || stringifyContextValue(output).trim() !== "";
+  const preview = generatedPreviewFromValue(
+    output,
+    String(node.kind || node.power?.kind || ""),
+  );
+  return (
+    hasGeneratedPreview(preview) || stringifyContextValue(output).trim() !== ""
+  );
 }
 
 function NodeTopToolbar() {
-  const toolbarItems: Array<{ label: string; icon: LucideIcon; accent?: "green"; menu?: boolean }> = [
+  const toolbarItems: Array<{
+    label: string;
+    icon: LucideIcon;
+    accent?: "green";
+    menu?: boolean;
+  }> = [
     { label: "全景图", icon: Compass, accent: "green", menu: true },
     { label: "增强", icon: Zap },
     { label: "编辑元素", icon: Layers },
@@ -2623,13 +3373,19 @@ function NodeTopToolbar() {
     { label: "大图预览", icon: Maximize2 },
   ];
   return (
-    <div className="ws-node-top-toolbar nodrag" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="ws-node-top-toolbar nodrag"
+      onClick={(event) => event.stopPropagation()}
+    >
       {toolbarItems.map((item, index) => {
         const Icon = item.icon;
         return (
           <span key={item.label} className="ws-node-tool-item">
             {index === 1 ? <i className="ws-node-tool-divider" /> : null}
-            <button type="button" className={`ws-node-tool ${item.accent ? `is-${item.accent}` : ""}`}>
+            <button
+              type="button"
+              className={`ws-node-tool ${item.accent ? `is-${item.accent}` : ""}`}
+            >
               <Icon size={13} />
               <span>{item.label}</span>
               {item.menu ? <ChevronDown size={10} /> : null}
@@ -2674,7 +3430,9 @@ function mergePowerParamValues(
   previousParams: PowerParam[] = [],
 ) {
   const values = defaultPowerParamValues(params);
-  const previousByKey = new Map(previousParams.map((param) => [param.key, param]));
+  const previousByKey = new Map(
+    previousParams.map((param) => [param.key, param]),
+  );
   for (const param of params) {
     const previousParam = previousByKey.get(param.key);
     if (
@@ -2689,17 +3447,31 @@ function mergePowerParamValues(
   return values;
 }
 
-function canPreservePowerParamValue(param: PowerParam, previousParam: PowerParam, value: unknown) {
-  if (param.type !== previousParam.type || param.value_type !== previousParam.value_type) {
+function canPreservePowerParamValue(
+  param: PowerParam,
+  previousParam: PowerParam,
+  value: unknown,
+) {
+  if (
+    param.type !== previousParam.type ||
+    param.value_type !== previousParam.value_type
+  ) {
     return false;
   }
   if (param.type === "option" || param.type === "select") {
-    const optionValues = new Set((param.options || []).map((option) => option.value));
+    const optionValues = new Set(
+      (param.options || []).map((option) => option.value),
+    );
     return optionValues.size === 0 || optionValues.has(String(value ?? ""));
   }
   if (param.type === "multi_option") {
-    const optionValues = new Set((param.options || []).map((option) => option.value));
-    return optionValues.size === 0 || valueAsParamList(value).every((item) => optionValues.has(item));
+    const optionValues = new Set(
+      (param.options || []).map((option) => option.value),
+    );
+    return (
+      optionValues.size === 0 ||
+      valueAsParamList(value).every((item) => optionValues.has(item))
+    );
   }
   if (param.value_type === "number") {
     return value === "" || Number.isFinite(Number(value));
@@ -2717,7 +3489,11 @@ function valueAsParamList(value: unknown) {
   return value == null ? [] : [String(value)];
 }
 
-function powerRunParams(values: Record<string, unknown>, promptParam: PowerParam | null, prompt: string) {
+function powerRunParams(
+  values: Record<string, unknown>,
+  promptParam: PowerParam | null,
+  prompt: string,
+) {
   if (!promptParam?.key) {
     return values;
   }
@@ -2727,7 +3503,10 @@ function powerRunParams(values: Record<string, unknown>, promptParam: PowerParam
   };
 }
 
-function withNodeInputContext(values: Record<string, unknown>, inputContext: NodeInputContext | null) {
+function withNodeInputContext(
+  values: Record<string, unknown>,
+  inputContext: NodeInputContext | null,
+) {
   if (!inputContext?.sources.length) {
     return values;
   }
@@ -2742,7 +3521,10 @@ function withNodeInputContext(values: Record<string, unknown>, inputContext: Nod
   return nextValues;
 }
 
-function promptWithInputContext(prompt: string, inputContext: NodeInputContext | null) {
+function promptWithInputContext(
+  prompt: string,
+  inputContext: NodeInputContext | null,
+) {
   if (!inputContext?.text) {
     return prompt;
   }
@@ -2755,12 +3537,14 @@ function NodeBottomSettings({
   runningNode,
   setRunningNode,
   onNodeResult,
+  onAddConfiguredNode,
 }: {
   node: SpaceCanvasNode;
   projectId: number;
   runningNode: RunningNodeState | null;
   setRunningNode: RunningNodeSetter;
   onNodeResult: NodeResultSetter;
+  onAddConfiguredNode?: AddConfiguredNodeHandler;
 }) {
   const [prompt, setPrompt] = useState("");
   const [running, setRunning] = useState(false);
@@ -2768,28 +3552,52 @@ function NodeBottomSettings({
   const [powerFormLoading, setPowerFormLoading] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<number>(0);
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
-  const inputContext = ((node as any).inputContext || null) as NodeInputContext | null;
+  const inputContext = ((node as any).inputContext ||
+    null) as NodeInputContext | null;
 
   // Control node states
   const [conditionText, setConditionText] = useState(() => {
-    return String(node.functionOption?.key === "condition" ? (node.defaultParams?.condition || "score > 80") : "");
+    return String(
+      node.functionOption?.key === "condition"
+        ? node.defaultParams?.condition || "score > 80"
+        : "",
+    );
   });
   const [confirmOperator, setConfirmOperator] = useState(() => {
-    return String(node.functionOption?.key === "confirm" ? (node.defaultParams?.operator || "主编") : "");
+    return String(
+      node.functionOption?.key === "confirm"
+        ? node.defaultParams?.operator || "主编"
+        : "",
+    );
   });
   const [saveAssetId, setSaveAssetId] = useState("");
   const [mergeLimit, setMergeLimit] = useState(10);
-  const nodeRunning = running || (runningNode?.nodeId === node.id && runningNode.status === "running");
+  const nodeRunning =
+    running ||
+    (runningNode?.nodeId === node.id && runningNode.status === "running");
   const selectedNodeType = node.type;
   const selectedNodeId = node.id;
   const selectedFlowId = node.flow?.id || 0;
   const selectedPowerId = node.type === "power" ? node.power?.id || 0 : 0;
   const selectedPowerKey = node.type === "power" ? node.power?.key || "" : "";
-  const overlayStyle = stableNodeOverlayStyle(Number((node as any).viewportZoom) || 1);
+  const overlayStyle = stableNodeOverlayStyle(
+    Number((node as any).viewportZoom) || 1,
+  );
+  const space = ((node as any).space || null) as SpaceBootstrap | null;
+  const assetLibrary = useMemo(
+    () => buildComposerAssetLibrary(space, inputContext),
+    [inputContext, space],
+  );
 
   useEffect(() => {
     if (selectedNodeType === "power" && (selectedPowerId || selectedPowerKey)) {
-      const cacheKey = powerFormCacheKey(projectId, selectedFlowId, selectedPowerId, selectedPowerKey, 0);
+      const cacheKey = powerFormCacheKey(
+        projectId,
+        selectedFlowId,
+        selectedPowerId,
+        selectedPowerKey,
+        0,
+      );
       const cachedForm = powerFormCache.get(cacheKey);
       if (cachedForm) {
         setPowerForm(cachedForm);
@@ -2825,18 +3633,35 @@ function NodeBottomSettings({
     setParamValues({});
     setSelectedTargetId(0);
     setPrompt("");
-  }, [projectId, selectedFlowId, selectedNodeId, selectedNodeType, selectedPowerId, selectedPowerKey]);
+  }, [
+    projectId,
+    selectedFlowId,
+    selectedNodeId,
+    selectedNodeType,
+    selectedPowerId,
+    selectedPowerKey,
+  ]);
 
   const powerParams = powerForm?.params || [];
   const promptParam = useMemo(
-    () => powerParams.find((param) => isPromptPowerParam(param, powerForm?.primary_param_key)) || null,
+    () =>
+      powerParams.find((param) =>
+        isPromptPowerParam(param, powerForm?.primary_param_key),
+      ) || null,
     [powerForm?.primary_param_key, powerParams],
   );
   const composerParams = useMemo(
-    () => powerParams.filter((param) => param.key !== promptParam?.key && (isUploadPowerParam(param) || isToolbarPowerParam(param))),
+    () =>
+      powerParams.filter(
+        (param) =>
+          param.key !== promptParam?.key &&
+          (isUploadPowerParam(param) || isToolbarPowerParam(param)),
+      ),
     [powerParams, promptParam?.key],
   );
-  const powerPrompt = promptParam ? String(paramValues[promptParam.key] ?? "") : prompt;
+  const powerPrompt = promptParam
+    ? String(paramValues[promptParam.key] ?? "")
+    : prompt;
 
   function setPowerPrompt(nextPrompt: string) {
     setPrompt(nextPrompt);
@@ -2856,6 +3681,36 @@ function NodeBottomSettings({
     }));
   }
 
+  function handleAssetReference(
+    asset: ComposerAssetItem,
+    _param: PowerParam,
+    _alias: string,
+  ) {
+    if (asset.source !== "asset" || !asset.asset || !onAddConfiguredNode) {
+      return;
+    }
+    onAddConfiguredNode(
+      "asset",
+      { x: Number(node.x || 0) - 320, y: Number(node.y || 0) },
+      {
+        asset: asset.asset as ProjectAsset,
+        connectToNodeId: node.id,
+        selectCreated: false,
+      },
+    );
+  }
+
+  async function handleLocalUpload(
+    files: File[],
+    param: PowerParam,
+  ): Promise<UploadPreview[]> {
+    return uploadSpaceFiles(
+      projectId,
+      files,
+      param.upload_rule_id || SPACE_UPLOAD_RULE_ID,
+    );
+  }
+
   async function selectPowerSource(targetId: number) {
     if (nodeRunning) {
       return;
@@ -2865,12 +3720,24 @@ function NodeBottomSettings({
       return;
     }
     try {
-      const cacheKey = powerFormCacheKey(projectId, node.flow?.id || 0, node.power.id, node.power.key, targetId);
+      const cacheKey = powerFormCacheKey(
+        projectId,
+        node.flow?.id || 0,
+        node.power.id,
+        node.power.key,
+        targetId,
+      );
       const cachedForm = powerFormCache.get(cacheKey);
       if (cachedForm) {
         setPowerForm(cachedForm);
         setSelectedTargetId(cachedForm.selected_target_id || targetId);
-        setParamValues((current) => mergePowerParamValues(cachedForm.params || [], current, powerForm?.params || []));
+        setParamValues((current) =>
+          mergePowerParamValues(
+            cachedForm.params || [],
+            current,
+            powerForm?.params || [],
+          ),
+        );
         return;
       }
       const form = await fetchSpacePowerForm({
@@ -2883,7 +3750,13 @@ function NodeBottomSettings({
       powerFormCache.set(cacheKey, form);
       setPowerForm(form);
       setSelectedTargetId(form.selected_target_id || targetId);
-      setParamValues((current) => mergePowerParamValues(form.params || [], current, powerForm?.params || []));
+      setParamValues((current) =>
+        mergePowerParamValues(
+          form.params || [],
+          current,
+          powerForm?.params || [],
+        ),
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载能力参数失败");
     }
@@ -2912,9 +3785,15 @@ function NodeBottomSettings({
           powerKey: node.power.key,
           sourceTargetId: selectedTargetId,
           prompt: runPrompt,
-          params: withNodeInputContext(powerRunParams(paramValues, promptParam, runPrompt), inputContext),
+          params: withNodeInputContext(
+            powerRunParams(paramValues, promptParam, runPrompt),
+            inputContext,
+          ),
         });
-        onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, runPrompt));
+        onNodeResult(
+          node.id,
+          buildGeneratedNodeResultPatch(node, result, runPrompt),
+        );
         toast.success("能力节点执行成功");
         completed = true;
       } else if (node.type === "agent" && node.role) {
@@ -2925,10 +3804,17 @@ function NodeBottomSettings({
           node_key: node.id,
           node_name: node.title,
           agent_id: node.role.id,
-          input: { prompt: runPrompt, files: paramValues.files || [], context: inputContext?.sources || [] },
+          input: {
+            prompt: runPrompt,
+            files: paramValues.files || [],
+            context: inputContext?.sources || [],
+          },
         });
         if (result.code === 0) {
-          onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, runPrompt));
+          onNodeResult(
+            node.id,
+            buildGeneratedNodeResultPatch(node, result, runPrompt),
+          );
           toast.success("智能体任务执行成功");
           completed = true;
         } else {
@@ -2936,8 +3822,16 @@ function NodeBottomSettings({
         }
       } else if (node.type === "flow" && node.flow) {
         const runPrompt = promptWithInputContext(prompt, inputContext);
-        const result = await runSpaceFlow(projectId, Number(node.assetCateId || 0), node.flow, runPrompt);
-        onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, runPrompt));
+        const result = await runSpaceFlow(
+          projectId,
+          Number(node.assetCateId || 0),
+          node.flow,
+          runPrompt,
+        );
+        onNodeResult(
+          node.id,
+          buildGeneratedNodeResultPatch(node, result, runPrompt),
+        );
         toast.success("流程已启动");
         completed = true;
       } else if (node.type === "function") {
@@ -2950,28 +3844,49 @@ function NodeBottomSettings({
             comment: "人工确认通过",
           });
           if (result.code === 0) {
-            onNodeResult(node.id, buildGeneratedNodeResultPatch(node, result, "人工确认通过"));
+            onNodeResult(
+              node.id,
+              buildGeneratedNodeResultPatch(node, result, "人工确认通过"),
+            );
             toast.success("确认成功");
             completed = true;
           } else {
             toast.error(result.message || "确认失败");
           }
         } else if (optionKey === "save") {
-          onNodeResult(node.id, buildGeneratedNodeResultPatch(node, { output: "资产已保存" }, "资产已保存"));
+          onNodeResult(
+            node.id,
+            buildGeneratedNodeResultPatch(
+              node,
+              { output: "资产已保存" },
+              "资产已保存",
+            ),
+          );
           toast.success("资产已保存");
           completed = true;
         } else {
-          onNodeResult(node.id, buildGeneratedNodeResultPatch(node, { output: "操作已应用" }, "操作已应用"));
+          onNodeResult(
+            node.id,
+            buildGeneratedNodeResultPatch(
+              node,
+              { output: "操作已应用" },
+              "操作已应用",
+            ),
+          );
           toast.success("操作已应用");
           completed = true;
         }
       }
     } catch (err) {
-      setRunningNode((current) => (
+      setRunningNode((current) =>
         current?.nodeId === node.id
-          ? { ...current, status: "error", progress: Math.max(current.progress, 92) }
-          : current
-      ));
+          ? {
+              ...current,
+              status: "error",
+              progress: Math.max(current.progress, 92),
+            }
+          : current,
+      );
       toast.error(err instanceof Error ? err.message : "执行出错");
     } finally {
       setRunning(false);
@@ -2985,9 +3900,14 @@ function NodeBottomSettings({
           progress: completed ? 100 : Math.max(current.progress, 92),
         };
       });
-      window.setTimeout(() => {
-        setRunningNode((current) => (current?.nodeId === node.id ? null : current));
-      }, completed ? 650 : 1200);
+      window.setTimeout(
+        () => {
+          setRunningNode((current) =>
+            current?.nodeId === node.id ? null : current,
+          );
+        },
+        completed ? 650 : 1200,
+      );
     }
   };
 
@@ -3011,7 +3931,11 @@ function NodeBottomSettings({
 
   if (node.type === "power") {
     return (
-      <div className="ws-node-bottom-settings is-composer nodrag" onClick={(event) => event.stopPropagation()} style={overlayStyle}>
+      <div
+        className="ws-node-bottom-settings is-composer nodrag"
+        onClick={(event) => event.stopPropagation()}
+        style={overlayStyle}
+      >
         {powerFormLoading && !nodeRunning && !powerForm ? (
           <div className="ws-prompt-loading">
             <Loader2 size={16} className="ws-spin" />
@@ -3026,10 +3950,13 @@ function NodeBottomSettings({
             selectedSourceId={selectedTargetId}
             params={composerParams}
             paramValues={paramValues}
+            assetLibrary={assetLibrary}
             disabled={powerFormLoading}
             onChange={setPowerPrompt}
             onParamChange={setParamValue}
             onSourceChange={(targetId) => void selectPowerSource(targetId)}
+            onAssetReference={handleAssetReference}
+            onLocalUpload={handleLocalUpload}
             onSubmit={handleRun}
           />
         )}
@@ -3039,15 +3966,22 @@ function NodeBottomSettings({
 
   if (node.type === "agent") {
     return (
-      <div className="ws-node-bottom-settings is-composer nodrag" onClick={(event) => event.stopPropagation()} style={overlayStyle}>
+      <div
+        className="ws-node-bottom-settings is-composer nodrag"
+        onClick={(event) => event.stopPropagation()}
+        style={overlayStyle}
+      >
         <PromptComposer
           value={prompt}
           placeholder="向智能体发送任务指令..."
           running={nodeRunning}
           params={agentComposerParams}
           paramValues={paramValues}
+          assetLibrary={assetLibrary}
           onChange={setPrompt}
           onParamChange={setParamValue}
+          onAssetReference={handleAssetReference}
+          onLocalUpload={handleLocalUpload}
           onSubmit={handleRun}
         />
       </div>
@@ -3055,7 +3989,11 @@ function NodeBottomSettings({
   }
 
   return (
-    <div className="ws-node-bottom-settings nodrag" onClick={(event) => event.stopPropagation()} style={overlayStyle}>
+    <div
+      className="ws-node-bottom-settings nodrag"
+      onClick={(event) => event.stopPropagation()}
+      style={overlayStyle}
+    >
       <div className="ws-node-settings-head">
         <div className="ws-node-settings-icon">
           <Plus size={16} />
@@ -3064,7 +4002,15 @@ function NodeBottomSettings({
         <div className="ws-node-settings-copy">
           <div>
             <strong>{node.title}</strong>
-            <span>{node.type} / {String(node.kind || node.functionOption?.key || node.subtitle || "default")}</span>
+            <span>
+              {node.type} /{" "}
+              {String(
+                node.kind ||
+                  node.functionOption?.key ||
+                  node.subtitle ||
+                  "default",
+              )}
+            </span>
           </div>
           <p>{node.description || "配置该节点的专属参数和控制项。"}</p>
         </div>
@@ -3088,12 +4034,25 @@ function NodeBottomSettings({
           <div className="ws-node-settings-row">
             <div className="ws-node-settings-flow-copy">
               <strong>{node.title || "团队流程"}</strong>
-              <span>隶属于: {node.flow?.key || "团队流程"} · {node.subtitle || "多步骤流程"}</span>
+              <span>
+                隶属于: {node.flow?.key || "团队流程"} ·{" "}
+                {node.subtitle || "多步骤流程"}
+              </span>
             </div>
             <div className="ws-node-settings-actions">
               <NodeSettingButton icon={Compass} label="查看内部流程" />
-              <button type="button" className="ws-node-flow-run" disabled={running} onClick={handleRun} style={{ cursor: "pointer" }}>
-                {running ? <Loader2 size={12} className="ws-spin" /> : <Play size={12} fill="currentColor" />}
+              <button
+                type="button"
+                className="ws-node-flow-run"
+                disabled={running}
+                onClick={handleRun}
+                style={{ cursor: "pointer" }}
+              >
+                {running ? (
+                  <Loader2 size={12} className="ws-spin" />
+                ) : (
+                  <Play size={12} fill="currentColor" />
+                )}
                 <span>启动该流程</span>
               </button>
             </div>
@@ -3103,8 +4062,17 @@ function NodeBottomSettings({
         {node.type === "function" && (
           <div className="ws-node-settings-row">
             {node.functionOption?.key === "condition" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
-                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>判断条件:</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  flex: 1,
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>
+                  判断条件:
+                </span>
                 <input
                   type="text"
                   value={conditionText}
@@ -3124,8 +4092,17 @@ function NodeBottomSettings({
             )}
 
             {node.functionOption?.key === "confirm" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
-                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>确认角色:</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  flex: 1,
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>
+                  确认角色:
+                </span>
                 <input
                   type="text"
                   value={confirmOperator}
@@ -3145,8 +4122,17 @@ function NodeBottomSettings({
             )}
 
             {node.functionOption?.key === "save" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
-                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>保存资产ID:</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  flex: 1,
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>
+                  保存资产ID:
+                </span>
                 <input
                   type="text"
                   value={saveAssetId}
@@ -3167,8 +4153,17 @@ function NodeBottomSettings({
             )}
 
             {node.functionOption?.key === "context" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
-                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>最大合并限制:</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  flex: 1,
+                }}
+              >
+                <span style={{ fontSize: "11px", color: "var(--ws-muted)" }}>
+                  最大合并限制:
+                </span>
                 <input
                   type="number"
                   value={mergeLimit}
@@ -3187,9 +4182,23 @@ function NodeBottomSettings({
               </div>
             )}
 
-            <button type="button" className="ws-node-save-run" disabled={running} onClick={handleRun} style={{ cursor: "pointer", marginLeft: "12px" }}>
-              {running ? <Loader2 size={12} className="ws-spin" /> : <Save size={12} />}
-              <span>{node.functionOption?.key === "confirm" ? "人工确认" : "保存设置"}</span>
+            <button
+              type="button"
+              className="ws-node-save-run"
+              disabled={running}
+              onClick={handleRun}
+              style={{ cursor: "pointer", marginLeft: "12px" }}
+            >
+              {running ? (
+                <Loader2 size={12} className="ws-spin" />
+              ) : (
+                <Save size={12} />
+              )}
+              <span>
+                {node.functionOption?.key === "confirm"
+                  ? "人工确认"
+                  : "保存设置"}
+              </span>
             </button>
           </div>
         )}
@@ -3216,10 +4225,18 @@ function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
   if (node.type === "power") {
     return (
       <div className="ws-node-settings-stack">
-        <textarea defaultValue="" placeholder="在此处为该能力输入生成提示词或逻辑控制文本..." />
+        <textarea
+          defaultValue=""
+          placeholder="在此处为该能力输入生成提示词或逻辑控制文本..."
+        />
         <div className="ws-node-settings-row">
           <div className="ws-node-settings-actions">
-            <NodeSettingButton icon={Cpu} label={String(node.power?.name || "全能大模型G2")} accent="green" menu />
+            <NodeSettingButton
+              icon={Cpu}
+              label={String(node.power?.name || "全能大模型G2")}
+              accent="green"
+              menu
+            />
             <NodeSettingButton icon={Tv} label="自适应 / 1k" menu />
             <NodeSettingButton icon={Video} label="摄影机控制" />
           </div>
@@ -3237,7 +4254,9 @@ function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
       <div className="ws-node-settings-stack">
         <textarea defaultValue="" placeholder="向智能体发送任务指令..." />
         <div className="ws-node-settings-row">
-          <span className="ws-node-settings-state">智能体身份: {node.title || "小说助理"}</span>
+          <span className="ws-node-settings-state">
+            智能体身份: {node.title || "小说助理"}
+          </span>
           <button type="button" className="ws-node-agent-run">
             <ArrowUp size={12} />
             <span>执行任务</span>
@@ -3251,7 +4270,10 @@ function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
       <div className="ws-node-settings-row">
         <div className="ws-node-settings-flow-copy">
           <strong>{node.title || "团队流程"}</strong>
-          <span>隶属于: {node.flow?.key || "团队流程"} · {node.subtitle || "多步骤流程"}</span>
+          <span>
+            隶属于: {node.flow?.key || "团队流程"} ·{" "}
+            {node.subtitle || "多步骤流程"}
+          </span>
         </div>
         <div className="ws-node-settings-actions">
           <NodeSettingButton icon={Compass} label="查看内部流程" />
@@ -3267,18 +4289,27 @@ function NodeSettingsBody({ node }: { node: SpaceCanvasNode }) {
     <div className="ws-node-settings-row">
       <div className="ws-node-settings-flow-copy">
         <strong>控制功能操作阀</strong>
-        <span>子类型: {node.functionOption?.key || "save"} · 逻辑公式/参数</span>
+        <span>
+          子类型: {node.functionOption?.key || "save"} · 逻辑公式/参数
+        </span>
       </div>
       <button type="button" className="ws-node-save-run">
         <Save size={12} />
-        <span>{node.functionOption?.key === "confirm" ? "人工点击确认运行" : "保存绑定正式资产"}</span>
+        <span>
+          {node.functionOption?.key === "confirm"
+            ? "人工点击确认运行"
+            : "保存绑定正式资产"}
+        </span>
       </button>
     </div>
   );
 }
 
 function stableNodeOverlayStyle(zoom: number): CSSProperties {
-  const safeZoom = Math.max(0.35, Math.min(1.45, Number.isFinite(zoom) ? zoom : 1));
+  const safeZoom = Math.max(
+    0.35,
+    Math.min(1.45, Number.isFinite(zoom) ? zoom : 1),
+  );
   return {
     zIndex: 999,
     "--ws-node-overlay-scale": String(1 / safeZoom),
@@ -3286,8 +4317,20 @@ function stableNodeOverlayStyle(zoom: number): CSSProperties {
   } as CSSProperties;
 }
 
-function powerFormCacheKey(projectId: number, flowId: number, powerId: number, powerKey: string, targetId: number) {
-  return [projectId || 0, flowId || 0, powerId || 0, powerKey || "", targetId || 0].join(":");
+function powerFormCacheKey(
+  projectId: number,
+  flowId: number,
+  powerId: number,
+  powerKey: string,
+  targetId: number,
+) {
+  return [
+    projectId || 0,
+    flowId || 0,
+    powerId || 0,
+    powerKey || "",
+    targetId || 0,
+  ].join(":");
 }
 
 function NodeSettingButton({
@@ -3302,7 +4345,10 @@ function NodeSettingButton({
   menu?: boolean;
 }) {
   return (
-    <button type="button" className={`ws-node-setting-button ${accent ? `is-${accent}` : ""}`}>
+    <button
+      type="button"
+      className={`ws-node-setting-button ${accent ? `is-${accent}` : ""}`}
+    >
       <Icon size={12} />
       <span>{label}</span>
       {menu ? <ChevronDown size={11} /> : null}
@@ -3313,16 +4359,33 @@ function NodeSettingButton({
 function SpaceNodeView({ data, selected }: NodeProps<any>) {
   const node = data as SpaceCanvasNode;
   const runningNode = (data as any).runningNode as RunningNodeState | null;
-  const onShowNodeDetail = (data as any).onShowNodeDetail as ((node: SpaceCanvasNode) => void) | undefined;
-  const onNodeResult = (data as any).onNodeResult as NodeResultSetter | undefined;
+  const onShowNodeDetail = (data as any).onShowNodeDetail as
+    | ((node: SpaceCanvasNode) => void)
+    | undefined;
+  const onNodeResult = (data as any).onNodeResult as
+    | NodeResultSetter
+    | undefined;
 
   // 1. circular agent representation
   if (node.type === "agent") {
-    const isGenerated = node.status === "已生成" || node.hasResult === true || node.count != null;
+    const isGenerated =
+      node.status === "已生成" || node.hasResult === true || node.count != null;
     return (
       <div className={`ws-node-agent-wrap ${selected ? "is-selected" : ""}`}>
-        <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" style={{ left: "4px" }} />
-        <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" style={{ right: "4px" }} />
+        <NodeHandle
+          id="input-0"
+          type="target"
+          position={Position.Left}
+          className="is-in"
+          style={{ left: "4px" }}
+        />
+        <NodeHandle
+          id="output-0"
+          type="source"
+          position={Position.Right}
+          className="is-out"
+          style={{ right: "4px" }}
+        />
         <div className="ws-node-circle">
           <div className="ws-node-circle-avatar">
             <UserCheck size={20} className="ws-icon-amber" />
@@ -3334,7 +4397,10 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           </div>
         </div>
         {isGenerated ? (
-          <div className="ws-agent-result-card" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="ws-agent-result-card"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="ws-result-header">
               <Sparkles size={8} />
               <span>智能体结果卡</span>
@@ -3342,7 +4408,10 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
             <p className="ws-result-text">{node.description}</p>
           </div>
         ) : null}
-        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+        <NodeQuickDetailButton
+          node={node}
+          onShowNodeDetail={onShowNodeDetail}
+        />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -3352,7 +4421,11 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
   if (node.type === "flow") {
     return (
       <div className={`ws-node-flow-wrap ${selected ? "is-selected" : ""}`}>
-        <svg className="ws-hexagon-svg" viewBox="0 0 100 100" fill="currentColor">
+        <svg
+          className="ws-hexagon-svg"
+          viewBox="0 0 100 100"
+          fill="currentColor"
+        >
           <polygon
             points="50,4 93,27 93,73 50,96 7,73 7,27"
             stroke={selected ? "var(--ws-blue)" : "var(--ws-border)"}
@@ -3368,9 +4441,24 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           <div className="ws-node-flow-subtitle">{node.subtitle}</div>
           <div className="ws-node-flow-step">{node.subtitle || "流程"}</div>
         </div>
-        <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" style={{ left: "11px" }} />
-        <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" style={{ right: "11px" }} />
-        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+        <NodeHandle
+          id="input-0"
+          type="target"
+          position={Position.Left}
+          className="is-in"
+          style={{ left: "11px" }}
+        />
+        <NodeHandle
+          id="output-0"
+          type="source"
+          position={Position.Right}
+          className="is-out"
+          style={{ right: "11px" }}
+        />
+        <NodeQuickDetailButton
+          node={node}
+          onShowNodeDetail={onShowNodeDetail}
+        />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -3378,10 +4466,16 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
 
   // 3. SVG Triangle function representation
   if (node.type === "function") {
-    const isSave = node.functionOption?.key === "save" || node.title.includes("保存");
+    const FunctionIcon = functionIcon(
+      node.functionOption?.key || (node.title.includes("保存") ? "save" : ""),
+    );
     return (
       <div className={`ws-node-function-wrap ${selected ? "is-selected" : ""}`}>
-        <svg className="ws-triangle-svg" viewBox="0 0 100 100" fill="currentColor">
+        <svg
+          className="ws-triangle-svg"
+          viewBox="0 0 100 100"
+          fill="currentColor"
+        >
           <polygon
             points="50,5 95,90 5,90"
             stroke={selected ? "var(--ws-rose)" : "var(--ws-border)"}
@@ -3391,17 +4485,28 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
         </svg>
         <div className="ws-node-function-content">
           <div className="ws-node-function-icon">
-            {isSave ? (
-              <Save size={16} className="ws-icon-rose" />
-            ) : (
-              <Layers size={16} className="ws-icon-rose" />
-            )}
+            <FunctionIcon size={16} className="ws-icon-rose" />
           </div>
           <div className="ws-node-function-title">{node.title}</div>
         </div>
-        <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" style={{ left: "29px" }} />
-        <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" style={{ right: "29px" }} />
-        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+        <NodeHandle
+          id="input-0"
+          type="target"
+          position={Position.Left}
+          className="is-in"
+          style={{ left: "29px" }}
+        />
+        <NodeHandle
+          id="output-0"
+          type="source"
+          position={Position.Right}
+          className="is-out"
+          style={{ right: "29px" }}
+        />
+        <NodeQuickDetailButton
+          node={node}
+          onShowNodeDetail={onShowNodeDetail}
+        />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -3410,43 +4515,99 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
   // 4. Asset representations
   if (node.type === "asset") {
     if (node.kind === "image") {
-      const mockImage = "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=600&auto=format&fit=crop";
+      const preview = nodeDetailPreview(node);
       return (
         <div className={`ws-node-image-wrap ${selected ? "is-selected" : ""}`}>
           <div className="ws-node-floating-label">
             <ImageIcon size={13} className="ws-icon-green" />
-            <span>图片资产</span>
+            <span>{node.title || "图片资产"}</span>
           </div>
           <div className="ws-node-image-container">
-            <img src={mockImage} alt={node.title} className="ws-node-image-raw" />
+            {preview.imageUrl ? (
+              <img
+                src={preview.imageUrl}
+                alt={node.title}
+                className="ws-node-image-raw"
+              />
+            ) : (
+              <div className="ws-node-image-empty">
+                <ImageIcon size={24} />
+                <span>{preview.text || node.description || "图片资产"}</span>
+              </div>
+            )}
           </div>
-          <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
-          <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
-          <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+          <NodeHandle
+            id="input-0"
+            type="target"
+            position={Position.Left}
+            className="is-in"
+          />
+          <NodeHandle
+            id="output-0"
+            type="source"
+            position={Position.Right}
+            className="is-out"
+          />
+          <NodeQuickDetailButton
+            node={node}
+            onShowNodeDetail={onShowNodeDetail}
+          />
           <NodeSelectionOverlays node={node} selected={selected} />
         </div>
       );
     }
 
     if (node.kind === "video") {
-      const mockVideoCover = "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=400&auto=format&fit=crop";
+      const preview = nodeDetailPreview(node);
       return (
         <div className={`ws-node-video-wrap ${selected ? "is-selected" : ""}`}>
           <div className="ws-node-floating-label">
             <Video size={13} className="ws-icon-green" />
-            <span>视频资产</span>
+            <span>{node.title || "视频资产"}</span>
           </div>
           <div className="ws-node-video-container">
-            <img src={mockVideoCover} alt={node.title} className="ws-node-video-raw" />
+            {preview.videoUrl ? (
+              <video
+                src={preview.videoUrl}
+                className="ws-node-video-raw"
+                muted
+                playsInline
+                preload="metadata"
+              />
+            ) : preview.imageUrl ? (
+              <img
+                src={preview.imageUrl}
+                alt={node.title}
+                className="ws-node-video-raw"
+              />
+            ) : (
+              <div className="ws-node-image-empty">
+                <Video size={24} />
+                <span>{preview.text || node.description || "视频资产"}</span>
+              </div>
+            )}
             <div className="ws-node-video-play">
               <div>
                 <Play size={14} fill="currentColor" />
               </div>
             </div>
           </div>
-          <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
-          <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
-          <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+          <NodeHandle
+            id="input-0"
+            type="target"
+            position={Position.Left}
+            className="is-in"
+          />
+          <NodeHandle
+            id="output-0"
+            type="source"
+            position={Position.Right}
+            className="is-out"
+          />
+          <NodeQuickDetailButton
+            node={node}
+            onShowNodeDetail={onShowNodeDetail}
+          />
           <NodeSelectionOverlays node={node} selected={selected} />
         </div>
       );
@@ -3462,9 +4623,22 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
         <div className="ws-node-text-card">
           <p className="ws-node-text-content">{node.description}</p>
         </div>
-        <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
-        <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
-        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+        <NodeHandle
+          id="input-0"
+          type="target"
+          position={Position.Left}
+          className="is-in"
+        />
+        <NodeHandle
+          id="output-0"
+          type="source"
+          position={Position.Right}
+          className="is-out"
+        />
+        <NodeQuickDetailButton
+          node={node}
+          onShowNodeDetail={onShowNodeDetail}
+        />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -3472,16 +4646,25 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
 
   // 5. Power Nodes
   if (node.type === "power") {
-    const showRunFrame = runningNode?.status === "running" || runningNode?.status === "success";
+    const showRunFrame =
+      runningNode?.status === "running" || runningNode?.status === "success";
     const preview = generatedNodePreview(node);
-    const hasPowerContent = node.hasResult === true || node.status === "已生成" || hasGeneratedPreview(preview);
+    const hasPowerContent =
+      node.hasResult === true ||
+      node.status === "已生成" ||
+      hasGeneratedPreview(preview);
     const hasPowerMedia = Boolean(preview.imageUrl || preview.videoUrl);
     return (
       <div
         className={`ws-node-power-wrap ${selected ? "is-selected" : ""} ${showRunFrame ? "is-running" : ""} ${hasPowerContent ? "has-content" : ""} ${hasPowerMedia ? "has-media" : ""}`}
       >
         <div className="ws-node-floating-label">
-          <PowerIcon power={node.power} kind={node.kind} size={13} className="ws-icon-violet" />
+          <PowerIcon
+            power={node.power}
+            kind={node.kind}
+            size={13}
+            className="ws-icon-violet"
+          />
           <span>{node.title}</span>
         </div>
         <div className="ws-node-power-card">
@@ -3523,7 +4706,10 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
                 if (!nextSize || !onNodeResult) {
                   return;
                 }
-                if (Math.abs((node.width || 0) - nextSize.width) > 2 || Math.abs((node.height || 0) - nextSize.height) > 2) {
+                if (
+                  Math.abs((node.width || 0) - nextSize.width) > 2 ||
+                  Math.abs((node.height || 0) - nextSize.height) > 2
+                ) {
                   onNodeResult(node.id, nextSize);
                 }
               }}
@@ -3532,9 +4718,22 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
             <PowerNodeEmptyState />
           )}
         </div>
-        <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
-        <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
-        <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
+        <NodeHandle
+          id="input-0"
+          type="target"
+          position={Position.Left}
+          className="is-in"
+        />
+        <NodeHandle
+          id="output-0"
+          type="source"
+          position={Position.Right}
+          className="is-out"
+        />
+        <NodeQuickDetailButton
+          node={node}
+          onShowNodeDetail={onShowNodeDetail}
+        />
         <NodeSelectionOverlays node={node} selected={selected} />
       </div>
     );
@@ -3543,8 +4742,18 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
   // Fallback
   return (
     <div className={`ws-node ${selected ? "is-selected" : ""}`}>
-      <NodeHandle id="input-0" type="target" position={Position.Left} className="is-in" />
-      <NodeHandle id="output-0" type="source" position={Position.Right} className="is-out" />
+      <NodeHandle
+        id="input-0"
+        type="target"
+        position={Position.Left}
+        className="is-in"
+      />
+      <NodeHandle
+        id="output-0"
+        type="source"
+        position={Position.Right}
+        className="is-out"
+      />
       <div className="ws-node-title">{node.title}</div>
       <div className="ws-node-desc">{node.description}</div>
       <NodeQuickDetailButton node={node} onShowNodeDetail={onShowNodeDetail} />
@@ -3568,7 +4777,12 @@ function PowerNodeGeneratedContent({
         <img
           src={preview.imageUrl}
           alt={preview.text || "生成图片"}
-          onLoad={(event) => onMediaSize?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+          onLoad={(event) =>
+            onMediaSize?.(
+              event.currentTarget.naturalWidth,
+              event.currentTarget.naturalHeight,
+            )
+          }
         />
         {preview.text ? <p>{preview.text}</p> : null}
       </div>
@@ -3582,7 +4796,12 @@ function PowerNodeGeneratedContent({
           muted
           playsInline
           preload="metadata"
-          onLoadedMetadata={(event) => onMediaSize?.(event.currentTarget.videoWidth, event.currentTarget.videoHeight)}
+          onLoadedMetadata={(event) =>
+            onMediaSize?.(
+              event.currentTarget.videoWidth,
+              event.currentTarget.videoHeight,
+            )
+          }
         />
         {preview.text ? <p>{preview.text}</p> : null}
       </div>
@@ -3607,22 +4826,30 @@ function PowerNodeGeneratedContent({
   return <p className="ws-node-power-desc">{preview.text || fallback}</p>;
 }
 
-function generatedMediaNodeSize(width: number, height: number): Pick<SpaceCanvasNode, "width" | "height"> | null {
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+function generatedMediaNodeSize(
+  width: number,
+  height: number,
+): Pick<SpaceCanvasNode, "width" | "height"> | null {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
     return null;
   }
   const ratio = width / height;
-  if (ratio >= 1) {
-    const nextWidth = 270;
-    return {
-      width: nextWidth,
-      height: Math.round(clampNumber(nextWidth / ratio, 150, 230)),
-    };
+  const maxWidth = 330;
+  const maxHeight = 340;
+  let nextWidth = maxWidth;
+  let nextHeight = nextWidth / ratio;
+  if (nextHeight > maxHeight) {
+    nextHeight = maxHeight;
+    nextWidth = nextHeight * ratio;
   }
-  const nextHeight = 320;
   return {
-    width: Math.round(clampNumber(nextHeight * ratio, 170, 260)),
-    height: nextHeight,
+    width: Math.round(clampNumber(nextWidth, 150, maxWidth)),
+    height: Math.round(clampNumber(nextHeight, 150, maxHeight)),
   };
 }
 
@@ -3652,7 +4879,9 @@ function PowerIcon({
   className?: string;
 }) {
   const FallbackIcon = powerIcon(power?.kind || kind || "");
-  const Icon = resolveSharedLucideIcon(normalizePowerIconName(power?.icon)) || FallbackIcon;
+  const Icon =
+    resolveSharedLucideIcon(normalizePowerIconName(power?.icon)) ||
+    FallbackIcon;
 
   return <Icon size={size} className={className} />;
 }
@@ -3662,7 +4891,9 @@ function resolveSharedLucideIcon(iconName?: string): LucideIcon | null {
     return null;
   }
   try {
-    const resolver = getCompatModule("@/lib/icon").resolveLucideIcon as ((name?: string) => LucideIcon | null) | undefined;
+    const resolver = getCompatModule("@/lib/icon").resolveLucideIcon as
+      | ((name?: string) => LucideIcon | null)
+      | undefined;
     const Icon = resolver?.(iconName);
     if (Icon) {
       return Icon;
@@ -3682,7 +4913,11 @@ function resolveLocalLucideIcon(iconName?: string): LucideIcon | null {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join("");
-  return (LucideIcons as unknown as Record<string, LucideIcon | undefined>)[exportName] || null;
+  return (
+    (LucideIcons as unknown as Record<string, LucideIcon | undefined>)[
+      exportName
+    ] || null
+  );
 }
 
 function normalizePowerIconName(icon?: string) {
@@ -3723,22 +4958,31 @@ function miniMapNodeColor(node: SpaceCanvasNode) {
   return "#e85d75";
 }
 
-function assetIcon(kind: string) {
-  if (kind === "image") return <ImageIcon size={14} />;
-  if (kind === "video") return <Video size={14} />;
-  if (kind === "mixed") return <FileText size={14} />;
-  return <FileText size={14} />;
-}
-
 function clampMenuPoint(menu: AddNodeMenuState) {
   if (typeof window === "undefined") {
-    return { x: menu.x, y: menu.y };
+    return { x: menu.x, y: menu.y, maxHeight: 520 };
   }
-  const width = 266;
-  const height = 360;
+  const margin = 14;
+  const minTop = 62;
+  const width = Math.min(324, window.innerWidth - margin * 2);
+  const maxHeight = Math.min(
+    520,
+    Math.max(180, window.innerHeight - minTop - margin),
+  );
+  const preferredY =
+    menu.y + maxHeight > window.innerHeight - margin
+      ? menu.y - maxHeight
+      : menu.y;
   return {
-    x: Math.min(Math.max(14, menu.x), Math.max(14, window.innerWidth - width)),
-    y: Math.min(Math.max(62, menu.y), Math.max(62, window.innerHeight - height)),
+    x: Math.min(
+      Math.max(margin, menu.x),
+      Math.max(margin, window.innerWidth - width - margin),
+    ),
+    y: Math.min(
+      Math.max(minTop, preferredY),
+      Math.max(minTop, window.innerHeight - maxHeight - margin),
+    ),
+    maxHeight,
   };
 }
 
@@ -3787,5 +5031,10 @@ function readProjectId() {
     return 0;
   }
   const params = new URLSearchParams(window.location.search);
-  return Number(params.get("project_id") || params.get("projectId") || params.get("id") || 0);
+  return Number(
+    params.get("project_id") ||
+      params.get("projectId") ||
+      params.get("id") ||
+      0,
+  );
 }

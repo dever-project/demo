@@ -1,11 +1,15 @@
 package api
 
 import (
+	"encoding/json"
+
+	"github.com/gofiber/fiber/v2"
 	"github.com/shemic/dever/server"
 	"github.com/shemic/dever/util"
 
 	workservice "my/module/work/service"
 	teamservice "my/package/bot/service/team"
+	uploadservice "my/package/front/service/upload"
 )
 
 type Space struct{}
@@ -94,6 +98,68 @@ func (Space) PostRunFlow(c *server.Context) error {
 		bodyMap(body, "input"),
 	)
 	return workJSON(c, data, err)
+}
+
+func (Space) PostCanvas(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.SaveCanvas(
+		c.Context(),
+		bodyUint64(body, "project_id", "projectId", "id"),
+		bodyUint64(body, "asset_cate_id", "assetCateId"),
+		bodyMap(body, "canvas"),
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) PostUploadInit(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	projectID := bodyUint64(body, "project_id", "projectId", "id")
+	if err := spaceSvc.PrepareUploadInit(c.Context(), projectID, body); err != nil {
+		return workJSON(c, nil, err)
+	}
+	return rewriteJSONBody(c, body, uploadservice.InitUpload)
+}
+
+func (Space) PostUploadPart(c *server.Context) error {
+	projectID := queryUint64(c, "project_id", "projectId", "id")
+	sessionID := queryUint64(c, "session_id", "sessionId")
+	if err := spaceSvc.RequireUploadSession(c.Context(), projectID, sessionID); err != nil {
+		return workJSON(c, nil, err)
+	}
+	return uploadservice.UploadPart(c)
+}
+
+func (Space) PostUploadComplete(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	projectID := bodyUint64(body, "project_id", "projectId", "id")
+	sessionID := bodyUint64(body, "session_id", "sessionId")
+	if err := spaceSvc.RequireUploadSession(c.Context(), projectID, sessionID); err != nil {
+		return workJSON(c, nil, err)
+	}
+	return uploadservice.CompleteUpload(c)
+}
+
+func rewriteJSONBody(c *server.Context, body map[string]any, next func(*server.Context) error) error {
+	raw, ok := c.Raw.(*fiber.Ctx)
+	if !ok {
+		return next(c)
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return c.Error(err)
+	}
+	raw.Request().Header.SetContentType("application/json")
+	raw.Request().SetBody(payload)
+	return next(c)
 }
 
 func bodyMap(body map[string]any, key string) map[string]any {

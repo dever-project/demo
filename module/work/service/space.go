@@ -2,18 +2,24 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	workmodel "my/module/work/model"
 	bodyservice "my/package/bot/service/body"
 	teamservice "my/package/bot/service/team"
+	uploadrepo "my/package/front/service/upload/repository"
 )
 
 type SpaceService struct {
 	project ProjectService
 	team    teamservice.Service
 }
+
+const spaceDefaultUploadRuleID uint64 = 7
 
 func NewSpaceService() SpaceService {
 	return SpaceService{
@@ -45,6 +51,7 @@ func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[stri
 		"nodes_by_flow":      map[string]any{},
 		"node_edges_by_flow": map[string]any{},
 		"assets":             []any{},
+		"canvases":           map[string]any{},
 	}
 
 	if project.TeamID > 0 || project.ReleaseID > 0 {
@@ -73,7 +80,81 @@ func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[stri
 		payload[key] = value
 	}
 
+	payload["canvases"] = s.projectCanvases(ctx, project.ID)
+
 	return payload, nil
+}
+
+func (s SpaceService) SaveCanvas(ctx context.Context, projectID uint64, assetCateID uint64, canvas map[string]any) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := marshalCanvasList(canvas["nodes"])
+	if err != nil {
+		return nil, fmt.Errorf("画布节点格式错误")
+	}
+	edges, err := marshalCanvasList(canvas["edges"])
+	if err != nil {
+		return nil, fmt.Errorf("画布连线格式错误")
+	}
+	viewport, err := marshalCanvasObject(canvas["viewport"])
+	if err != nil {
+		return nil, fmt.Errorf("画布视图格式错误")
+	}
+	model := workmodel.NewProjectCanvasModel()
+	now := time.Now()
+	row := model.Find(ctx, map[string]any{
+		"project_id":    project.ID,
+		"asset_cate_id": assetCateID,
+	})
+	record := map[string]any{
+		"nodes":      nodes,
+		"edges":      edges,
+		"viewport":   viewport,
+		"updated_at": now,
+	}
+	if row == nil {
+		record["project_id"] = project.ID
+		record["asset_cate_id"] = assetCateID
+		record["created_at"] = now
+		model.Insert(ctx, record)
+	} else {
+		model.Update(ctx, map[string]any{"id": row.ID}, record)
+	}
+	return map[string]any{
+		"canvas": decodeProjectCanvas(assetCateID, nodes, edges, viewport),
+	}, nil
+}
+
+func (s SpaceService) PrepareUploadInit(ctx context.Context, projectID uint64, body map[string]any) error {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	body["project_id"] = project.ID
+	body["rule_id"] = spaceUploadRuleID(body)
+	body["biz_key"] = spaceUploadBizKey(project.ID)
+	body["biz_name"] = fmt.Sprintf("作品 %d", project.ID)
+	return nil
+}
+
+func (s SpaceService) RequireUploadSession(ctx context.Context, projectID uint64, sessionID uint64) error {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if sessionID == 0 {
+		return fmt.Errorf("上传会话不能为空")
+	}
+	session, err := uploadrepo.FindUploadSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session.BizKey != spaceUploadBizKey(project.ID) {
+		return fmt.Errorf("上传会话无权访问")
+	}
+	return nil
 }
 
 func (s SpaceService) PowerCatalog(ctx context.Context, projectID uint64) (map[string]any, error) {
@@ -172,6 +253,116 @@ func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64, bodyID
 		"powers":      powers,
 		"power_kinds": powerKindOptions(powers),
 	}, nil
+}
+
+func spaceUploadRuleID(body map[string]any) uint64 {
+	for _, key := range []string{"rule_id", "ruleId", "upload_rule_id", "uploadRuleId"} {
+		if value := uint64Value(body[key]); value > 0 {
+			return value
+		}
+	}
+	return spaceDefaultUploadRuleID
+}
+
+func spaceUploadBizKey(projectID uint64) string {
+	return fmt.Sprintf("work-project-%d", projectID)
+}
+
+func uint64Value(value any) uint64 {
+	switch current := value.(type) {
+	case uint64:
+		return current
+	case uint:
+		return uint64(current)
+	case int:
+		if current > 0 {
+			return uint64(current)
+		}
+	case int64:
+		if current > 0 {
+			return uint64(current)
+		}
+	case float64:
+		if current > 0 {
+			return uint64(current)
+		}
+	case string:
+		var parsed uint64
+		if _, err := fmt.Sscanf(strings.TrimSpace(current), "%d", &parsed); err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func (s SpaceService) projectCanvases(ctx context.Context, projectID uint64) map[string]any {
+	rows := workmodel.NewProjectCanvasModel().Select(ctx, map[string]any{
+		"project_id": projectID,
+	})
+	result := make(map[string]any, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		key := fmt.Sprintf("%d", row.AssetCateID)
+		result[key] = decodeProjectCanvas(row.AssetCateID, row.Nodes, row.Edges, row.Viewport)
+	}
+	return result
+}
+
+func decodeProjectCanvas(assetCateID uint64, nodes string, edges string, viewport string) map[string]any {
+	return map[string]any{
+		"asset_cate_id": assetCateID,
+		"nodes":         jsonList(nodes),
+		"edges":         jsonList(edges),
+		"viewport":      jsonObject(viewport),
+	}
+}
+
+func marshalCanvasList(value any) (string, error) {
+	if value == nil {
+		value = []any{}
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return "", fmt.Errorf("expected list")
+	}
+	content, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func marshalCanvasObject(value any) (string, error) {
+	if value == nil {
+		value = map[string]any{}
+	}
+	row, ok := value.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("expected object")
+	}
+	content, err := json.Marshal(row)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func jsonList(text string) []any {
+	result := []any{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &result); err != nil {
+		return []any{}
+	}
+	return result
+}
+
+func jsonObject(text string) map[string]any {
+	result := map[string]any{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &result); err != nil {
+		return map[string]any{}
+	}
+	return result
 }
 
 func filterBodyPowerOptions(ctx context.Context, body bodyservice.Service, bodyID uint64, powers []teamservice.PowerOption) []teamservice.PowerOption {

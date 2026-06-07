@@ -409,68 +409,102 @@ export function WorkSpaceStyles() {
       }
 
       .ws-cate-strip {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
         display: flex;
         align-items: center;
-        gap: 4px;
-        height: 100%;
-        border: none;
-        background: transparent;
-        padding: 0;
+        max-width: min(720px, calc(100vw - 520px));
+        width: min(720px, max(360px, calc(var(--ws-cate-total, 1) * 116px)));
+        min-width: 0;
+        gap: 0;
+        height: 40px;
+        border: 1px solid var(--ws-border);
+        border-radius: 14px;
+        background: rgba(18, 22, 30, 0.62);
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+        padding: 3px;
         margin: 0;
-        overflow: visible;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+      }
+
+      .ws-page.is-light .ws-cate-strip {
+        background: rgba(255, 255, 255, 0.74);
+        box-shadow: 0 12px 34px rgba(15, 23, 42, 0.1);
+      }
+
+      .ws-cate-strip::-webkit-scrollbar {
+        display: none;
+      }
+
+      .ws-cate-indicator {
+        position: absolute;
+        left: 3px;
+        top: 3px;
+        z-index: 0;
+        width: calc((100% - 6px) / var(--ws-cate-total, 1));
+        height: calc(100% - 6px);
+        border-radius: 11px;
+        background: rgba(255, 255, 255, 0.12);
+        box-shadow: 0 2px 9px rgba(0, 0, 0, 0.12);
+        transform: translateX(calc(var(--ws-cate-active, 0) * 100%));
+        transition: transform 260ms cubic-bezier(.2,.8,.2,1), width 160ms ease;
+      }
+
+      .ws-page.is-light .ws-cate-indicator {
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
       }
 
       .ws-cate {
+        position: relative;
+        z-index: 1;
         display: inline-flex;
         align-items: center;
-        height: 60px;
-        gap: 6px;
+        justify-content: center;
+        width: calc((100% - 6px) / var(--ws-cate-total, 1));
+        height: 32px;
+        min-width: 0;
+        flex: 0 0 calc((100% - 6px) / var(--ws-cate-total, 1));
         border: none;
-        border-bottom: 2px solid transparent;
+        border-radius: 9px;
         background: transparent;
         color: var(--ws-muted);
-        padding: 0 16px;
+        padding: 0 12px;
         cursor: pointer;
-        transition: color 0.2s, border-color 0.2s;
-        border-radius: 0;
+        transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+        white-space: nowrap;
       }
+
       .ws-cate:hover {
         color: var(--ws-text);
         background: transparent;
       }
+
       .ws-cate.is-active {
         color: var(--ws-text);
-        border-bottom: 2px solid var(--ws-blue);
         background: transparent;
+        box-shadow: none;
+      }
+
+      .ws-page.is-light .ws-cate:hover {
+        background: transparent;
+      }
+
+      .ws-page.is-light .ws-cate.is-active {
+        background: transparent;
+        box-shadow: none;
       }
 
       .ws-cate-name {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 800;
-      }
-
-      .ws-cate-count {
-        display: inline-flex;
-        min-width: 16px;
-        height: 16px;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        background: rgba(255,255,255,0.08);
-        color: var(--ws-muted);
-        font-size: 10px;
-        font-weight: 700;
-        padding: 0 4px;
-      }
-      .ws-cate.is-active .ws-cate-count {
-        background: rgba(59, 130, 246, 0.15);
-        color: var(--ws-blue);
-      }
-      .ws-page.is-light .ws-cate-count {
-        background: rgba(15,23,42,0.06);
       }
 
       .ws-top-actions {
@@ -513,16 +547,16 @@ export function WorkSpaceStyles() {
         top: 50%;
         z-index: 18;
         display: flex;
-        width: 68px;
+        width: 74px;
         transform: translateY(-50%);
         flex-direction: column;
         align-items: center;
-        gap: 18px;
+        gap: 8px;
         border: 1px solid var(--ws-border);
-        border-radius: 34px;
-        background: rgba(18,21,27,0.84);
-        padding: 16px 8px;
-	        box-shadow: 0 20px 70px rgba(0,0,0,0.42);
+        border-radius: 28px;
+        background: rgba(18,21,27,0.72);
+        padding: 10px 8px;
+        box-shadow: 0 20px 70px rgba(0,0,0,0.34);
 	      }
 
 	      .ws-page.is-light .ws-dock {
@@ -530,30 +564,20 @@ export function WorkSpaceStyles() {
 	        box-shadow: 0 20px 70px rgba(15,23,42,0.16);
 	      }
 
-      .ws-dock-add {
-        display: inline-flex;
-        width: 48px;
-        height: 48px;
-        align-items: center;
-        justify-content: center;
-        border: 0;
-        border-radius: 999px;
-        background: #f8fafc;
-        color: #0b1020;
-        cursor: pointer;
-        box-shadow: 0 10px 28px rgba(35,240,165,0.18);
-      }
-
 	      .ws-dock-button {
         display: flex;
         width: 100%;
+        min-height: 58px;
         flex-direction: column;
+        justify-content: center;
         align-items: center;
-        gap: 5px;
+        gap: 6px;
         border: 0;
+        border-radius: 20px;
         background: transparent;
         color: rgba(255,255,255,0.58);
 	        cursor: pointer;
+        transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 	      }
 
 	      .ws-page.is-light .ws-dock-button {
@@ -562,7 +586,14 @@ export function WorkSpaceStyles() {
 
       .ws-dock-button:hover,
       .ws-dock-button.is-active {
+        background: rgba(255,255,255,0.08);
         color: var(--ws-green);
+        transform: translateY(-1px);
+      }
+
+      .ws-page.is-light .ws-dock-button:hover,
+      .ws-page.is-light .ws-dock-button.is-active {
+        background: rgba(15,23,42,0.06);
       }
 
       .ws-dock-button span {
@@ -588,6 +619,346 @@ export function WorkSpaceStyles() {
         color: #07140f;
         cursor: pointer;
         box-shadow: 0 0 34px rgba(35,240,165,0.58), 0 16px 60px rgba(0,0,0,0.36);
+      }
+
+      .ws-workspace-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 23;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+
+      .ws-workspace-overlay > * {
+        pointer-events: auto;
+      }
+
+      .ws-workspace-close {
+        position: absolute;
+        top: 88px;
+        right: 64px;
+        display: inline-flex;
+        width: 38px;
+        height: 38px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--ws-border);
+        border-radius: 999px;
+        background: rgba(18,21,27,0.76);
+        color: var(--ws-text);
+        cursor: pointer;
+        box-shadow: 0 14px 42px rgba(0,0,0,0.22);
+        backdrop-filter: blur(16px);
+      }
+
+      .ws-page.is-light .ws-workspace-close {
+        background: rgba(255,255,255,0.82);
+        box-shadow: 0 14px 42px rgba(15,23,42,0.12);
+      }
+
+      .ws-asset-editor-shell {
+        display: grid;
+        width: min(1180px, calc(100vw - 180px));
+        height: min(760px, calc(100vh - 132px));
+        overflow: hidden;
+        border: 1px solid var(--ws-border);
+        border-radius: 18px;
+        background: rgba(246,247,245,0.94);
+        box-shadow: 0 28px 90px rgba(0,0,0,0.28);
+        color: #1f2933;
+      }
+
+      .ws-asset-editor-shell.has-list {
+        grid-template-columns: 258px minmax(0, 1fr);
+      }
+
+      .ws-asset-editor-shell.is-single {
+        width: min(900px, calc(100vw - 180px));
+      }
+
+      .ws-asset-list-pane {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        border-right: 1px solid rgba(15,23,42,0.08);
+        background: rgba(232,235,232,0.72);
+        padding: 18px 10px;
+      }
+
+      .ws-asset-list-title {
+        padding: 0 10px 14px;
+        color: #111827;
+        font-size: 15px;
+        font-weight: 850;
+      }
+
+      .ws-asset-list {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 6px;
+        overflow-y: auto;
+      }
+
+      .ws-asset-list-item {
+        display: flex;
+        min-height: 50px;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 3px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: #374151;
+        padding: 8px 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .ws-asset-list-item:hover,
+      .ws-asset-list-item.is-active {
+        background: rgba(255,255,255,0.82);
+        color: #111827;
+      }
+
+      .ws-asset-list-item span {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+        font-weight: 760;
+      }
+
+      .ws-asset-list-item small,
+      .ws-asset-list-empty {
+        color: #8b96a8;
+        font-size: 11px;
+      }
+
+      .ws-asset-list-empty {
+        padding: 10px;
+      }
+
+      .ws-asset-editor {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex-direction: column;
+        background:
+          radial-gradient(circle at 50% 0%, rgba(255,255,255,0.88), transparent 32%),
+          #f7f7f4;
+      }
+
+      .ws-asset-editor-head {
+        display: flex;
+        height: 58px;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid rgba(15,23,42,0.07);
+        padding: 0 28px;
+      }
+
+      .ws-asset-editor-head span {
+        color: #667085;
+        font-size: 13px;
+      }
+
+      .ws-asset-editor-head strong {
+        color: #111827;
+        font-size: 15px;
+      }
+
+      .ws-asset-editor textarea {
+        min-height: 0;
+        flex: 1;
+        resize: none;
+        border: 0;
+        outline: none;
+        background:
+          linear-gradient(rgba(255,255,255,0.52), rgba(255,255,255,0.52)),
+          radial-gradient(circle at 30% 20%, rgba(17,24,39,0.035), transparent 28%);
+        color: #1f2933;
+        padding: 54px min(12vw, 150px);
+        font-family: "Songti SC", "STSong", Georgia, serif;
+        font-size: 19px;
+        line-height: 2.05;
+      }
+
+      .ws-create-card {
+        display: grid;
+        width: min(520px, calc(100vw - 180px));
+        gap: 12px;
+        border: 1px solid var(--ws-border);
+        border-radius: 22px;
+        background: rgba(18,21,27,0.84);
+        padding: 14px;
+        box-shadow: 0 28px 90px rgba(0,0,0,0.34);
+        backdrop-filter: blur(18px);
+      }
+
+      .ws-page.is-light .ws-create-card {
+        background: rgba(255,255,255,0.86);
+        box-shadow: 0 28px 90px rgba(15,23,42,0.14);
+      }
+
+      .ws-create-option,
+      .ws-create-flow-item {
+        display: flex;
+        width: 100%;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+        border: 1px solid var(--ws-border);
+        border-radius: 15px;
+        background: rgba(255,255,255,0.05);
+        color: var(--ws-text);
+        padding: 14px 16px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .ws-create-option:hover,
+      .ws-create-flow-item:hover {
+        border-color: rgba(35,240,165,0.3);
+        background: rgba(35,240,165,0.1);
+      }
+
+      .ws-create-option span,
+      .ws-create-flow-item span {
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      .ws-create-option small,
+      .ws-create-flow-item small,
+      .ws-create-empty {
+        color: var(--ws-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .ws-create-flow-list {
+        display: grid;
+        max-height: 360px;
+        gap: 8px;
+        overflow-y: auto;
+      }
+
+      .ws-create-section-title {
+        color: var(--ws-muted);
+        font-size: 12px;
+        font-weight: 820;
+        padding: 4px 2px;
+      }
+
+      .ws-communication-workspace {
+        align-items: stretch;
+        justify-content: center;
+        padding: 92px 92px 42px;
+      }
+
+      .ws-chat-stage {
+        display: grid;
+        width: min(1000px, calc(100vw - 184px));
+        min-height: min(720px, calc(100vh - 134px));
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 18px;
+        color: var(--ws-text);
+      }
+
+      .ws-chat-thread {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        gap: 28px;
+        overflow-y: auto;
+        padding: 24px 0;
+      }
+
+      .ws-chat-message {
+        display: flex;
+        max-width: 68%;
+        gap: 12px;
+        color: var(--ws-text);
+      }
+
+      .ws-chat-message.is-user {
+        align-self: flex-end;
+        border-radius: 16px;
+        background: rgba(125,196,255,0.28);
+        padding: 12px 16px;
+      }
+
+      .ws-chat-avatar {
+        display: inline-flex;
+        width: 34px;
+        height: 34px;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        font-size: 11px;
+        font-weight: 850;
+      }
+
+      .ws-chat-message p {
+        margin: 8px 0 0;
+        line-height: 1.65;
+      }
+
+      .ws-chat-composer {
+        border: 1px solid var(--ws-border);
+        border-radius: 24px;
+        background: rgba(255,255,255,0.9);
+        padding: 18px 20px;
+        box-shadow: 0 18px 52px rgba(15,23,42,0.12);
+      }
+
+      .ws-chat-composer textarea {
+        width: 100%;
+        min-height: 72px;
+        resize: none;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: #111827;
+        font: inherit;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .ws-chat-composer-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .ws-chat-composer-actions button {
+        display: inline-flex;
+        min-width: 42px;
+        height: 38px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(15,23,42,0.08);
+        border-radius: 12px;
+        background: #fff;
+        color: #111827;
+        cursor: pointer;
+        font-weight: 760;
+      }
+
+      .ws-chat-composer-actions .is-send {
+        margin-left: auto;
+        width: 42px;
+        border-radius: 999px;
+        background: #c9d2dd;
+        color: #fff;
       }
 
 	      .ws-floating-panel {
@@ -818,13 +1189,13 @@ export function WorkSpaceStyles() {
 	      .ws-add-menu {
 	        position: absolute;
 	        z-index: 35;
-	        width: 260px;
-	        max-height: min(520px, calc(100vh - 72px));
+	        width: min(324px, calc(100vw - 28px));
+	        max-height: min(520px, calc(100vh - 76px));
 	        border: 1px solid var(--ws-border);
-	        border-radius: 16px;
+	        border-radius: 18px;
 	        background: rgba(24, 28, 37, 0.96);
 	        color: var(--ws-text);
-	        padding: 12px 14px;
+	        padding: 14px;
 	        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
 	        pointer-events: auto;
 	        user-select: none;
@@ -847,11 +1218,13 @@ export function WorkSpaceStyles() {
 
 	      .ws-add-menu-body {
 	        display: flex;
+	        min-height: 0;
+	        flex: 1;
 	        flex-direction: column;
 	        gap: 10px;
 	        margin-top: 6px;
 	        overflow-y: auto;
-	        max-height: 420px;
+	        padding-right: 2px;
 	      }
 
 	      .ws-add-section {
@@ -932,12 +1305,36 @@ export function WorkSpaceStyles() {
 	        color: #fb7185;
 	      }
 
+	      .ws-add-item.is-import .ws-add-icon {
+	        background: rgba(16, 185, 129, 0.16);
+	        color: #34d399;
+	      }
+
+	      .ws-add-copy {
+	        display: flex;
+	        min-width: 0;
+	        flex: 1;
+	        flex-direction: column;
+	        gap: 2px;
+	      }
+
 	      .ws-add-label {
 	        font-size: 13px;
 	        font-weight: 500;
 	        overflow: hidden;
 	        text-overflow: ellipsis;
 	        white-space: nowrap;
+	      }
+
+	      .ws-add-desc {
+	        display: -webkit-box;
+	        overflow: hidden;
+	        color: rgba(255, 255, 255, 0.36);
+	        font-size: 11px;
+	        font-weight: 600;
+	        line-height: 1.25;
+	        -webkit-box-orient: vertical;
+	        -webkit-line-clamp: 1;
 	      }
 
 	      .ws-page.is-light .ws-add-menu {
@@ -973,6 +1370,29 @@ export function WorkSpaceStyles() {
 	        background: rgba(244, 63, 94, 0.08);
 	        color: #e11d48;
 	      }
+
+	      .ws-page.is-light .ws-add-item.is-import .ws-add-icon {
+	        background: rgba(16, 185, 129, 0.1);
+	        color: #059669;
+	      }
+
+	      .ws-page.is-light .ws-add-desc {
+	        color: rgba(15, 23, 42, 0.44);
+	      }
+
+      .ws-import-composer-host {
+        position: fixed;
+        left: -9999px;
+        top: -9999px;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .ws-import-composer-host .ws-prompt-composer {
+        display: none;
+      }
 
       .ws-node-action-backdrop {
         position: fixed;
@@ -1351,29 +1771,55 @@ export function WorkSpaceStyles() {
 
 	      .ws-empty-note {
         position: absolute;
-        left: 112px;
-        bottom: 82px;
+        left: 50%;
+        top: 50%;
         z-index: 12;
-        display: flex;
-        max-width: 560px;
+        display: inline-flex;
         align-items: center;
-        gap: 10px;
-        border: 1px solid var(--ws-border);
-        border-radius: 18px;
-        background: rgba(18,21,27,0.82);
-        color: rgba(255,255,255,0.68);
-        padding: 12px 14px;
-        font-size: 12px;
-        line-height: 1.5;
-        backdrop-filter: blur(18px);
-	        box-shadow: 0 16px 44px rgba(0,0,0,0.3);
+        gap: 16px;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        color: rgba(255,255,255,0.4);
+        font-size: 17px;
+        line-height: 1;
+        font-weight: 760;
+        letter-spacing: 0;
 	      }
 
 	      .ws-page.is-light .ws-empty-note {
-	        background: rgba(255,255,255,0.8);
-	        color: rgba(15,23,42,0.64);
-	        box-shadow: 0 16px 44px rgba(15,23,42,0.12);
+	        color: rgba(15,23,42,0.42);
 	      }
+
+      .ws-empty-action {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 10px;
+        background: rgba(24, 24, 27, 0.86);
+        color: rgba(255,255,255,0.88);
+        padding: 0 14px;
+        box-shadow: 0 18px 48px rgba(0,0,0,0.32);
+        backdrop-filter: blur(16px);
+        white-space: nowrap;
+      }
+
+      .ws-empty-action svg {
+        color: var(--ws-green);
+        fill: currentColor;
+      }
+
+      .ws-empty-copy {
+        white-space: nowrap;
+      }
+
+      .ws-page.is-light .ws-empty-action {
+        border-color: rgba(15,23,42,0.08);
+        background: rgba(255,255,255,0.84);
+        color: rgba(15,23,42,0.78);
+        box-shadow: 0 18px 46px rgba(15,23,42,0.12);
+      }
 
       .ws-node {
         position: relative;
@@ -1640,7 +2086,7 @@ export function WorkSpaceStyles() {
           display: none;
         }
         .ws-cate-strip {
-          margin-left: 20px;
+          max-width: min(560px, calc(100vw - 220px));
         }
       }
 
@@ -1662,13 +2108,39 @@ export function WorkSpaceStyles() {
           left: 12px;
           width: 58px;
         }
-        .ws-floating-panel {
-          left: 78px !important;
-          right: 12px !important;
-          width: auto;
+        .ws-workspace-overlay {
+          padding: 84px 12px 16px 78px;
+          align-items: stretch;
+        }
+        .ws-workspace-close {
+          top: 78px;
+          right: 14px;
+        }
+        .ws-asset-editor-shell,
+        .ws-asset-editor-shell.is-single,
+        .ws-create-card,
+        .ws-chat-stage {
+          width: 100%;
+          height: auto;
+          min-height: 0;
+        }
+        .ws-asset-editor-shell.has-list {
+          grid-template-columns: 1fr;
+        }
+        .ws-asset-list-pane {
+          max-height: 180px;
+          border-right: 0;
+          border-bottom: 1px solid rgba(15,23,42,0.08);
+        }
+        .ws-asset-editor textarea {
+          padding: 32px 24px;
+          font-size: 16px;
+        }
+        .ws-communication-workspace {
+          padding: 84px 12px 16px 78px;
         }
         .ws-add-menu {
-          width: min(250px, calc(100vw - 24px));
+          width: min(324px, calc(100vw - 24px));
         }
       }
 
@@ -1999,12 +2471,24 @@ export function WorkSpaceStyles() {
       }
       .ws-node-image-container,
       .ws-node-video-container {
+        position: relative;
         width: 100%;
         height: 100%;
         border-radius: 16px;
         overflow: hidden;
+        background: var(--ws-panel);
         border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
         box-shadow: var(--ws-node-shadow);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .ws-node-image-container::after,
+      .ws-node-video-container::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
+        border-radius: inherit;
+        pointer-events: none;
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
       .ws-node-image-wrap.is-selected .ws-node-image-container,
@@ -2014,11 +2498,43 @@ export function WorkSpaceStyles() {
         border-color: var(--ws-green);
         box-shadow: var(--ws-node-shadow), 0 0 22px rgba(16,185,129,0.34);
       }
+      .ws-node-image-wrap.is-selected .ws-node-image-container::after,
+      .ws-node-image-wrap:hover .ws-node-image-container::after,
+      .ws-node-video-wrap.is-selected .ws-node-video-container::after,
+      .ws-node-video-wrap:hover .ws-node-video-container::after {
+        border-color: var(--ws-green);
+      }
       .ws-node-image-raw,
       .ws-node-video-raw {
         width: 100%;
         height: 100%;
         object-fit: cover;
+      }
+      .ws-node-image-empty {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: rgba(248, 250, 252, 0.82);
+        color: rgba(100, 116, 139, 0.82);
+        padding: 16px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 760;
+        line-height: 1.45;
+      }
+      .ws-node-image-empty span {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+      }
+      .ws-page:not(.is-light) .ws-node-image-empty {
+        background: rgba(15, 23, 42, 0.52);
+        color: rgba(226, 232, 240, 0.72);
       }
       .ws-node-video-play {
         position: absolute;
@@ -2170,8 +2686,8 @@ export function WorkSpaceStyles() {
         height: 100%;
         max-height: none;
         border-radius: 14px;
-        object-fit: contain;
-        background: rgba(15, 23, 42, 0.04);
+        object-fit: cover;
+        background: transparent;
       }
       .ws-node-power-media p {
         position: absolute;
@@ -2864,6 +3380,49 @@ export function WorkSpaceStyles() {
         transform: translateY(0);
       }
 
+      .ws-prompt-upload-hover {
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 10px);
+        z-index: 20;
+        display: none;
+        width: 190px;
+        flex-direction: column;
+        gap: 4px;
+        border: 1px solid rgba(203, 213, 225, 0.88);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.98);
+        color: #0f172a;
+        padding: 10px;
+        text-align: left;
+        transform: translateX(-50%);
+        box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16);
+        backdrop-filter: blur(14px);
+      }
+
+      .ws-prompt-upload-hover strong,
+      .ws-prompt-upload-hover small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-prompt-upload-hover strong {
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .ws-prompt-upload-hover small {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 650;
+      }
+
+      .ws-prompt-upload-card:hover .ws-prompt-upload-hover,
+      .ws-prompt-upload-card:focus-visible .ws-prompt-upload-hover {
+        display: flex;
+      }
+
       .ws-prompt-upload-remove {
         position: absolute;
         top: -7px;
@@ -2896,6 +3455,237 @@ export function WorkSpaceStyles() {
         cursor: not-allowed;
         opacity: 0.58;
         transform: none;
+      }
+
+      .ws-asset-picker-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        background: rgba(248, 250, 252, 0.56);
+        backdrop-filter: blur(16px);
+      }
+
+      .ws-asset-picker {
+        display: flex;
+        width: min(880px, calc(100vw - 80px));
+        max-height: min(680px, calc(100vh - 80px));
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.96);
+        color: #0f172a;
+        box-shadow: 0 28px 80px rgba(15, 23, 42, 0.2);
+      }
+
+      .ws-page:not(.is-light) .ws-asset-picker,
+      .ws-page:not(.is-light) .ws-prompt-upload-hover {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(24, 27, 34, 0.96);
+        color: rgba(255, 255, 255, 0.92);
+      }
+
+      .ws-asset-picker-head {
+        display: grid;
+        grid-template-columns: auto minmax(220px, 1fr) auto;
+        align-items: center;
+        gap: 14px;
+        border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        padding: 14px;
+      }
+
+      .ws-asset-picker-tabs {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid rgba(203, 213, 225, 0.86);
+        border-radius: 12px;
+        background: rgba(241, 245, 249, 0.75);
+        padding: 3px;
+      }
+
+      .ws-asset-picker-tabs button,
+      .ws-asset-picker-close,
+      .ws-asset-kind-row button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+
+      .ws-asset-picker-tabs button {
+        border-radius: 9px;
+        padding: 7px 14px;
+        font-size: 13px;
+        font-weight: 820;
+      }
+
+      .ws-asset-picker-tabs button.is-active {
+        background: #fff;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+      }
+
+      .ws-asset-picker-search {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(203, 213, 225, 0.88);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #64748b;
+        padding: 0 12px;
+      }
+
+      .ws-asset-picker-search input {
+        width: 100%;
+        height: 36px;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        color: #0f172a;
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+
+      .ws-asset-picker-close {
+        display: inline-flex;
+        width: 36px;
+        height: 36px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+      }
+
+      .ws-asset-picker-close:hover {
+        background: rgba(15, 23, 42, 0.06);
+      }
+
+      .ws-asset-kind-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 16px 0;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .ws-asset-kind-row button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.06);
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .ws-asset-kind-row button:disabled {
+        cursor: default;
+        opacity: 0.62;
+      }
+
+      .ws-asset-picker-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+        overflow: auto;
+        padding: 14px 16px 18px;
+      }
+
+      .ws-asset-picker-error {
+        grid-column: 1 / -1;
+        border: 1px solid rgba(244, 63, 94, 0.22);
+        border-radius: 12px;
+        background: rgba(244, 63, 94, 0.08);
+        color: #e11d48;
+        padding: 10px 12px;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .ws-asset-picker-card {
+        display: flex;
+        min-height: 178px;
+        flex-direction: column;
+        gap: 8px;
+        border: 1px solid rgba(203, 213, 225, 0.72);
+        border-radius: 16px;
+        background: rgba(248, 250, 252, 0.78);
+        color: inherit;
+        padding: 9px;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+
+      .ws-asset-picker-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(99, 102, 241, 0.48);
+        background: #fff;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+      }
+
+      .ws-asset-picker-card img,
+      .ws-asset-picker-card video,
+      .ws-asset-picker-card i {
+        display: flex;
+        width: 100%;
+        aspect-ratio: 1.18;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.06);
+        color: #64748b;
+        object-fit: cover;
+      }
+
+      .ws-asset-picker-card span,
+      .ws-asset-picker-card small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-asset-picker-card span {
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .ws-asset-picker-card small {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 740;
+      }
+
+      .ws-asset-picker-empty {
+        grid-column: 1 / -1;
+        display: flex;
+        min-height: 220px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: #94a3b8;
+        font-size: 13px;
+        font-weight: 760;
+      }
+
+      .ws-asset-picker-foot {
+        border-top: 1px solid rgba(15, 23, 42, 0.08);
+        color: #64748b;
+        padding: 10px 16px;
+        font-size: 12px;
+        font-weight: 760;
       }
 
       .ws-upload-preview-backdrop {
@@ -2971,6 +3761,29 @@ export function WorkSpaceStyles() {
         gap: 10px;
         color: #0f172a;
         padding: 34px;
+      }
+
+      .ws-upload-preview-text {
+        display: flex;
+        width: min(520px, calc(100vw - 180px));
+        max-height: min(520px, calc(100vh - 180px));
+        flex-direction: column;
+        gap: 14px;
+        overflow: auto;
+        color: #0f172a;
+        padding: 30px;
+      }
+
+      .ws-upload-preview-text svg {
+        color: #64748b;
+      }
+
+      .ws-upload-preview-text p {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 14px;
+        line-height: 1.7;
       }
 
       .ws-upload-preview-file svg {

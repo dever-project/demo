@@ -173,6 +173,7 @@ export type SpaceBootstrap = {
   roles: TeamRole[];
   flows: TeamFlow[];
   nodesByFlow: Record<string, TeamFlowNode[]>;
+  canvases: Record<string, SpaceCanvasState>;
   assets: ProjectAsset[];
   powers: PowerOption[];
   powerKinds: PowerKindOption[];
@@ -205,4 +206,17 @@ export type SpaceCanvasEdge = {
   id: string;
   from: string;
   to: string;
+};
+
+export type SpaceCanvasViewport = {
+  x?: number;
+  y?: number;
+  zoom?: number;
+};
+
+export type SpaceCanvasState = {
+  assetCateId: number;
+  nodes: SpaceCanvasNode[];
+  edges: SpaceCanvasEdge[];
+  viewport: SpaceCanvasViewport;
 };

@@ -9,6 +9,8 @@ import type {
   SpaceBootstrap,
   SpaceCanvasEdge,
   SpaceCanvasNode,
+  SpaceCanvasState,
+  SpaceCanvasViewport,
   TeamFlow,
   TeamFlowNode,
   TeamRole,
@@ -38,9 +40,30 @@ export function normalizeSpaceBootstrap(value: unknown): SpaceBootstrap {
     roles: asRecords(row.roles).map(normalizeRole),
     flows: asRecords(row.flows).map(normalizeFlow),
     nodesByFlow: normalizeNodesByFlow(row.nodes_by_flow),
+    canvases: normalizeCanvases(row.canvases),
     assets: asRecords(row.assets).map(normalizeAsset),
     powers: asRecords(row.powers).map(normalizePower),
     powerKinds: asRecords(row.power_kinds).map(normalizePowerKind),
+  };
+}
+
+export function emptyCanvasState(assetCateId: number): SpaceCanvasState {
+  return {
+    assetCateId,
+    nodes: [],
+    edges: [],
+    viewport: {},
+  };
+}
+
+export function normalizeCanvasState(value: unknown, fallbackAssetCateId = 0): SpaceCanvasState {
+  const row = asRecord(value);
+  const assetCateId = numberValue(firstDefined(row.asset_cate_id, row.assetCateId, fallbackAssetCateId));
+  return {
+    assetCateId,
+    nodes: asRecords(row.nodes).map(normalizeCanvasNode).filter((node): node is SpaceCanvasNode => Boolean(node)),
+    edges: asRecords(row.edges).map(normalizeCanvasEdge).filter((edge): edge is SpaceCanvasEdge => Boolean(edge)),
+    viewport: normalizeCanvasViewport(row.viewport),
   };
 }
 
@@ -88,122 +111,6 @@ export function isExecutionRole(role: TeamRole) {
 
 export function executionRole(space: SpaceBootstrap) {
   return space.roles.find(isExecutionRole) || null;
-}
-
-export function buildCanvasModel(
-  space: SpaceBootstrap,
-  assetCateId: number,
-  localNodes: SpaceCanvasNode[],
-) {
-  const assetCate = assetCateById(space, assetCateId);
-  const assets = assetsForCate(space, assetCate.id);
-  const flows = relatedFlows(space, assetCate.id);
-  const role = executionRole(space);
-  const nodes: SpaceCanvasNode[] = [
-    {
-      id: "asset-focus",
-      type: "asset",
-      title: assetCate.name,
-      subtitle: assetCateSubtitle(assetCate),
-      description: assets.length > 0 ? `已有 ${assets.length} 个资产，可继续引用、扩写或生成下一步。` : `还没有${assetCate.name}资产，可以从对话、流程或能力节点开始。`,
-      x: 160,
-      y: 170,
-      width: 260,
-      height: 170,
-      assetCateId: assetCate.id,
-      kind: assetCate.kind,
-      cardinality: assetCate.cardinality,
-      count: assets.length,
-    },
-  ];
-
-  const firstAsset = assets[0];
-  if (firstAsset) {
-    nodes.push({
-      id: `asset-${firstAsset.id}`,
-      type: "asset",
-      title: firstAsset.name || "未命名资产",
-      subtitle: assetKindLabel(firstAsset.kind),
-      description: documentPreview(firstAsset.version?.content) || "点击查看资产详情，拖入流程作为上下文。",
-      x: 170,
-      y: 430,
-      width: 270,
-      height: 190,
-      assetCateId: firstAsset.asset_cate_id,
-      kind: firstAsset.kind,
-      asset: firstAsset,
-    });
-  } else {
-    nodes.push({
-      id: "power-seed",
-      type: "power",
-      title: defaultPowerName(assetCate.kind),
-      subtitle: "能力节点",
-      description: `用提示词直接生成${assetCate.name}，生成后可通过保存节点沉淀为资产。`,
-      x: 500,
-      y: 210,
-      width: 180,
-      height: 180,
-      assetCateId: assetCate.id,
-      kind: assetCate.kind,
-    });
-  }
-
-  if (role) {
-    nodes.push({
-      id: "role-worker",
-      type: "agent",
-      title: role.name || "执行助理",
-      subtitle: "执行助理",
-      description: role.assignment || "执行当前资产的生产、处理和落地任务。",
-      x: 760,
-      y: 205,
-      width: 154,
-      height: 154,
-      assetCateId: role.asset_cate_id,
-      role,
-    });
-  }
-
-  flows.slice(0, 2).forEach((flow, index) => {
-    nodes.push({
-      id: `flow-${flow.id}`,
-      type: "flow",
-      title: flow.name || "团队流程",
-      subtitle: `${flowStepCount(space, flow)} 个节点`,
-      description: flow.goal || "运行团队预设流程，产出会按保存节点沉淀为作品资产。",
-      x: 1010,
-      y: 160 + index * 230,
-      width: 210,
-      height: 160,
-      flow,
-    });
-  });
-
-  nodes.push({
-    id: "save-node",
-    type: "function",
-    title: "保存资产",
-    subtitle: "功能",
-    description: `把上游结果保存为${assetCate.name}${assetCate.cardinality === "single" ? "，单个资产会更新版本。" : "。 "}`,
-    x: 650,
-    y: 500,
-    width: 150,
-    height: 140,
-    assetCateId: assetCate.id,
-    kind: assetCate.kind,
-  });
-
-  const edges: SpaceCanvasEdge[] = [
-    { id: "edge-focus-worker", from: "asset-focus", to: "role-worker" },
-    { id: "edge-worker-flow", from: "role-worker", to: nodes.find((node) => node.type === "flow")?.id || "save-node" },
-    { id: "edge-power-save", from: firstAsset ? `asset-${firstAsset.id}` : "power-seed", to: "save-node" },
-  ].filter((edge) => nodes.some((node) => node.id === edge.from) && nodes.some((node) => node.id === edge.to));
-
-  return {
-    nodes: [...nodes, ...localNodes],
-    edges,
-  };
 }
 
 export function createLocalNode(
@@ -268,7 +175,7 @@ export function createLocalNode(
     width: size.width,
     height: size.height,
     assetCateId: assetCate.id,
-    kind: assetCate.kind,
+    kind: selectedAsset?.kind || assetCate.kind,
     cardinality: assetCate.cardinality,
     asset: selectedAsset,
     flow: selectedFlow,
@@ -480,6 +387,67 @@ function normalizeNodesByFlow(value: unknown) {
   return result;
 }
 
+function normalizeCanvases(value: unknown) {
+  const row = asRecord(value);
+  const result: Record<string, SpaceCanvasState> = {};
+  for (const [key, canvas] of Object.entries(row)) {
+    const state = normalizeCanvasState(canvas, numberValue(key));
+    result[String(state.assetCateId)] = state;
+  }
+  return result;
+}
+
+function normalizeCanvasNode(value: Record<string, unknown>): SpaceCanvasNode | null {
+  const id = stringValue(value.id);
+  const type = stringValue(value.type) as SpaceCanvasNode["type"];
+  if (!id || !type) {
+    return null;
+  }
+  return {
+    ...value,
+    id,
+    type,
+    title: stringValue(value.title),
+    subtitle: stringValue(value.subtitle),
+    description: stringValue(value.description),
+    x: numberValue(value.x),
+    y: numberValue(value.y),
+    width: numberValue(value.width),
+    height: numberValue(value.height),
+    assetCateId: numberValue(firstDefined(value.assetCateId, value.asset_cate_id)),
+    count: value.count == null ? undefined : numberValue(value.count),
+    local: value.local !== false,
+  };
+}
+
+function normalizeCanvasEdge(value: Record<string, unknown>): SpaceCanvasEdge | null {
+  const from = stringValue(firstDefined(value.from, value.source));
+  const to = stringValue(firstDefined(value.to, value.target));
+  if (!from || !to) {
+    return null;
+  }
+  return {
+    id: stringValue(value.id) || `edge-${from}-${to}`,
+    from,
+    to,
+  };
+}
+
+function normalizeCanvasViewport(value: unknown): SpaceCanvasViewport {
+  const row = asRecord(value);
+  const viewport: SpaceCanvasViewport = {};
+  if (row.x != null) {
+    viewport.x = numberValue(row.x);
+  }
+  if (row.y != null) {
+    viewport.y = numberValue(row.y);
+  }
+  if (row.zoom != null) {
+    viewport.zoom = numberValue(row.zoom);
+  }
+  return viewport;
+}
+
 function flowAssetCateIds(space: SpaceBootstrap, flow: TeamFlow) {
   const ids = new Set<number>();
   for (const key of ["asset_cate_id", "assetCateId", "target_asset_cate_id", "targetAssetCateId", "output_asset_cate_id", "outputAssetCateId"]) {
@@ -494,14 +462,6 @@ function flowAssetCateIds(space: SpaceBootstrap, flow: TeamFlow) {
     }
   }
   return ids;
-}
-
-function flowStepCount(space: SpaceBootstrap, flow: TeamFlow) {
-  return (space.nodesByFlow[flow.key] || []).length || 1;
-}
-
-function assetCateSubtitle(assetCate: AssetCate) {
-  return `${assetKindLabel(assetCate.kind)} / ${cardinalityLabel(assetCate.cardinality)}`;
 }
 
 function defaultPowerName(kind: AssetKind) {
@@ -558,6 +518,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function firstDefined(...values: unknown[]) {
+  return values.find((value) => value !== undefined && value !== null);
 }
 
 function numberValue(value: unknown) {

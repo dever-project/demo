@@ -1,14 +1,23 @@
 import { joinSiteApi, request } from "@dever/front-plugin";
-import { normalizePowerCatalog, normalizeSpaceBootstrap } from "./space-model";
+import {
+  normalizeCanvasState,
+  normalizePowerCatalog,
+  normalizeSpaceBootstrap,
+} from "./space-model";
 import type {
   PowerForm,
   PowerKindOption,
   PowerOption,
   SpaceBootstrap,
+  SpaceCanvasState,
   TeamFlow,
 } from "./types";
 
-export async function fetchSpaceBootstrap(projectId: number): Promise<SpaceBootstrap> {
+export const SPACE_UPLOAD_RULE_ID = 7;
+
+export async function fetchSpaceBootstrap(
+  projectId: number,
+): Promise<SpaceBootstrap> {
   const result = await request(joinSiteApi("space/bootstrap"), "get", {
     project_id: projectId,
   });
@@ -18,7 +27,11 @@ export async function fetchSpaceBootstrap(projectId: number): Promise<SpaceBoots
   return normalizeSpaceBootstrap(result.data);
 }
 
-export async function sendSpaceMessage(projectId: number, assetCateId: number, message: string) {
+export async function sendSpaceMessage(
+  projectId: number,
+  assetCateId: number,
+  message: string,
+) {
   const result = await request(joinSiteApi("space/chat"), "post", {
     project_id: projectId,
     asset_cate_id: assetCateId,
@@ -111,6 +124,107 @@ export async function runSpaceFlow(
     throw new Error(result.message || "流程运行失败");
   }
   return result.data;
+}
+
+export async function saveSpaceCanvas(
+  projectId: number,
+  assetCateId: number,
+  canvas: SpaceCanvasState,
+): Promise<SpaceCanvasState> {
+  const result = await request(joinSiteApi("space/canvas"), "post", {
+    project_id: projectId,
+    asset_cate_id: assetCateId,
+    canvas,
+  });
+  if (result.code !== 0 && result.status !== 1) {
+    throw new Error(result.message || result.msg || "保存画布失败");
+  }
+  return normalizeCanvasState(
+    (result.data as any)?.canvas || canvas,
+    assetCateId,
+  );
+}
+
+export async function initSpaceUpload(input: {
+  projectId: number;
+  ruleId?: number;
+  name: string;
+  size: number;
+  mime: string;
+  hash?: string;
+  kind?: string;
+}) {
+  const result = await request(joinSiteApi("space/upload_init"), "post", {
+    project_id: input.projectId,
+    rule_id: input.ruleId || SPACE_UPLOAD_RULE_ID,
+    name: input.name,
+    size: input.size,
+    mime: input.mime,
+    hash: input.hash || "",
+    kind: input.kind || "",
+  });
+  if (result.code !== 0 && result.status !== 1) {
+    throw new Error(result.message || result.msg || "初始化上传失败");
+  }
+  return result.data as {
+    session_id: number;
+    transport: string;
+    chunk_size: number;
+    chunk_total: number;
+    direct?: unknown;
+  };
+}
+
+export async function uploadSpacePart(input: {
+  projectId: number;
+  sessionId: number;
+  partNumber: number;
+  file: Blob;
+}) {
+  const form = new FormData();
+  form.append("project_id", String(input.projectId));
+  form.append("session_id", String(input.sessionId));
+  form.append("part_number", String(input.partNumber));
+  form.append("file", input.file);
+  const response = await fetch(joinSiteApi("space/upload_part"), {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+  });
+  const result = await parseUploadResponse(response);
+  if (!response.ok || (result.code !== 0 && result.status !== 1)) {
+    throw new Error(result.message || result.msg || "上传分片失败");
+  }
+  return result.data;
+}
+
+export async function completeSpaceUpload(input: {
+  projectId: number;
+  sessionId: number;
+}) {
+  const result = await request(joinSiteApi("space/upload_complete"), "post", {
+    project_id: input.projectId,
+    session_id: input.sessionId,
+  });
+  if (result.code !== 0 && result.status !== 1) {
+    throw new Error(result.message || result.msg || "完成上传失败");
+  }
+  return result.data;
+}
+
+async function parseUploadResponse(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      code: response.ok ? 0 : response.status,
+      message: text,
+    };
+  }
 }
 
 function normalizePowerForm(value: any): PowerForm {
