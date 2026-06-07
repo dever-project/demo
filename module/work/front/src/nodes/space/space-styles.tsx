@@ -4,56 +4,81 @@ export function WorkSpaceStyles() {
   return (
     <style>{`
 	      .ws-page {
-	        --ws-canvas: oklch(0.145 0.005 285.823);
-	        --ws-panel: rgba(24, 27, 34, 0.82);
-	        --ws-panel-strong: rgba(18, 21, 27, 0.9);
-	        --ws-border: rgba(255, 255, 255, 0.08);
-	        --ws-border-strong: rgba(255, 255, 255, 0.16);
-	        --ws-text: oklch(0.95 0.005 285.823);
-	        --ws-muted: oklch(0.55 0.015 285.823);
+	        --ws-canvas: #f8f9fb;
+	        --ws-panel: rgba(255, 255, 255, 0.76);
+	        --ws-panel-strong: rgba(255, 255, 255, 0.9);
+	        --ws-border: rgba(0, 0, 0, 0.04);
+	        --ws-border-strong: rgba(0, 0, 0, 0.08);
+	        --ws-text: #1f2937;
+	        --ws-muted: #6b7280;
 	        --ws-green: #10b981;
-	        --ws-blue: #3b82f6;
-	        --ws-amber: #f59e0b;
-	        --ws-rose: #f43f5e;
-	        --ws-violet: #8b5cf6;
-	        --ws-edge: rgba(255, 255, 255, 0.15);
+	        --ws-blue: #2563eb;
+	        --ws-amber: #d97706;
+	        --ws-rose: #e11d48;
+	        --ws-violet: #7c3aed;
+	        --ws-edge: rgba(0, 0, 0, 0.08);
 	        --ws-edge-active: #10b981;
-	        --ws-edge-selected: rgba(255, 255, 255, 0.94);
-	        --ws-flow-dot: rgba(255, 255, 255, 0.05);
+	        --ws-edge-selected: #111827;
+	        --ws-flow-dot: rgba(0, 0, 0, 0.04);
 	        position: fixed;
 	        inset: 0;
 	        min-width: 100vw;
 	        min-height: 100vh;
 	        overflow: hidden;
 	        background:
-	          radial-gradient(circle at 78% 72%, rgba(16,185,129,0.08), transparent 25%),
-	          radial-gradient(circle at 12% 18%, rgba(59,130,246,0.08), transparent 25%),
+	          radial-gradient(circle at 78% 72%, rgba(16,185,129,0.02), transparent 30%),
+	          radial-gradient(circle at 12% 18%, rgba(37,99,235,0.02), transparent 30%),
 	          var(--ws-canvas);
 	        color: var(--ws-text);
-	        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-	        letter-spacing: 0;
+	        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+	        letter-spacing: -0.01em;
+	        -webkit-font-smoothing: antialiased;
+	        -moz-osx-font-smoothing: grayscale;
 	      }
 
 	      .ws-page.is-light {
-	        --ws-canvas: oklch(0.98 0.005 285.823);
-	        --ws-panel: rgba(255, 255, 255, 0.72);
-	        --ws-panel-strong: rgba(255, 255, 255, 0.85);
-	        --ws-border: rgba(15, 23, 42, 0.08);
-	        --ws-border-strong: rgba(15, 23, 42, 0.14);
-	        --ws-text: oklch(0.15 0.01 285.823);
-	        --ws-muted: oklch(0.45 0.01 285.823);
+	        --ws-canvas: #f8f9fb;
+	        --ws-panel: rgba(255, 255, 255, 0.76);
+	        --ws-panel-strong: rgba(255, 255, 255, 0.9);
+	        --ws-border: rgba(0, 0, 0, 0.04);
+	        --ws-border-strong: rgba(0, 0, 0, 0.08);
+	        --ws-text: #1f2937;
+	        --ws-muted: #6b7280;
 	        --ws-green: #10b981;
 	        --ws-blue: #2563eb;
 	        --ws-amber: #d97706;
 	        --ws-rose: #e11d48;
 	        --ws-violet: #7c3aed;
-	        --ws-edge: rgba(15, 23, 42, 0.14);
+	        --ws-edge: rgba(0, 0, 0, 0.08);
 	        --ws-edge-active: #10b981;
 	        --ws-edge-selected: #111827;
-	        --ws-flow-dot: rgba(15, 23, 42, 0.05);
+	        --ws-flow-dot: rgba(0, 0, 0, 0.04);
 	        background:
-	          radial-gradient(circle at 78% 72%, rgba(16,185,129,0.12), transparent 25%),
-	          radial-gradient(circle at 12% 18%, rgba(37,99,235,0.08), transparent 25%),
+	          radial-gradient(circle at 78% 72%, rgba(16,185,129,0.02), transparent 30%),
+	          radial-gradient(circle at 12% 18%, rgba(37,99,235,0.02), transparent 30%),
+	          var(--ws-canvas);
+	      }
+
+	      .ws-page.is-dark {
+	        --ws-canvas: #0b0c0f;
+	        --ws-panel: rgba(20, 22, 26, 0.72);
+	        --ws-panel-strong: rgba(16, 18, 21, 0.88);
+	        --ws-border: rgba(255, 255, 255, 0.06);
+	        --ws-border-strong: rgba(255, 255, 255, 0.12);
+	        --ws-text: #f3f4f6;
+	        --ws-muted: #9ca3af;
+	        --ws-green: #10b981;
+	        --ws-blue: #2563eb;
+	        --ws-amber: #d97706;
+	        --ws-rose: #e11d48;
+	        --ws-violet: #7c3aed;
+	        --ws-edge: rgba(255, 255, 255, 0.08);
+	        --ws-edge-active: #10b981;
+	        --ws-edge-selected: #f3f4f6;
+	        --ws-flow-dot: rgba(255, 255, 255, 0.03);
+	        background:
+	          radial-gradient(circle at 78% 72%, rgba(16,185,129,0.04), transparent 30%),
+	          radial-gradient(circle at 12% 18%, rgba(37,99,235,0.04), transparent 30%),
 	          var(--ws-canvas);
 	      }
 
@@ -78,6 +103,19 @@ export function WorkSpaceStyles() {
         position: absolute;
         inset: 0;
         overflow: hidden;
+      }
+
+      .ws-canvas-wrap.is-passive {
+        pointer-events: none;
+      }
+
+      .ws-canvas-wrap.is-passive .react-flow__node,
+      .ws-canvas-wrap.is-passive .react-flow__edge {
+        opacity: 0.18;
+      }
+
+      .ws-canvas-wrap.is-interactive {
+        pointer-events: auto;
       }
 
       .ws-edge-delete {
@@ -335,13 +373,11 @@ export function WorkSpaceStyles() {
         border-bottom: none;
       }
 
-      .ws-top-left,
       .ws-top-actions,
-      .ws-cate-strip {
+      .ws-mode-switch {
         pointer-events: auto;
       }
 
-      .ws-top-left,
       .ws-top-actions {
         display: flex;
         align-items: center;
@@ -349,162 +385,83 @@ export function WorkSpaceStyles() {
         min-width: 0;
       }
 
-      .ws-back,
       .ws-action,
       .ws-team-pill,
-      .ws-cate,
-      .ws-dock,
+      .ws-mode,
+      .ws-cate-sidebar,
       .ws-floating-panel,
-      .ws-add-menu,
-      .ws-assistant-ball {
+      .ws-add-menu {
         backdrop-filter: blur(18px);
       }
 
-      .ws-back {
-        display: inline-flex;
-        width: 36px;
-        height: 36px;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid var(--ws-border);
-        border-radius: 8px;
-        background: transparent;
-        color: var(--ws-text);
-        cursor: pointer;
-        transition: background-color 0.2s, border-color 0.2s;
-      }
-      .ws-back:hover {
-        border-color: var(--ws-border-strong);
-        background: rgba(255, 255, 255, 0.05);
-      }
-      .ws-page.is-light .ws-back:hover {
-        background: rgba(0, 0, 0, 0.03);
-      }
-
-      .ws-project-meta {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 1px;
-        border: none;
-        background: transparent;
-        padding: 0;
-        min-width: 0;
-      }
-      .ws-project-title {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--ws-text);
-        font-size: 14px;
-        font-weight: 700;
-        line-height: 1.2;
-      }
-      .ws-project-subtitle {
-        display: flex;
-        gap: 6px;
-        color: var(--ws-muted);
-        font-size: 11px;
-        line-height: 1;
-      }
-
-      .ws-cate-strip {
+      .ws-mode-switch {
         position: absolute;
         top: 14px;
         left: 50%;
         transform: translateX(-50%);
         display: flex;
         align-items: center;
-        max-width: min(720px, calc(100vw - 520px));
-        width: min(720px, max(360px, calc(var(--ws-cate-total, 1) * 116px)));
-        min-width: 0;
-        gap: 0;
-        height: 40px;
-        border: 1px solid var(--ws-border);
-        border-radius: 14px;
-        background: rgba(18, 22, 30, 0.62);
-        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+        width: 264px;
+        height: 38px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 12px;
+        background: rgba(245, 246, 243, 0.88);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
         padding: 3px;
-        margin: 0;
-        overflow-x: auto;
-        overflow-y: hidden;
-        scrollbar-width: none;
+        overflow: hidden;
       }
 
-      .ws-page.is-light .ws-cate-strip {
-        background: rgba(255, 255, 255, 0.74);
-        box-shadow: 0 12px 34px rgba(15, 23, 42, 0.1);
+      .ws-page.is-dark .ws-mode-switch {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(22, 24, 27, 0.82);
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.2);
       }
 
-      .ws-cate-strip::-webkit-scrollbar {
-        display: none;
-      }
-
-      .ws-cate-indicator {
+      .ws-mode-indicator {
         position: absolute;
         left: 3px;
         top: 3px;
         z-index: 0;
-        width: calc((100% - 6px) / var(--ws-cate-total, 1));
+        width: calc((100% - 6px) / var(--ws-mode-total, 3));
         height: calc(100% - 6px);
-        border-radius: 11px;
-        background: rgba(255, 255, 255, 0.12);
-        box-shadow: 0 2px 9px rgba(0, 0, 0, 0.12);
-        transform: translateX(calc(var(--ws-cate-active, 0) * 100%));
-        transition: transform 260ms cubic-bezier(.2,.8,.2,1), width 160ms ease;
+        border-radius: 9px;
+        background: #fff;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+        transform: translateX(calc(var(--ws-mode-active, 0) * 100%));
+        transition: transform 240ms cubic-bezier(.2,.8,.2,1);
       }
 
-      .ws-page.is-light .ws-cate-indicator {
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+      .ws-page.is-dark .ws-mode-indicator {
+        background: rgba(255, 255, 255, 0.1);
       }
 
-      .ws-cate {
+      .ws-mode {
         position: relative;
         z-index: 1;
         display: inline-flex;
+        width: calc((100% - 6px) / var(--ws-mode-total, 3));
+        height: 32px;
+        flex: 0 0 calc((100% - 6px) / var(--ws-mode-total, 3));
         align-items: center;
         justify-content: center;
-        width: calc((100% - 6px) / var(--ws-cate-total, 1));
-        height: 32px;
-        min-width: 0;
-        flex: 0 0 calc((100% - 6px) / var(--ws-cate-total, 1));
-        border: none;
+        border: 0;
         border-radius: 9px;
         background: transparent;
-        color: var(--ws-muted);
-        padding: 0 12px;
-        cursor: pointer;
-        transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
-        white-space: nowrap;
-      }
-
-      .ws-cate:hover {
-        color: var(--ws-text);
-        background: transparent;
-      }
-
-      .ws-cate.is-active {
-        color: var(--ws-text);
-        background: transparent;
-        box-shadow: none;
-      }
-
-      .ws-page.is-light .ws-cate:hover {
-        background: transparent;
-      }
-
-      .ws-page.is-light .ws-cate.is-active {
-        background: transparent;
-        box-shadow: none;
-      }
-
-      .ws-cate-name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        color: #9aa2ad;
         font-size: 13px;
-        font-weight: 800;
+        font-weight: 780;
+        cursor: pointer;
+        transition: color 160ms ease;
+      }
+
+      .ws-mode:hover,
+      .ws-mode.is-active {
+        color: #111827;
+      }
+
+      .ws-page.is-dark .ws-mode:hover,
+      .ws-page.is-dark .ws-mode.is-active {
+        color: #fff;
       }
 
       .ws-top-actions {
@@ -541,141 +498,189 @@ export function WorkSpaceStyles() {
         background: rgba(0, 0, 0, 0.03);
       }
 
-	      .ws-dock {
-	        position: absolute;
-        left: 22px;
-        top: 50%;
+      .ws-cate-sidebar {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
         z-index: 18;
         display: flex;
-        width: 74px;
-        transform: translateY(-50%);
+        width: 286px;
         flex-direction: column;
+        border-right: 1px solid rgba(15, 23, 42, 0.08);
+        background: rgba(239, 241, 238, 0.86);
+        color: #111827;
+        padding: 18px 16px;
+      }
+
+      .ws-page.is-dark .ws-cate-sidebar {
+        border-right-color: rgba(255, 255, 255, 0.08);
+        background: rgba(18, 21, 24, 0.86);
+        color: #f8fafc;
+      }
+
+      .ws-cate-brand {
+        display: flex;
+        min-height: 38px;
         align-items: center;
-        gap: 8px;
-        border: 1px solid var(--ws-border);
-        border-radius: 28px;
-        background: rgba(18,21,27,0.72);
-        padding: 10px 8px;
-        box-shadow: 0 20px 70px rgba(0,0,0,0.34);
-	      }
+        gap: 10px;
+        margin-bottom: 20px;
+      }
 
-	      .ws-page.is-light .ws-dock {
-	        background: rgba(255,255,255,0.78);
-	        box-shadow: 0 20px 70px rgba(15,23,42,0.16);
-	      }
+      .ws-sidebar-home {
+        display: inline-flex;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
 
-	      .ws-dock-button {
+      .ws-sidebar-home:hover {
+        background: rgba(15, 23, 42, 0.06);
+      }
+
+      .ws-page.is-dark .ws-sidebar-home:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .ws-sidebar-project {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .ws-sidebar-project strong,
+      .ws-sidebar-project span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-sidebar-project strong {
+        font-size: 14px;
+        font-weight: 820;
+      }
+
+      .ws-sidebar-project span {
+        color: #7b8492;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .ws-page.is-dark .ws-sidebar-project span {
+        color: rgba(248, 250, 252, 0.48);
+      }
+
+      .ws-cate-nav {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 6px;
+        overflow-y: auto;
+        padding-right: 2px;
+      }
+
+      .ws-cate-nav-item {
         display: flex;
         width: 100%;
-        min-height: 58px;
-        flex-direction: column;
-        justify-content: center;
+        min-height: 42px;
         align-items: center;
-        gap: 6px;
+        gap: 12px;
         border: 0;
-        border-radius: 20px;
+        border-radius: 8px;
         background: transparent;
-        color: rgba(255,255,255,0.58);
-	        cursor: pointer;
-        transition: background 160ms ease, color 160ms ease, transform 160ms ease;
-	      }
-
-	      .ws-page.is-light .ws-dock-button {
-	        color: rgba(15,23,42,0.58);
-	      }
-
-      .ws-dock-button:hover,
-      .ws-dock-button.is-active {
-        background: rgba(255,255,255,0.08);
-        color: var(--ws-green);
-        transform: translateY(-1px);
-      }
-
-      .ws-page.is-light .ws-dock-button:hover,
-      .ws-page.is-light .ws-dock-button.is-active {
-        background: rgba(15,23,42,0.06);
-      }
-
-      .ws-dock-button span {
-        font-size: 11px;
-        font-weight: 800;
-      }
-
-
-
-      .ws-assistant-ball {
-        position: absolute;
-        right: 32px;
-        bottom: 34px;
-        z-index: 22;
-        display: inline-flex;
-        width: 72px;
-        height: 72px;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid rgba(35,240,165,0.36);
-        border-radius: 999px;
-        background: radial-gradient(circle at 50% 35%, #cbffe9, #48ffc0 42%, rgba(35,240,165,0.25) 70%);
-        color: #07140f;
+        color: #151a22;
+        padding: 0 14px;
+        text-align: left;
         cursor: pointer;
-        box-shadow: 0 0 34px rgba(35,240,165,0.58), 0 16px 60px rgba(0,0,0,0.36);
+        transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+      }
+
+      .ws-page.is-dark .ws-cate-nav-item {
+        color: rgba(248, 250, 252, 0.72);
+      }
+
+      .ws-cate-nav-item:hover,
+      .ws-cate-nav-item.is-active {
+        background: rgba(255, 255, 255, 0.74);
+        color: #050609;
+      }
+
+      .ws-page.is-dark .ws-cate-nav-item:hover,
+      .ws-page.is-dark .ws-cate-nav-item.is-active {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+
+      .ws-cate-nav-item svg {
+        flex: 0 0 auto;
+        stroke-width: 1.9;
+      }
+
+      .ws-cate-nav-item span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        font-weight: 720;
       }
 
       .ws-workspace-overlay {
         position: absolute;
-        inset: 0;
+        inset: 60px 0 0 286px;
         z-index: 23;
         display: flex;
         align-items: center;
         justify-content: center;
-        pointer-events: none;
-      }
-
-      .ws-workspace-overlay > * {
+        padding: 0 24px 24px;
         pointer-events: auto;
       }
 
-      .ws-workspace-close {
-        position: absolute;
-        top: 88px;
-        right: 64px;
-        display: inline-flex;
-        width: 38px;
-        height: 38px;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid var(--ws-border);
-        border-radius: 999px;
-        background: rgba(18,21,27,0.76);
-        color: var(--ws-text);
-        cursor: pointer;
-        box-shadow: 0 14px 42px rgba(0,0,0,0.22);
-        backdrop-filter: blur(16px);
-      }
-
-      .ws-page.is-light .ws-workspace-close {
-        background: rgba(255,255,255,0.82);
-        box-shadow: 0 14px 42px rgba(15,23,42,0.12);
+      .ws-page.is-free-space .ws-workspace-overlay {
+        left: 0;
       }
 
       .ws-asset-editor-shell {
         display: grid;
-        width: min(1180px, calc(100vw - 180px));
-        height: min(760px, calc(100vh - 132px));
+        width: min(1268px, calc(100vw - 334px));
+        height: min(798px, calc(100vh - 92px));
         overflow: hidden;
-        border: 1px solid var(--ws-border);
-        border-radius: 18px;
-        background: rgba(246,247,245,0.94);
-        box-shadow: 0 28px 90px rgba(0,0,0,0.28);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 14px;
+        background: rgba(248, 249, 247, 0.94);
+        box-shadow: 0 22px 70px rgba(15, 23, 42, 0.12);
         color: #1f2933;
       }
 
+      .ws-page.is-free-space .ws-asset-editor-shell,
+      .ws-page.is-free-space .ws-create-card,
+      .ws-page.is-free-space .ws-chat-stage {
+        width: min(1120px, calc(100vw - 48px));
+      }
+
+      .ws-page.is-dark .ws-asset-editor-shell {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: rgba(22, 24, 28, 0.9);
+        box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+        color: #f8fafc;
+      }
+
       .ws-asset-editor-shell.has-list {
-        grid-template-columns: 258px minmax(0, 1fr);
+        grid-template-columns: 236px minmax(0, 1fr);
       }
 
       .ws-asset-editor-shell.is-single {
-        width: min(900px, calc(100vw - 180px));
+        width: min(990px, calc(100vw - 334px));
       }
 
       .ws-asset-list-pane {
@@ -683,8 +688,13 @@ export function WorkSpaceStyles() {
         min-width: 0;
         flex-direction: column;
         border-right: 1px solid rgba(15,23,42,0.08);
-        background: rgba(232,235,232,0.72);
+        background: rgba(236, 239, 235, 0.7);
         padding: 18px 10px;
+      }
+
+      .ws-page.is-dark .ws-asset-list-pane {
+        border-right-color: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.035);
       }
 
       .ws-asset-list-title {
@@ -692,6 +702,10 @@ export function WorkSpaceStyles() {
         color: #111827;
         font-size: 15px;
         font-weight: 850;
+      }
+
+      .ws-page.is-dark .ws-asset-list-title {
+        color: #f8fafc;
       }
 
       .ws-asset-list {
@@ -725,6 +739,16 @@ export function WorkSpaceStyles() {
         color: #111827;
       }
 
+      .ws-page.is-dark .ws-asset-list-item {
+        color: rgba(248, 250, 252, 0.68);
+      }
+
+      .ws-page.is-dark .ws-asset-list-item:hover,
+      .ws-page.is-dark .ws-asset-list-item.is-active {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+
       .ws-asset-list-item span {
         max-width: 100%;
         overflow: hidden;
@@ -754,6 +778,10 @@ export function WorkSpaceStyles() {
           #f7f7f4;
       }
 
+      .ws-page.is-dark .ws-asset-editor {
+        background: #202226;
+      }
+
       .ws-asset-editor-head {
         display: flex;
         height: 58px;
@@ -761,6 +789,10 @@ export function WorkSpaceStyles() {
         gap: 10px;
         border-bottom: 1px solid rgba(15,23,42,0.07);
         padding: 0 28px;
+      }
+
+      .ws-page.is-dark .ws-asset-editor-head {
+        border-bottom-color: rgba(255, 255, 255, 0.08);
       }
 
       .ws-asset-editor-head span {
@@ -773,6 +805,10 @@ export function WorkSpaceStyles() {
         font-size: 15px;
       }
 
+      .ws-page.is-dark .ws-asset-editor-head strong {
+        color: #f8fafc;
+      }
+
       .ws-asset-editor textarea {
         min-height: 0;
         flex: 1;
@@ -780,7 +816,7 @@ export function WorkSpaceStyles() {
         border: 0;
         outline: none;
         background:
-          linear-gradient(rgba(255,255,255,0.52), rgba(255,255,255,0.52)),
+          linear-gradient(rgba(255,255,255,0.58), rgba(255,255,255,0.58)),
           radial-gradient(circle at 30% 20%, rgba(17,24,39,0.035), transparent 28%);
         color: #1f2933;
         padding: 54px min(12vw, 150px);
@@ -789,21 +825,26 @@ export function WorkSpaceStyles() {
         line-height: 2.05;
       }
 
-      .ws-create-card {
-        display: grid;
-        width: min(520px, calc(100vw - 180px));
-        gap: 12px;
-        border: 1px solid var(--ws-border);
-        border-radius: 22px;
-        background: rgba(18,21,27,0.84);
-        padding: 14px;
-        box-shadow: 0 28px 90px rgba(0,0,0,0.34);
-        backdrop-filter: blur(18px);
+      .ws-page.is-dark .ws-asset-editor textarea {
+        background: rgba(255, 255, 255, 0.045);
+        color: rgba(248, 250, 252, 0.9);
       }
 
-      .ws-page.is-light .ws-create-card {
-        background: rgba(255,255,255,0.86);
-        box-shadow: 0 28px 90px rgba(15,23,42,0.14);
+      .ws-create-card {
+        display: grid;
+        width: min(760px, calc(100vw - 334px));
+        gap: 14px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 14px;
+        background: rgba(248, 249, 247, 0.92);
+        padding: 16px;
+        box-shadow: 0 22px 70px rgba(15,23,42,0.12);
+      }
+
+      .ws-page.is-dark .ws-create-card {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: rgba(22, 24, 28, 0.9);
+        box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
       }
 
       .ws-create-option,
@@ -813,18 +854,31 @@ export function WorkSpaceStyles() {
         flex-direction: column;
         align-items: flex-start;
         gap: 5px;
-        border: 1px solid var(--ws-border);
-        border-radius: 15px;
-        background: rgba(255,255,255,0.05);
-        color: var(--ws-text);
-        padding: 14px 16px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 10px;
+        background: rgba(255,255,255,0.72);
+        color: #111827;
+        padding: 16px 18px;
         text-align: left;
         cursor: pointer;
       }
 
+      .ws-page.is-dark .ws-create-option,
+      .ws-page.is-dark .ws-create-flow-item {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.045);
+        color: #f8fafc;
+      }
+
       .ws-create-option:hover,
       .ws-create-flow-item:hover {
-        border-color: rgba(35,240,165,0.3);
+        border-color: rgba(17, 94, 89, 0.2);
+        background: rgba(255, 255, 255, 0.94);
+      }
+
+      .ws-page.is-dark .ws-create-option:hover,
+      .ws-page.is-dark .ws-create-flow-item:hover {
+        border-color: rgba(35,240,165,0.24);
         background: rgba(35,240,165,0.1);
       }
 
@@ -837,9 +891,15 @@ export function WorkSpaceStyles() {
       .ws-create-option small,
       .ws-create-flow-item small,
       .ws-create-empty {
-        color: var(--ws-muted);
+        color: #8a93a2;
         font-size: 12px;
         line-height: 1.45;
+      }
+
+      .ws-page.is-dark .ws-create-option small,
+      .ws-page.is-dark .ws-create-flow-item small,
+      .ws-page.is-dark .ws-create-empty {
+        color: rgba(248, 250, 252, 0.46);
       }
 
       .ws-create-flow-list {
@@ -850,25 +910,32 @@ export function WorkSpaceStyles() {
       }
 
       .ws-create-section-title {
-        color: var(--ws-muted);
+        color: #7b8492;
         font-size: 12px;
         font-weight: 820;
         padding: 4px 2px;
       }
 
+      .ws-page.is-dark .ws-create-section-title {
+        color: rgba(248, 250, 252, 0.48);
+      }
+
       .ws-communication-workspace {
         align-items: stretch;
         justify-content: center;
-        padding: 92px 92px 42px;
       }
 
       .ws-chat-stage {
         display: grid;
-        width: min(1000px, calc(100vw - 184px));
-        min-height: min(720px, calc(100vh - 134px));
+        width: min(1060px, calc(100vw - 334px));
+        min-height: min(740px, calc(100vh - 92px));
         grid-template-rows: minmax(0, 1fr) auto;
         gap: 18px;
-        color: var(--ws-text);
+        color: #111827;
+      }
+
+      .ws-page.is-dark .ws-chat-stage {
+        color: #f8fafc;
       }
 
       .ws-chat-thread {
@@ -884,7 +951,7 @@ export function WorkSpaceStyles() {
         display: flex;
         max-width: 68%;
         gap: 12px;
-        color: var(--ws-text);
+        color: inherit;
       }
 
       .ws-chat-message.is-user {
@@ -902,9 +969,13 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        background: rgba(255,255,255,0.12);
+        background: rgba(15, 23, 42, 0.08);
         font-size: 11px;
         font-weight: 850;
+      }
+
+      .ws-page.is-dark .ws-chat-avatar {
+        background: rgba(255,255,255,0.12);
       }
 
       .ws-chat-message p {
@@ -913,11 +984,16 @@ export function WorkSpaceStyles() {
       }
 
       .ws-chat-composer {
-        border: 1px solid var(--ws-border);
-        border-radius: 24px;
-        background: rgba(255,255,255,0.9);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 22px;
+        background: rgba(255,255,255,0.92);
         padding: 18px 20px;
         box-shadow: 0 18px 52px rgba(15,23,42,0.12);
+      }
+
+      .ws-page.is-dark .ws-chat-composer {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: rgba(248, 250, 252, 0.92);
       }
 
       .ws-chat-composer textarea {
@@ -2085,36 +2161,47 @@ export function WorkSpaceStyles() {
         .ws-top-actions {
           display: none;
         }
-        .ws-cate-strip {
-          max-width: min(560px, calc(100vw - 220px));
+        .ws-mode-switch {
+          left: auto;
+          right: 16px;
+          transform: none;
         }
       }
 
       @media (max-width: 760px) {
+        .ws-cate-sidebar {
+          width: 76px;
+          padding: 14px 10px;
+        }
+        .ws-sidebar-project,
+        .ws-cate-nav-item span {
+          display: none;
+        }
+        .ws-cate-brand {
+          justify-content: center;
+        }
+        .ws-cate-nav-item {
+          justify-content: center;
+          padding: 0;
+        }
         .ws-topbar {
           height: auto;
           flex-direction: column;
-          padding: 10px;
+          padding: 10px 10px 10px 86px;
           gap: 8px;
         }
-        .ws-top-left {
-          width: 100%;
-          justify-content: space-between;
-        }
-        .ws-cate-strip {
-          display: none;
-        }
-        .ws-dock {
-          left: 12px;
-          width: 58px;
+        .ws-mode-switch {
+          position: relative;
+          top: auto;
+          right: auto;
+          left: auto;
+          width: min(264px, calc(100vw - 104px));
+          transform: none;
         }
         .ws-workspace-overlay {
-          padding: 84px 12px 16px 78px;
+          inset: 110px 0 0 76px;
+          padding: 0 12px 16px;
           align-items: stretch;
-        }
-        .ws-workspace-close {
-          top: 78px;
-          right: 14px;
         }
         .ws-asset-editor-shell,
         .ws-asset-editor-shell.is-single,
