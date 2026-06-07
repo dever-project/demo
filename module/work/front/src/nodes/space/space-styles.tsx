@@ -357,41 +357,19 @@ export function WorkSpaceStyles() {
         top: 0;
         left: 0;
         right: 0;
-        height: 60px;
+        height: 64px;
         z-index: 20;
         display: flex;
         align-items: center;
         justify-content: space-between;
         background: transparent;
-        backdrop-filter: none;
-        border-bottom: none;
-        padding: 0 20px;
-        pointer-events: auto;
-      }
-      .ws-page.is-light .ws-topbar {
-        background: transparent;
-        border-bottom: none;
+        padding: 0 24px;
+        pointer-events: none;
       }
 
       .ws-top-actions,
       .ws-mode-switch {
         pointer-events: auto;
-      }
-
-      .ws-top-actions {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-width: 0;
-      }
-
-      .ws-action,
-      .ws-team-pill,
-      .ws-mode,
-      .ws-cate-sidebar,
-      .ws-floating-panel,
-      .ws-add-menu {
-        backdrop-filter: blur(18px);
       }
 
       .ws-mode-switch {
@@ -401,70 +379,65 @@ export function WorkSpaceStyles() {
         transform: translateX(-50%);
         display: flex;
         align-items: center;
-        width: 264px;
-        height: 38px;
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        border-radius: 12px;
-        background: rgba(245, 246, 243, 0.88);
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-        padding: 3px;
+        width: 250px;
+        height: 36px;
+        border: 1px solid var(--ws-border);
+        border-radius: 9999px;
+        background: rgba(0, 0, 0, 0.02);
+        padding: 2px;
         overflow: hidden;
       }
-
       .ws-page.is-dark .ws-mode-switch {
-        border-color: rgba(255, 255, 255, 0.1);
-        background: rgba(22, 24, 27, 0.82);
-        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.2);
+        background: rgba(255, 255, 255, 0.03);
       }
 
       .ws-mode-indicator {
         position: absolute;
-        left: 3px;
-        top: 3px;
+        left: 2px;
+        top: 2px;
         z-index: 0;
-        width: calc((100% - 6px) / var(--ws-mode-total, 3));
-        height: calc(100% - 6px);
-        border-radius: 9px;
-        background: #fff;
-        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+        width: calc((100% - 4px) / var(--ws-mode-total, 3));
+        height: calc(100% - 4px);
+        border-radius: 9999px;
+        background: #ffffff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         transform: translateX(calc(var(--ws-mode-active, 0) * 100%));
-        transition: transform 240ms cubic-bezier(.2,.8,.2,1);
+        transition: transform 280ms cubic-bezier(0.25, 1, 0.5, 1);
       }
-
       .ws-page.is-dark .ws-mode-indicator {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.08);
+        box-shadow: none;
       }
 
       .ws-mode {
         position: relative;
         z-index: 1;
         display: inline-flex;
-        width: calc((100% - 6px) / var(--ws-mode-total, 3));
+        width: calc((100% - 4px) / var(--ws-mode-total, 3));
         height: 32px;
-        flex: 0 0 calc((100% - 6px) / var(--ws-mode-total, 3));
+        flex: 0 0 calc((100% - 4px) / var(--ws-mode-total, 3));
         align-items: center;
         justify-content: center;
         border: 0;
-        border-radius: 9px;
+        border-radius: 9999px;
         background: transparent;
-        color: #9aa2ad;
+        color: var(--ws-muted);
         font-size: 13px;
-        font-weight: 780;
+        font-weight: 500;
         cursor: pointer;
-        transition: color 160ms ease;
+        transition: color 200ms ease;
       }
 
       .ws-mode:hover,
       .ws-mode.is-active {
-        color: #111827;
-      }
-
-      .ws-page.is-dark .ws-mode:hover,
-      .ws-page.is-dark .ws-mode.is-active {
-        color: #fff;
+        color: var(--ws-text);
       }
 
       .ws-top-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
         justify-content: flex-end;
       }
 
@@ -476,26 +449,31 @@ export function WorkSpaceStyles() {
         justify-content: center;
         gap: 6px;
         border: 1px solid var(--ws-border);
-        border-radius: 8px;
-        background: transparent;
+        border-radius: 9999px;
+        background: var(--ws-panel);
+        backdrop-filter: blur(12px);
         color: var(--ws-text);
-        padding: 0 12px;
+        padding: 0 16px;
         font-size: 12px;
         font-weight: 500;
         cursor: pointer;
-        transition: background-color 0.2s, border-color 0.2s;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.01);
+        transition: background-color 0.2s, border-color 0.2s, color 0.2s;
       }
       .ws-team-pill {
         cursor: default;
+        background: transparent;
         border-color: transparent;
         color: var(--ws-muted);
+        box-shadow: none;
       }
+
       .ws-action:hover {
         border-color: var(--ws-border-strong);
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(0, 0, 0, 0.01);
       }
-      .ws-page.is-light .ws-action:hover {
-        background: rgba(0, 0, 0, 0.03);
+      .ws-page.is-dark .ws-action:hover {
+        background: rgba(255, 255, 255, 0.04);
       }
 
       .ws-cate-sidebar {
