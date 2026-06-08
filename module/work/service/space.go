@@ -9,6 +9,9 @@ import (
 	"time"
 
 	workmodel "my/module/work/model"
+	agentmodel "my/package/bot/model/agent"
+	teammodel "my/package/bot/model/team"
+	agentservice "my/package/bot/service/agent"
 	assetservice "my/package/bot/service/asset"
 	bodyservice "my/package/bot/service/body"
 	teamservice "my/package/bot/service/team"
@@ -17,15 +20,25 @@ import (
 
 type SpaceService struct {
 	project ProjectService
+	agent   agentservice.Service
 	asset   assetservice.Service
 	team    teamservice.Service
 }
 
 const spaceDefaultUploadRuleID uint64 = 7
 
+type CanvasAgentRunRequest struct {
+	FlowID   uint64
+	NodeKey  string
+	NodeName string
+	AgentID  uint64
+	Input    map[string]any
+}
+
 func NewSpaceService() SpaceService {
 	return SpaceService{
 		project: NewProjectService(),
+		agent:   agentservice.NewService(),
 		asset:   assetservice.NewService(),
 		team:    teamservice.NewService(),
 	}
@@ -292,6 +305,72 @@ func (s SpaceService) RunCanvasPower(ctx context.Context, projectID uint64, req 
 	return s.team.RunCanvasPower(ctx, req)
 }
 
+func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req CanvasAgentRunRequest) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err = s.project.SyncProjectTeamRelease(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireBodyAgent(ctx, s.project.body, project.BodyID, req.AgentID); err != nil {
+		return nil, err
+	}
+	agent := agentmodel.NewAgentModel().Find(ctx, map[string]any{
+		"id":     req.AgentID,
+		"status": teammodel.StatusEnabled,
+	})
+	if agent == nil {
+		return nil, fmt.Errorf("智能体不存在或未开启")
+	}
+	input := cloneSpaceInput(req.Input)
+	result, err := s.agent.RunInternal(ctx, agentservice.InternalRunRequest{
+		AgentID: req.AgentID,
+		Input:   input,
+		Options: map[string]any{"full_runtime": false},
+	})
+	if err != nil {
+		return map[string]any{
+			"run_id":     result.RunID,
+			"request_id": result.RequestID,
+			"status":     "fail",
+			"output":     result.Output,
+		}, err
+	}
+	nodeName := strings.TrimSpace(req.NodeName)
+	if nodeName == "" {
+		nodeName = strings.TrimSpace(agent.Name)
+	}
+	if nodeName == "" {
+		nodeName = "智能体运行结果"
+	}
+	asset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
+		ProjectID: project.ID,
+		BodyID:    project.BodyID,
+		TeamID:    project.TeamID,
+		ReleaseID: project.ReleaseID,
+		FlowID:    req.FlowID,
+		RunID:     result.RunID,
+		Name:      nodeName,
+		Kind:      "text",
+		Content:   result.Output,
+	})
+	if err != nil {
+		return nil, err
+	}
+	item := assetservice.AssetToMap(*asset)
+	item["version"] = assetservice.VersionToMap(*version)
+	return map[string]any{
+		"run_id":     result.RunID,
+		"request_id": result.RequestID,
+		"status":     "success",
+		"output":     result.Output,
+		"asset":      item,
+		"version":    assetservice.VersionToMap(*version),
+	}, nil
+}
+
 func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64, bodyID uint64) (map[string]any, error) {
 	config, err := s.team.CanvasConfig(ctx, releaseID, 0)
 	if err != nil {
@@ -442,6 +521,25 @@ func requireBodyPower(ctx context.Context, body bodyservice.Service, bodyID uint
 		return fmt.Errorf("当前画布不允许使用该能力")
 	}
 	return nil
+}
+
+func requireBodyAgent(ctx context.Context, body bodyservice.Service, bodyID uint64, agentID uint64) error {
+	allowed, restricted := body.AllowedAgentIDs(ctx, bodyID)
+	if !restricted {
+		return nil
+	}
+	if agentID == 0 || !allowed[agentID] {
+		return fmt.Errorf("当前画布不允许使用该智能体")
+	}
+	return nil
+}
+
+func cloneSpaceInput(input map[string]any) map[string]any {
+	result := map[string]any{}
+	for key, value := range input {
+		result[key] = value
+	}
+	return result
 }
 
 func powerKindOptions(powers []teamservice.PowerOption) []teamservice.PowerKindOption {

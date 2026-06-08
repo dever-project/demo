@@ -2276,7 +2276,24 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: center;
       }
-       .ws-node-circle {
+      .ws-node-agent-wrap::before {
+        content: "";
+        position: absolute;
+        inset: 2px;
+        z-index: 0;
+        border-radius: 999px;
+        border: var(--ws-node-border-size) solid transparent;
+        border-top-color: rgba(245, 158, 11, 0.86);
+        border-right-color: rgba(245, 158, 11, 0.18);
+        opacity: 0;
+        pointer-events: none;
+        transform: rotate(0deg);
+        filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.22));
+        transition: opacity 0.18s ease;
+      }
+      .ws-node-circle {
+        position: relative;
+        z-index: 1;
         width: 120px;
         height: 120px;
         border-radius: 999px;
@@ -2291,10 +2308,15 @@ export function WorkSpaceStyles() {
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
         transition: all 0.25s ease;
       }
+      .ws-node-agent-wrap.is-selected::before,
+      .ws-node-agent-wrap:hover::before {
+        opacity: 1;
+        animation: ws-node-agent-border-spin 1.05s linear infinite;
+      }
       .ws-node-agent-wrap.is-selected .ws-node-circle,
-      .ws-node-circle:hover {
-        border-color: var(--ws-border-strong);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+      .ws-node-agent-wrap:hover .ws-node-circle {
+        border-color: rgba(245, 158, 11, 0.58);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04), 0 0 18px rgba(245, 158, 11, 0.24);
         transform: scale(1.02);
       }
       .ws-node-circle-avatar {
@@ -2342,35 +2364,62 @@ export function WorkSpaceStyles() {
         50% { transform: scale(1.2); opacity: 1; }
         100% { transform: scale(0.85); opacity: 0.5; }
       }
-      .ws-agent-result-card {
+      @keyframes ws-node-agent-border-spin {
+        to { transform: rotate(360deg); }
+      }
+      .ws-agent-result-bubble {
         position: absolute;
-        top: 132px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 180px;
+        top: 14px;
+        left: calc(100% + 12px);
+        width: 226px;
+        max-height: 112px;
+        overflow: visible;
         background: var(--ws-panel-strong);
         border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
-        border-radius: 12px;
-        padding: 8px;
-        box-shadow: var(--ws-node-shadow);
+        border-radius: 18px;
+        padding: 12px 14px;
+        box-shadow: 0 18px 46px rgba(15, 23, 42, 0.12);
         z-index: 10;
         text-align: left;
+        color: inherit;
+        font: inherit;
+        appearance: none;
+        cursor: pointer;
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.18s ease,
+          border-color 0.18s ease;
       }
-      .ws-result-header {
-        font-size: 8px;
-        color: var(--ws-amber);
-        font-weight: 800;
-        text-transform: uppercase;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        margin-bottom: 4px;
+      .ws-agent-result-bubble::before {
+        content: "";
+        position: absolute;
+        left: -9px;
+        top: 38px;
+        width: 16px;
+        height: 16px;
+        background: var(--ws-panel-strong);
+        border-left: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
+        border-bottom: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
+        transform: rotate(45deg);
+        border-radius: 0 0 0 4px;
+      }
+      .ws-agent-result-bubble:hover {
+        transform: translateX(2px);
+        border-color: rgba(245, 158, 11, 0.34);
+        box-shadow: 0 24px 58px rgba(15, 23, 42, 0.16);
       }
       .ws-result-text {
-        font-size: 9px;
-        color: var(--ws-muted);
+        position: relative;
+        z-index: 1;
+        font-size: 11px;
+        color: var(--ws-text);
         margin: 0;
-        line-height: 1.4;
+        line-height: 1.55;
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: break-word;
       }
 
       /* Flow Nodes Hexagon */

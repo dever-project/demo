@@ -107,6 +107,39 @@ export async function runSpacePower(input: {
   return result.data;
 }
 
+export async function runSpaceAgent(input: {
+  projectId: number;
+  flowId?: number;
+  nodeKey: string;
+  nodeName: string;
+  agentId: number;
+  prompt: string;
+  files?: unknown[];
+  context?: unknown[];
+}) {
+  const result = await request(joinSiteApi("space/run_canvas_agent"), "post", {
+    project_id: input.projectId,
+    flow_id: input.flowId || 0,
+    node_key: input.nodeKey,
+    node_name: input.nodeName,
+    agent_id: input.agentId,
+    input: {
+      goal: input.prompt,
+      requirement: input.prompt,
+      prompt: input.prompt,
+      user_input: input.prompt,
+      message: input.prompt,
+      files: input.files || [],
+      reference_files: input.files || [],
+      context: input.context || [],
+    },
+  });
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "智能体节点执行失败");
+  }
+  return result.data;
+}
+
 export async function runSpaceFlow(
   projectId: number,
   assetCateId: number,

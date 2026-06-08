@@ -86,6 +86,22 @@ func (Space) PostRunCanvasPower(c *server.Context) error {
 	return workJSON(c, data, err)
 }
 
+func (Space) PostRunCanvasAgent(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	projectID := bodyUint64(body, "project_id", "projectId", "id")
+	data, err := spaceSvc.RunCanvasAgent(c.Context(), projectID, workservice.CanvasAgentRunRequest{
+		FlowID:   bodyUint64(body, "flow_id", "flowId"),
+		NodeKey:  bodyText(body, "node_key", "nodeKey"),
+		NodeName: bodyText(body, "node_name", "nodeName", "name"),
+		AgentID:  bodyUint64(body, "agent_id", "agentId"),
+		Input:    bodyMap(body, "input"),
+	})
+	return workJSON(c, data, err)
+}
+
 func (Space) PostRunFlow(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {

@@ -90,6 +90,7 @@ import {
   fetchSpaceRunStatus,
   completeSpaceUpload,
   initSpaceUpload,
+  runSpaceAgent,
   runSpacePower,
   runSpaceFlow,
   saveSpaceAssetVersion,
@@ -5670,28 +5671,26 @@ function NodeBottomSettings({
         completed = true;
       } else if (node.type === "agent" && node.role) {
         const runPrompt = promptWithInputContext(prompt, inputContext);
-        const result = await request("/project/run/canvas_agent", "post", {
-          project_id: projectId,
-          flow_id: node.flow?.id || 0,
-          node_key: node.id,
-          node_name: node.title,
-          agent_id: node.role.id,
-          input: {
-            prompt: runPrompt,
-            files: paramValues.files || [],
-            context: inputContext?.sources || [],
-          },
-        });
-        if (isSuccessResponse(result)) {
-          onNodeResult(
-            node.id,
-            buildGeneratedNodeResultPatch(node, result, runPrompt),
-          );
-          toast.success("智能体任务执行成功");
-          completed = true;
-        } else {
-          toast.error(result.message || "智能体任务执行失败");
+        const agentId = Number(node.role.agent_id || 0);
+        if (agentId <= 0) {
+          throw new Error("当前团队角色未绑定智能体");
         }
+        const result = await runSpaceAgent({
+          projectId,
+          flowId: node.flow?.id || 0,
+          nodeKey: node.id,
+          nodeName: node.title,
+          agentId,
+          prompt: runPrompt,
+          files: Array.isArray(paramValues.files) ? paramValues.files : [],
+          context: inputContext?.sources || [],
+        });
+        onNodeResult(
+          node.id,
+          buildGeneratedNodeResultPatch(node, result, runPrompt),
+        );
+        toast.success("智能体任务执行成功");
+        completed = true;
       } else if (node.type === "flow" && node.flow) {
         const flowOutcome = await runFlowNode();
         if (flowOutcome === "success") {
@@ -6434,16 +6433,17 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
           </div>
         </div>
         {isGenerated ? (
-          <div
-            className="ws-agent-result-card"
+          <button
+            type="button"
+            className="ws-agent-result-bubble nodrag"
             onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onShowNodeDetail?.(node);
+            }}
           >
-            <div className="ws-result-header">
-              <Sparkles size={8} />
-              <span>智能体结果卡</span>
-            </div>
-            <p className="ws-result-text">{node.description}</p>
-          </div>
+            <p className="ws-result-text">{node.description || "暂无结果"}</p>
+          </button>
         ) : null}
         <NodeQuickDetailButton
           node={node}
