@@ -1,4 +1,8 @@
-import { joinSiteApi, request } from "@dever/front-plugin";
+import {
+  buildRuntimeRequestHeaders,
+  joinSiteApi,
+  request,
+} from "@dever/front-plugin";
 import {
   normalizeCanvasState,
   normalizePowerCatalog,
@@ -235,6 +239,7 @@ export async function saveSpaceCanvasAsset(input: {
   assetCateId: number;
   name: string;
   kind: string;
+  role?: string;
   content: unknown;
 }): Promise<ProjectAsset> {
   const result = await request(joinSiteApi("space/asset"), "post", {
@@ -242,6 +247,7 @@ export async function saveSpaceCanvasAsset(input: {
     asset_cate_id: input.assetCateId,
     name: input.name,
     kind: input.kind,
+    role: input.role || "",
     content: input.content,
   });
   if (!isSuccessResponse(result)) {
@@ -317,6 +323,7 @@ export async function uploadSpacePart(input: {
   const response = await fetch(joinSiteApi("space/upload_part"), {
     method: "POST",
     credentials: "include",
+    headers: buildRuntimeRequestHeaders({ contentType: false }),
     body: form,
   });
   const result = await parseUploadResponse(response);

@@ -163,6 +163,7 @@ func (s SpaceService) SaveAssetVersion(ctx context.Context, projectID uint64, as
 		ReleaseID:   project.ReleaseID,
 		Name:        asset.Name,
 		Kind:        asset.Kind,
+		Role:        asset.Role,
 		Content:     content,
 		Sort:        asset.Sort,
 	})
@@ -176,7 +177,7 @@ func (s SpaceService) SaveAssetVersion(ctx context.Context, projectID uint64, as
 	}, nil
 }
 
-func (s SpaceService) SaveCanvasAsset(ctx context.Context, projectID uint64, assetCateID uint64, name string, kind string, content any) (map[string]any, error) {
+func (s SpaceService) SaveCanvasAsset(ctx context.Context, projectID uint64, assetCateID uint64, name string, kind string, role string, content any) (map[string]any, error) {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -201,6 +202,7 @@ func (s SpaceService) SaveCanvasAsset(ctx context.Context, projectID uint64, ass
 		ReleaseID:   project.ReleaseID,
 		Name:        name,
 		Kind:        kind,
+		Role:        role,
 		Content:     content,
 		Sort:        100,
 	})
@@ -431,6 +433,7 @@ func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req 
 		RunID:     result.RunID,
 		Name:      nodeName,
 		Kind:      "text",
+		Role:      assetservice.NormalizeRole("content"),
 		Content:   result.Output,
 	})
 	if err != nil {

@@ -400,6 +400,7 @@ function normalizeAsset(value: Record<string, unknown>): ProjectAsset {
     asset_cate_id: numberValue(value.asset_cate_id),
     name: stringValue(value.name),
     kind: (stringValue(value.kind) || "text") as AssetKind,
+    role: stringValue(firstDefined(value.role, value.asset_role)),
     version_id: numberValue(value.version_id),
     sort: numberValue(value.sort),
     created_at: stringValue(value.created_at),

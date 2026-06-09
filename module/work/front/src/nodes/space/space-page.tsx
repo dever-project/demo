@@ -35,12 +35,14 @@ import "@xyflow/react/dist/style.css";
 import {
   ArrowLeft,
   Bot,
+  Bold,
   Brain,
   CheckCircle2,
   ChevronDown,
   Columns3,
   Compass,
   Copy,
+  Code2,
   Crop,
   Download,
   Eye,
@@ -49,8 +51,11 @@ import {
   GitBranch,
   History,
   Image as ImageIcon,
+  Italic,
   Layers,
   Lightbulb,
+  List,
+  ListOrdered,
   Loader2,
   Map as MapIcon,
   Maximize2,
@@ -63,14 +68,19 @@ import {
   PenTool,
   Play,
   Plus,
+  Quote,
+  Redo2,
   RotateCw,
   Save,
   Scissors,
   Send,
+  Smile,
   Sparkles,
+  Strikethrough,
   Sun,
   Trash2,
   Type,
+  Undo2,
   Users,
   UserCheck,
   Upload,
@@ -119,6 +129,7 @@ import {
 import { WorkSpaceStyles } from "./space-styles";
 import type {
   AssetCate,
+  AssetVersion,
   CanvasFunctionOption,
   PowerForm,
   PowerKindOption,
@@ -151,6 +162,14 @@ const { EnergonContentView, normalizeEnergonOutput } = getCompatModule(
 };
 const { normalizeAgentResultOutputValue } = getCompatModule("@/lib/agent-result-protocol") as {
   normalizeAgentResultOutputValue?: (value: any) => any;
+};
+const { digestUploadFile, uploadFileDirect } = getCompatModule("@/lib/upload") as {
+  digestUploadFile?: (file: File) => Promise<string>;
+  uploadFileDirect?: (
+    file: File,
+    direct: unknown,
+    onProgress?: (loaded: number, total: number) => void,
+  ) => Promise<void>;
 };
 
 type WorkMode = "create" | "result";
@@ -205,6 +224,7 @@ type GeneratedNodePreview = {
   audioUrl: string;
   fileUrl: string;
 };
+type AssetViewerMode = "browse" | "select" | "detail";
 type NodeInputContext = {
   text: string;
   sources: Array<{
@@ -254,6 +274,12 @@ type NodeFeedbackRecord = {
   createdAt: string;
   submittedAt?: string;
 };
+const FEEDBACK_REPLACED_MESSAGE = "反馈已被新的运行替换";
+
+function isFeedbackReplacedError(err: unknown) {
+  return err instanceof Error && err.message === FEEDBACK_REPLACED_MESSAGE;
+}
+
 type AgentMemoryEntry = {
   role: "user" | "assistant" | "feedback";
   text: string;
@@ -376,9 +402,10 @@ export function WorkSpacePage() {
     setError("");
     try {
       const nextSpace = await fetchSpaceBootstrap(projectId);
+      const canvases = persistentCanvasMap(nextSpace.canvases || {});
       setSpace(nextSpace);
-      setCanvasStates(nextSpace.canvases || {});
-      loadedCanvasesRef.current = serializeCanvasMap(nextSpace.canvases || {});
+      setCanvasStates(canvases);
+      loadedCanvasesRef.current = serializeCanvasMap(canvases);
       setActiveCateId(defaultAssetCateId(nextSpace));
       setPowers(nextSpace.powers || []);
       setPowerKinds(nextSpace.powerKinds || []);
@@ -538,6 +565,33 @@ export function WorkSpacePage() {
     [updateActiveCanvas],
   );
 
+  const clearNodeFeedbackRecords = useCallback(
+    (nodeIds: string[]) => {
+      const targets = new Set(nodeIds.filter(Boolean));
+      if (targets.size === 0) {
+        return;
+      }
+      if (
+        startFlowFeedbackRef.current &&
+        targets.has(startFlowFeedbackRef.current.nodeId)
+      ) {
+        const pending = startFlowFeedbackRef.current;
+        startFlowFeedbackRef.current = null;
+        pending.reject(new Error(FEEDBACK_REPLACED_MESSAGE));
+      }
+      setStartFlowFeedbackPrompt((current) =>
+        current && targets.has(current.node.id) ? null : current,
+      );
+      updateActiveCanvas((canvas) => ({
+        ...canvas,
+        nodes: canvas.nodes.map((node) =>
+          targets.has(node.id) ? { ...node, feedbackRequests: [] } : node,
+        ),
+      }));
+    },
+    [updateActiveCanvas],
+  );
+
   const upsertSpaceAsset = useCallback((asset: ProjectAsset) => {
     if (!asset || !asset.id) {
       return;
@@ -610,6 +664,13 @@ export function WorkSpacePage() {
         status: "running",
       });
       try {
+        clearNodeFeedbackRecords(
+          canvasExecutionNodeIds(
+            startNode.id,
+            canvasModel.nodes,
+            canvasModel.edges,
+          ),
+        );
         await runCanvasFromStartNode({
           projectId,
           assetCate: activeCate,
@@ -636,6 +697,9 @@ export function WorkSpacePage() {
           );
         }, 700);
       } catch (err) {
+        if (isFeedbackReplacedError(err)) {
+          return;
+        }
         const message = err instanceof Error ? err.message : "开始节点执行失败";
         setRunningNode({
           nodeId: startNode.id,
@@ -656,6 +720,7 @@ export function WorkSpacePage() {
       activeCate,
       canvasModel.edges,
       canvasModel.nodes,
+      clearNodeFeedbackRecords,
       projectId,
       requestStartFlowFeedback,
       setRunningNode,
@@ -671,15 +736,17 @@ export function WorkSpacePage() {
     }
     const dirtyCanvases = Object.entries(canvasStates).filter(
       ([key, canvas]) =>
-        loadedCanvasesRef.current[key] !== stableStringifyCanvas(canvas),
+        loadedCanvasesRef.current[key] !==
+        stableStringifyCanvas(persistentCanvasState(canvas)),
     );
     if (dirtyCanvases.length === 0) {
       return;
     }
     const timer = window.setTimeout(() => {
       for (const [key, canvas] of dirtyCanvases) {
-        const submittedCanvasSnapshot = stableStringifyCanvas(canvas);
-        void saveSpaceCanvas(space.project.id, canvas.assetCateId, canvas)
+        const persistentCanvas = persistentCanvasState(canvas);
+        const submittedCanvasSnapshot = stableStringifyCanvas(persistentCanvas);
+        void saveSpaceCanvas(space.project.id, canvas.assetCateId, persistentCanvas)
           .then((savedCanvas) => {
             const savedCanvasSnapshot = stableStringifyCanvas(savedCanvas);
             loadedCanvasesRef.current[key] = savedCanvasSnapshot;
@@ -964,9 +1031,41 @@ export function WorkSpacePage() {
         "导入资产",
       ),
     );
+    patchDirectDisplayNodes(nodeId, output);
   }
 
-  function addImportedAssetNode(asset: ProjectAsset) {
+  function patchDirectDisplayNodes(sourceNodeId: string, output: unknown) {
+    if (!sourceNodeId) {
+      return;
+    }
+    const directDisplayNodeIds = activeCanvas.edges
+      .filter((edge) => edge.from === sourceNodeId)
+      .map((edge) => activeCanvas.nodes.find((node) => node.id === edge.to))
+      .filter(
+        (node): node is SpaceCanvasNode =>
+          Boolean(node) &&
+          node.type === "function" &&
+          node.functionOption?.key === "display",
+      )
+      .map((node) => node.id);
+    if (directDisplayNodeIds.length === 0) {
+      return;
+    }
+    updateActiveCanvas((canvas) => ({
+      ...canvas,
+      nodes: canvas.nodes.map((node) => {
+        if (!directDisplayNodeIds.includes(node.id)) {
+          return node;
+        }
+        return {
+          ...node,
+          ...buildGeneratedNodeResultPatch(node, { output }, "展示导入结果"),
+        };
+      }),
+    }));
+  }
+
+  function useImportedAsset(asset: ProjectAsset) {
     const importNodeId = pendingImportNodeId;
     if (!importNodeId) {
       addAssetNode(asset);
@@ -983,18 +1082,6 @@ export function WorkSpacePage() {
       pendingImportNodeRef.current = null;
       return;
     }
-    addConfiguredNode(
-      "asset",
-      {
-        x: sourceNode.x + 190,
-        y: sourceNode.y,
-      },
-      {
-        asset,
-        connectFromNodeId: importNodeId,
-        selectCreated: false,
-      },
-    );
     patchImportNodeResult(importNodeId, asset);
   }
 
@@ -1030,16 +1117,17 @@ export function WorkSpacePage() {
           assetCateId: Number(activeCate.id || 0),
           name: preview.name || activeCate.name,
           kind: String(preview.kind || activeCate.kind || "file"),
+          role: "material",
           content: uploadAssetContent(preview),
         });
-        upsertSpaceAsset(asset);
-        addImportedAssetNode(asset);
+        upsertSpaceAsset({
+          ...asset,
+          role: "material",
+        });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "导入资产保存失败");
       }
     }
-    setPendingImportNodeId("");
-    pendingImportNodeRef.current = null;
     return previews;
   }
 
@@ -1208,6 +1296,7 @@ export function WorkSpacePage() {
         onAssetCreated={upsertSpaceAsset}
         onRunStartNode={runStartNode}
         onOpenImportPicker={openImportPicker}
+        onClearFeedbackRecords={clearNodeFeedbackRecords}
         requestConfirm={requestConfirm}
         onOpenFeedbackRecord={(node, record) => {
           if (
@@ -1260,12 +1349,12 @@ export function WorkSpacePage() {
           placeholder=""
           openAssetPickerSignal={importPickerSignal}
           params={agentComposerParams}
-          assetLibrary={buildComposerAssetLibrary(space, null)}
+          assetLibrary={buildComposerAssetLibrary(space, null, activeCate)}
           onChange={() => undefined}
           onParamChange={() => undefined}
           onAssetReference={(asset) => {
             if (asset.source === "asset" && asset.asset) {
-              addImportedAssetNode(asset.asset as ProjectAsset);
+              useImportedAsset(asset.asset as ProjectAsset);
             }
           }}
           onAssetPickerClose={() => {
@@ -1725,57 +1814,214 @@ function AssetWorkspacePanel({
   activeCate: AssetCate;
   onClose: () => void;
 }) {
-  const assets = assetsForCate(space, activeCate.id);
-  const showList = activeCate.cardinality !== "single" || assets.length > 1;
-  const [selectedAssetId, setSelectedAssetId] = useState(assets[0]?.id || 0);
-  const selectedAsset =
-    assets.find((asset) => asset.id === selectedAssetId) || assets[0] || null;
-
-  useEffect(() => {
-    setSelectedAssetId(assets[0]?.id || 0);
-  }, [activeCate.id, assets[0]?.id]);
-
   return (
     <WorkspaceSurface className="ws-asset-workspace">
-      <section
-        className={`ws-asset-editor-shell ${showList ? "has-list" : "is-single"}`}
-      >
-        <button
-          type="button"
-          className="ws-workspace-close"
-          onClick={onClose}
-          aria-label="关闭结果"
-        >
-          <X size={18} />
-        </button>
-        {showList ? (
-          <aside className="ws-asset-list-pane">
-            <div className="ws-asset-list-title">{activeCate.name}</div>
-            <div className="ws-asset-list custom-scrollbar">
-              {assets.length > 0 ? (
-                assets.map((asset, index) => (
-                  <button
-                    key={asset.id}
-                    type="button"
-                    className={`ws-asset-list-item ${asset.id === selectedAsset?.id ? "is-active" : ""}`}
-                    onClick={() => setSelectedAssetId(asset.id)}
-                  >
-                    <span>
-                      {asset.name || `${activeCate.name} ${index + 1}`}
-                    </span>
-                    <small>{asset.created_at || "未保存时间"}</small>
-                  </button>
-                ))
-              ) : (
-                <div className="ws-asset-list-empty">暂无资产</div>
-              )}
-            </div>
-          </aside>
-        ) : null}
-        <AssetEditorSurface activeCate={activeCate} asset={selectedAsset} />
-      </section>
+      <AssetViewer
+        mode="browse"
+        space={space}
+        activeCate={activeCate}
+        onClose={onClose}
+      />
     </WorkspaceSurface>
   );
+}
+
+function AssetViewer({
+  mode,
+  space,
+  activeCate,
+  selectedAsset: controlledSelectedAsset,
+  onClose,
+  onPickAsset,
+}: {
+  mode: AssetViewerMode;
+  space: SpaceBootstrap;
+  activeCate: AssetCate;
+  selectedAsset?: ProjectAsset | null;
+  onClose: () => void;
+  onPickAsset?: (asset: ProjectAsset) => void;
+}) {
+  const assets = useMemo(
+    () => assetsForCate(space, activeCate.id),
+    [activeCate.id, space],
+  );
+  const groups = useMemo(
+    () => groupAssetsByRole(assets, activeCate),
+    [activeCate, assets],
+  );
+  const firstAsset = groups.content[0] || groups.material[0] || null;
+  const [selectedAssetId, setSelectedAssetId] = useState(
+    controlledSelectedAsset?.id || firstAsset?.id || 0,
+  );
+  const selectedAsset =
+    controlledSelectedAsset ||
+    assets.find((asset) => asset.id === selectedAssetId) ||
+    firstAsset;
+
+  useEffect(() => {
+    setSelectedAssetId(controlledSelectedAsset?.id || firstAsset?.id || 0);
+  }, [activeCate.id, controlledSelectedAsset?.id, firstAsset?.id]);
+
+  const title =
+    mode === "select" ? "选择引用内容" : mode === "detail" ? "查看详情" : "结果";
+
+  return (
+    <section className="ws-asset-editor-shell has-list is-viewer">
+      <button
+        type="button"
+        className="ws-workspace-close"
+        onClick={onClose}
+        aria-label="关闭资产查看器"
+      >
+        <X size={18} />
+      </button>
+      <aside className="ws-asset-list-pane ws-asset-tree-pane">
+        <div className="ws-asset-list-title">
+          <strong>{activeCate.name}</strong>
+          <span>{title}</span>
+        </div>
+        <AssetViewerTree
+          activeCate={activeCate}
+          groups={groups}
+          selectedAssetId={selectedAsset?.id || 0}
+          onSelectAsset={(asset) => {
+            setSelectedAssetId(asset.id);
+            if (mode === "select") {
+              onPickAsset?.(asset);
+            }
+          }}
+        />
+      </aside>
+      <AssetEditorSurface
+        activeCate={activeCate}
+        asset={selectedAsset}
+        mode={mode}
+        onPickAsset={
+          mode === "select" && selectedAsset
+            ? () => onPickAsset?.(selectedAsset)
+            : undefined
+        }
+      />
+    </section>
+  );
+}
+
+function AssetViewerTree({
+  activeCate,
+  groups,
+  selectedAssetId,
+  onSelectAsset,
+}: {
+  activeCate: AssetCate;
+  groups: AssetRoleGroups;
+  selectedAssetId: number;
+  onSelectAsset: (asset: ProjectAsset) => void;
+}) {
+  return (
+    <div className="ws-asset-tree custom-scrollbar">
+      <AssetViewerGroup
+        title="内容"
+        count={groups.content.length}
+        emptyText={`暂无${activeCate.name}内容`}
+        assets={groups.content}
+        selectedAssetId={selectedAssetId}
+        onSelectAsset={onSelectAsset}
+      />
+      <AssetViewerGroup
+        title="素材"
+        count={groups.material.length}
+        emptyText="暂无素材"
+        assets={groups.material}
+        selectedAssetId={selectedAssetId}
+        onSelectAsset={onSelectAsset}
+      />
+    </div>
+  );
+}
+
+function AssetViewerGroup({
+  title,
+  count,
+  emptyText,
+  assets,
+  selectedAssetId,
+  onSelectAsset,
+}: {
+  title: string;
+  count: number;
+  emptyText: string;
+  assets: ProjectAsset[];
+  selectedAssetId: number;
+  onSelectAsset: (asset: ProjectAsset) => void;
+}) {
+  return (
+    <div className="ws-tree-group">
+      <div className="ws-tree-head is-open">
+        <span className="ws-tree-label">
+          <FolderIcon />
+          {title}
+        </span>
+        <small>{count}</small>
+      </div>
+      <div className="ws-tree-list">
+        {assets.length > 0 ? (
+          assets.map((asset, index) => (
+            <button
+              key={asset.id}
+              type="button"
+              className={`ws-tree-asset ${asset.id === selectedAssetId ? "is-active" : ""}`}
+              onClick={() => onSelectAsset(asset)}
+            >
+              <span>{asset.name || `${title} ${index + 1}`}</span>
+              <small>
+                {asset.created_at || asset.version?.created_at || "未保存时间"}
+              </small>
+            </button>
+          ))
+        ) : (
+          <div className="ws-tree-empty">{emptyText}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FolderIcon() {
+  return <Layers size={14} />;
+}
+
+type AssetRoleGroups = {
+  content: ProjectAsset[];
+  material: ProjectAsset[];
+};
+
+function groupAssetsByRole(
+  assets: ProjectAsset[],
+  activeCate: AssetCate,
+): AssetRoleGroups {
+  return assets.reduce<AssetRoleGroups>(
+    (groups, asset) => {
+      groups[assetRoleForView(asset, activeCate)].push(asset);
+      return groups;
+    },
+    { content: [], material: [] },
+  );
+}
+
+function assetRoleForView(
+  asset: ProjectAsset | null | undefined,
+  activeCate: AssetCate,
+): "content" | "material" {
+  const role = String(asset?.role || "").toLowerCase();
+  if (role === "content" || role === "material") {
+    return role;
+  }
+  if (!asset) {
+    return "material";
+  }
+  const cateKind = String(activeCate.kind || "").toLowerCase();
+  const assetKind = String(asset.kind || "").toLowerCase();
+  return cateKind && assetKind === cateKind ? "content" : "material";
 }
 
 function CommunicationWorkspacePanel({
@@ -1863,24 +2109,302 @@ function WorkspaceSurface({
 function AssetEditorSurface({
   activeCate,
   asset,
+  mode = "browse",
+  onPickAsset,
 }: {
   activeCate: AssetCate;
   asset: ProjectAsset | null;
+  mode?: AssetViewerMode;
+  onPickAsset?: () => void;
 }) {
-  const content = assetContentText(asset);
+  const displayValue = assetDisplayValue(asset?.version?.content);
+  const preview = generatedPreviewFromValue(
+    firstDefined(asset?.version?.content, displayValue),
+    String(asset?.kind || activeCate.kind || ""),
+  );
+  const rich = firstTiptapRichDocument(displayValue);
+  const displayOutput = normalizeEnergonDisplayOutput(displayValue);
+  const content =
+    safeDocumentText(displayValue) ||
+    displayTextFromOutput(displayValue, "") ||
+    assetContentText(asset);
   return (
     <article className="ws-asset-editor">
       <header className="ws-asset-editor-head">
-        <span>{activeCate.name}</span>
-        <strong>{asset?.name || activeCate.name}</strong>
+        <div>
+          <span>{activeCate.name}</span>
+          <strong>{asset?.name || activeCate.name}</strong>
+        </div>
+        <div className="ws-asset-editor-actions">
+          {asset?.version?.version ? (
+            <button type="button" disabled>
+              <History size={14} />
+              <span>版本 {asset.version.version}</span>
+            </button>
+          ) : null}
+          {mode === "select" && asset && onPickAsset ? (
+            <button type="button" onClick={onPickAsset}>
+              <CheckCircle2 size={14} />
+              <span>使用</span>
+            </button>
+          ) : null}
+        </div>
       </header>
-      <textarea
-        value={content}
-        readOnly
-        placeholder={`暂无${activeCate.name}内容`}
-      />
+      <div className="ws-asset-editor-body custom-scrollbar">
+        {!asset ? (
+          <div className="ws-asset-empty-detail">
+            <FileSearch size={32} />
+            <span>暂无可查看内容</span>
+          </div>
+        ) : preview.imageUrl ? (
+          <div className="ws-asset-media-detail">
+            <img src={preview.imageUrl} alt={asset.name || activeCate.name} />
+          </div>
+        ) : preview.videoUrl ? (
+          <div className="ws-asset-media-detail">
+            <video src={preview.videoUrl} controls playsInline />
+          </div>
+        ) : preview.audioUrl ? (
+          <div className="ws-asset-media-detail">
+            <audio src={preview.audioUrl} controls />
+          </div>
+        ) : preview.fileUrl ? (
+          <div className="ws-asset-file-detail">
+            <FileText size={40} />
+            <strong>{asset.name || activeCate.name}</strong>
+            <span>{preview.fileUrl}</span>
+            <a href={preview.fileUrl} download>
+              <Download size={15} />
+              下载文件
+            </a>
+          </div>
+        ) : rich ? (
+          <RichDocumentView
+            value={rich}
+            className="ws-asset-rich-detail"
+          />
+        ) : EnergonContentView && hasDisplayOutput(displayOutput) ? (
+          <div className="ws-asset-energon-detail">
+            <EnergonContentView output={displayOutput} emptyText="暂无内容" />
+          </div>
+        ) : (
+          <textarea
+            value={content}
+            readOnly
+            placeholder={`暂无${activeCate.name}内容`}
+          />
+        )}
+      </div>
     </article>
   );
+}
+
+function assetDisplayValue(value: unknown) {
+  const parsed = parseMaybeJSON(value);
+  const agentResult = parseAgentResultBlock(parsed);
+  if (agentResult !== parsed) {
+    return assetDisplayValue(agentResult);
+  }
+  const outputContent = valueAtPath(
+    parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, any>)
+      : {},
+    ["output", "content"],
+  );
+  if (outputContent !== undefined && outputContent !== parsed) {
+    return assetDisplayValue(outputContent);
+  }
+  const contentText = valueAtPath(
+    parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, any>)
+      : {},
+    ["content", "text"],
+  );
+  if (
+    String(
+      valueAtPath(
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, any>)
+          : {},
+        ["content", "format"],
+      ) || "",
+    ).toLowerCase() === "markdown" &&
+    typeof contentText === "string"
+  ) {
+    return markdownToRichDocument(contentText);
+  }
+  const normalized = normalizeDisplayOutputForCanvas(parsed);
+  if (normalized !== parsed && hasDisplayOutput(normalized)) {
+    const normalizedContentText =
+      normalized &&
+      typeof normalized === "object" &&
+      !Array.isArray(normalized)
+        ? valueAtPath(normalized as Record<string, any>, ["content", "text"])
+        : undefined;
+    const normalizedFormat =
+      normalized &&
+      typeof normalized === "object" &&
+      !Array.isArray(normalized)
+        ? valueAtPath(normalized as Record<string, any>, ["content", "format"])
+        : undefined;
+    if (
+      String(normalizedFormat || "").toLowerCase() === "markdown" &&
+      typeof normalizedContentText === "string"
+    ) {
+      return markdownToRichDocument(normalizedContentText);
+    }
+    return normalized;
+  }
+  const rich = fixedTiptapRichDocument(parsed);
+  if (rich) {
+    return rich;
+  }
+  return parsed;
+}
+
+function markdownToRichDocument(value: string) {
+  const lines = String(value || "").split(/\r?\n/);
+  const content: any[] = [];
+  let paragraph: string[] = [];
+  let listItems: string[] = [];
+  let listType: "bulletList" | "orderedList" | "" = "";
+
+  const flushParagraph = () => {
+    const text = paragraph.join("\n").trim();
+    paragraph = [];
+    if (!text) {
+      return;
+    }
+    content.push(richParagraphFromMarkdownText(text));
+  };
+  const flushList = () => {
+    if (listItems.length === 0) {
+      return;
+    }
+    content.push({
+      type: listType || "bulletList",
+      content: listItems.map((text) => ({
+        type: "listItem",
+        content: [richParagraphFromMarkdownText(text)],
+      })),
+    });
+    listItems = [];
+    listType = "";
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    if (/^---+$/.test(line)) {
+      flushParagraph();
+      flushList();
+      content.push({ type: "horizontalRule" });
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      content.push({
+        type: "heading",
+        attrs: { level: Math.min(6, heading[1].length) },
+        content: richInlineNodesFromMarkdown(heading[2]),
+      });
+      continue;
+    }
+    const bullet = /^[-*]\s+(.+)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      if (listType && listType !== "bulletList") {
+        flushList();
+      }
+      listType = "bulletList";
+      listItems.push(bullet[1]);
+      continue;
+    }
+    const ordered = /^\d+\.\s+(.+)$/.exec(line);
+    if (ordered) {
+      flushParagraph();
+      if (listType && listType !== "orderedList") {
+        flushList();
+      }
+      listType = "orderedList";
+      listItems.push(ordered[1]);
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+  }
+  flushParagraph();
+  flushList();
+  return {
+    type: "doc",
+    content: content.length > 0 ? content : [richParagraphFromMarkdownText("")],
+  };
+}
+
+function richParagraphFromMarkdownText(value: string) {
+  return {
+    type: "paragraph",
+    content: richInlineNodesFromMarkdown(value),
+  };
+}
+
+function richInlineNodesFromMarkdown(value: string) {
+  const text = String(value || "");
+  if (!text) {
+    return [];
+  }
+  const nodes: any[] = [];
+  const pattern =
+    /(\*\*([^*]+)\*\*|~~([^~]+)~~|`([^`]+)`|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\))/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    if (match.index > cursor) {
+      nodes.push({ type: "text", text: text.slice(cursor, match.index) });
+    }
+    if (match[2]) {
+      nodes.push({
+        type: "text",
+        text: match[2],
+        marks: [{ type: "bold" }],
+      });
+    } else if (match[3]) {
+      nodes.push({
+        type: "text",
+        text: match[3],
+        marks: [{ type: "strike" }],
+      });
+    } else if (match[4]) {
+      nodes.push({
+        type: "text",
+        text: match[4],
+        marks: [{ type: "code" }],
+      });
+    } else if (match[5]) {
+      nodes.push({
+        type: "text",
+        text: match[5],
+        marks: [{ type: "italic" }],
+      });
+    } else if (match[6]) {
+      nodes.push({
+        type: "text",
+        text: match[6],
+        marks: [{ type: "link", attrs: { href: match[7] } }],
+      });
+    }
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) {
+    nodes.push({ type: "text", text: text.slice(cursor) });
+  }
+  return nodes;
 }
 
 function assetContentText(asset: ProjectAsset | null) {
@@ -1918,6 +2442,7 @@ function CanvasWorkbench({
   onAssetCreated,
   onRunStartNode,
   onOpenImportPicker,
+  onClearFeedbackRecords,
   requestConfirm,
   onOpenFeedbackRecord,
 }: {
@@ -1952,6 +2477,7 @@ function CanvasWorkbench({
   onAssetCreated: (asset: ProjectAsset) => void;
   onRunStartNode: NodeStartRunner;
   onOpenImportPicker: (nodeId: string) => void;
+  onClearFeedbackRecords: (nodeIds: string[]) => void;
   requestConfirm: ConfirmRequester;
   onOpenFeedbackRecord: (
     node: SpaceCanvasNode,
@@ -2008,6 +2534,7 @@ function CanvasWorkbench({
         onAssetCreated,
         onRunStartNode,
         onOpenImportPicker,
+        onClearFeedbackRecords,
         onOpenFeedbackRecord,
         onShowNodeDetail,
         requestConfirm,
@@ -2058,6 +2585,7 @@ function CanvasWorkbench({
     nodes,
     onAddConfiguredNode,
     onAssetCreated,
+    onClearFeedbackRecords,
     onNodeResult,
     onNodeDraftChange,
     onOpenFeedbackRecord,
@@ -2912,27 +3440,55 @@ function NodeDetailDialog({
   onAssetSaved?: (asset: ProjectAsset) => void;
   onClose: () => void;
 }) {
-  const detailRich = nodeRichDocument(node);
-  const displayOutput = nodeEnergonOutput(node);
+  const versionItems = useMemo(() => nodeDetailVersionItems(node), [node]);
+  const currentVersionItemId = versionItems[0]?.id || "current";
+  const [activeVersionId, setActiveVersionId] = useState(
+    () => currentVersionItemId,
+  );
+  const activeVersion =
+    versionItems.find((candidate) => candidate.id === activeVersionId) ||
+    versionItems[0];
+  const currentVersion =
+    versionItems.find((candidate) => candidate.isCurrent) || versionItems[0];
+  const activeNode = activeVersion?.node || node;
+  const detailRich = nodeRichDocument(activeNode);
+  const displayOutput = nodeEnergonOutput(activeNode);
   const detailText = displayTextFromOutput(
     displayOutput,
-    node.description || "",
+    activeNode.description || "",
   );
-  const [editableRich, setEditableRich] = useState(() => detailText);
+  const editableSource = detailRich
+    ? richDocumentToEditableMarkdown(detailRich) || detailText
+    : detailText;
+  const [editableRich, setEditableRich] = useState(() => editableSource);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    setEditableRich(detailText);
-  }, [detailText, node.id]);
-  const preview = nodeDetailPreview(node);
-  const typeLabel =
-    node.subtitle || powerKindLabel(String(node.kind || node.type));
+    setActiveVersionId(currentVersionItemId);
+  }, [node.id, currentVersionItemId]);
+  useEffect(() => {
+    setEditableRich(editableSource);
+  }, [editableSource, activeNode.id, activeVersion?.id]);
+  const preview = nodeDetailPreview(activeNode);
   const downloadUrl =
     preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl;
-  const assetId = Number(node.asset?.id || 0);
+  const assetId = Number(activeNode.asset?.id || 0);
+  const canSaveVersion = activeVersion?.isCurrent !== false && assetId > 0;
+  const hasVersionSidebar = versionItems.length > 0;
+  const updatedAt = nodeDetailUpdatedAt(activeNode);
+  const isMediaDetail = Boolean(
+    preview.imageUrl ||
+      preview.videoUrl ||
+      preview.audioUrl ||
+      preview.fileUrl,
+  );
 
   async function saveRichContent() {
+    if (activeNode.id !== node.id) {
+      toast.info("请切回当前节点后保存版本");
+      return;
+    }
     if (!assetId || assetId < 0) {
-      toast.info("当前内容还不是后端资产，暂不能保存版本");
+      toast.info("暂不能保存版本");
       return;
     }
     setSaving(true);
@@ -2951,20 +3507,31 @@ function NodeDetailDialog({
     }
   }
 
+  const saveRow = canSaveVersion ? (
+    <div className="ws-node-detail-save-row">
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => void saveRichContent()}
+      >
+        {saving ? <Loader2 size={15} className="ws-spin" /> : <Save size={15} />}
+        <span>{saving ? "保存中" : "保存版本"}</span>
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div className="ws-node-detail-backdrop" onMouseDown={onClose}>
       <section
-        className="ws-node-detail-modal"
+        className={`ws-node-detail-modal ${
+          hasVersionSidebar ? "has-version-sidebar" : ""
+        }`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="ws-node-detail-head">
-          <div className="ws-node-detail-meta">
-            <span>名称:</span>
-            <strong>{node.title}</strong>
-            <span>类型:</span>
-            <strong>{typeLabel}</strong>
-            <span>节点:</span>
-            <strong>{node.local ? "本地节点" : "画布节点"}</strong>
+          <div className="ws-node-detail-title">
+            <strong>{activeNode.title}</strong>
+            {updatedAt ? <span>最后更新：{updatedAt}</span> : null}
           </div>
           <div className="ws-node-detail-actions">
             {downloadUrl ? (
@@ -2977,9 +3544,13 @@ function NodeDetailDialog({
             </button>
           </div>
         </header>
-        <div className="ws-node-detail-body">
+        <div
+          className={`ws-node-detail-body ${
+            isMediaDetail ? "is-media-detail" : ""
+          }`}
+        >
           {preview.imageUrl ? (
-            <img src={preview.imageUrl} alt={preview.text || node.title} />
+            <img src={preview.imageUrl} alt={preview.text || activeNode.title} />
           ) : preview.videoUrl ? (
             <video src={preview.videoUrl} controls playsInline />
           ) : preview.audioUrl ? (
@@ -2987,7 +3558,7 @@ function NodeDetailDialog({
           ) : preview.fileUrl ? (
             <div className="ws-node-detail-file">
               <FileText size={46} />
-              <strong>{preview.text || node.title}</strong>
+              <strong>{preview.text || activeNode.title}</strong>
               <span>{preview.fileUrl}</span>
               <a href={preview.fileUrl} download>
                 <Download size={16} />
@@ -2996,42 +3567,11 @@ function NodeDetailDialog({
             </div>
           ) : detailRich ? (
             <div className="ws-node-detail-editor">
-              <RichDocumentView
-                value={detailRich}
-                className="ws-node-detail-output ws-node-detail-rich-preview"
+              <RichDocumentEditor
+                value={editableRich}
+                onChange={setEditableRich}
               />
-              <div className="ws-node-detail-editor-foot">
-                <p>
-                  {assetId > 0
-                    ? "保存后会生成一个新的资产版本。"
-                    : "当前内容还不是后端资产，暂不能保存版本。"}
-                </p>
-                <button type="button" disabled>
-                  <Save size={15} />
-                  <span>编辑待接入</span>
-                </button>
-              </div>
-            </div>
-          ) : EnergonContentView && hasDisplayOutput(displayOutput) ? (
-            <div className="ws-node-detail-editor">
-              <div className="ws-node-detail-output">
-                <EnergonContentView output={displayOutput} emptyText="暂无详情" />
-              </div>
-              <div className="ws-node-detail-editor-foot">
-                <p>
-                  {assetId > 0
-                    ? "保存后会生成一个新的资产版本。"
-                    : "当前内容还不是后端资产，暂不能保存版本。"}
-                </p>
-                <button
-                  type="button"
-                  disabled
-                  onClick={() => void saveRichContent()}
-                >
-                  <Save size={15} />
-                  <span>编辑待接入</span>
-                </button>
-              </div>
+              {saveRow}
             </div>
           ) : detailText ? (
             <div className="ws-node-detail-editor">
@@ -3039,35 +3579,303 @@ function NodeDetailDialog({
                 value={editableRich}
                 onChange={setEditableRich}
               />
-              <div className="ws-node-detail-editor-foot">
-                <p>
-                  {assetId > 0
-                    ? "保存后会生成一个新的资产版本。"
-                    : "当前内容还不是后端资产，暂不能保存版本。"}
-                </p>
-                <button
-                  type="button"
-                  disabled={saving || assetId <= 0}
-                  onClick={() => void saveRichContent()}
-                >
-                  {saving ? <Loader2 size={15} className="ws-spin" /> : <Save size={15} />}
-                  <span>{saving ? "保存中" : "保存版本"}</span>
-                </button>
-              </div>
+              {saveRow}
+            </div>
+          ) : EnergonContentView && hasDisplayOutput(displayOutput) ? (
+            <div className="ws-node-detail-editor">
+              <DocumentEditorShell>
+                <div className="ws-node-detail-output">
+                  <EnergonContentView output={displayOutput} emptyText="暂无详情" />
+                </div>
+              </DocumentEditorShell>
             </div>
           ) : (
-            <pre>{detailText || "暂无详情"}</pre>
+            <div className="ws-node-detail-editor">
+              <DocumentEditorShell>
+                <div className="ws-node-detail-output ws-node-detail-empty">
+                  暂无详情
+                </div>
+              </DocumentEditorShell>
+            </div>
           )}
         </div>
+        {hasVersionSidebar ? (
+          <aside className="ws-node-detail-side">
+            <div className="ws-node-detail-side-head">
+              <span>版本</span>
+              <strong>{versionItems.length}</strong>
+            </div>
+            <div className="ws-node-detail-side-current">
+              <span>当前使用</span>
+              <strong>{currentVersion?.title || node.title}</strong>
+              <small>{currentVersion?.summary || nodeDetailResultSummary(node)}</small>
+            </div>
+            <div className="ws-node-detail-side-list">
+              {versionItems.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  className={
+                    candidate.id === activeVersion?.id ? "is-active" : undefined
+                  }
+                  onClick={() => setActiveVersionId(candidate.id)}
+                >
+                  <span>{candidate.title}</span>
+                  {candidate.time ? <em>{candidate.time}</em> : null}
+                  <small>{candidate.summary}</small>
+                </button>
+              ))}
+            </div>
+          </aside>
+        ) : null}
       </section>
     </div>
+  );
+}
+
+type NodeDetailVersionItem = {
+  id: string;
+  title: string;
+  summary: string;
+  time: string;
+  isCurrent: boolean;
+  node: SpaceCanvasNode;
+};
+
+function nodeDetailVersionItems(node: SpaceCanvasNode): NodeDetailVersionItem[] {
+  const items: NodeDetailVersionItem[] = [];
+  const historyVersions = nodeDetailHistoryVersions(node);
+  for (const version of historyVersions) {
+    items.push(nodeDetailVersionItem(node, version, items.length === 0));
+  }
+  if (items.length) {
+    return items;
+  }
+
+  const latestVersion = node.asset?.version || (node as any).version;
+  if (latestVersion?.content != null || Number(latestVersion?.id || 0) > 0) {
+    items.push(nodeDetailVersionItem(node, latestVersion, true));
+  }
+
+  if (!items.length && nodeHasResultContent(node)) {
+    items.push({
+      id: "current-result",
+      title: "当前结果",
+      summary: nodeDetailResultSummary(node),
+      time: nodeDetailUpdatedAt(node),
+      isCurrent: true,
+      node,
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      id: "current",
+      title: "当前内容",
+      summary: node.description || "暂无内容",
+      time: nodeDetailUpdatedAt(node),
+      isCurrent: true,
+      node,
+    });
+  }
+
+  return items;
+}
+
+function nodeDetailHistoryVersions(node: SpaceCanvasNode): AssetVersion[] {
+  const candidates = firstDefined(
+    (node.asset as any)?.versions,
+    (node as any).asset?.versions,
+    (node as any).versions,
+  );
+  if (!Array.isArray(candidates)) {
+    return [];
+  }
+  return candidates
+    .filter((version): version is AssetVersion => Boolean(version))
+    .sort(
+      (left, right) =>
+        Number(right.version || right.id || 0) - Number(left.version || left.id || 0),
+    );
+}
+
+function nodeDetailVersionItem(
+  node: SpaceCanvasNode,
+  version: AssetVersion,
+  isCurrent: boolean,
+): NodeDetailVersionItem {
+  const versionNode: SpaceCanvasNode = {
+    ...node,
+    asset: node.asset
+      ? { ...node.asset, version, version_id: version.id || node.asset.version_id }
+      : node.asset,
+    version,
+  };
+  return {
+    id: `version-${Number(version.id || 0) || Number(version.version || 0) || "latest"}`,
+    title: Number(version.version || 0)
+      ? `第 ${Number(version.version)} 版`
+      : isCurrent
+        ? "当前版本"
+        : "历史版本",
+    summary: nodeDetailResultSummary(versionNode),
+    time: formatNodeDetailTime(version.created_at),
+    isCurrent,
+    node: versionNode,
+  };
+}
+
+function nodeDetailUpdatedAt(node: SpaceCanvasNode) {
+  const raw = firstDefined(
+    node.asset?.version?.created_at,
+    (node as any).version?.created_at,
+    node.asset?.created_at,
+    (node as any).created_at,
+  );
+  return formatNodeDetailTime(raw);
+}
+
+function formatNodeDetailTime(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text
+    .replace("T", " ")
+    .replace(/\.\d+(Z)?$/, "")
+    .replace(/Z$/, "");
+}
+
+function nodeDetailResultSummary(node: SpaceCanvasNode) {
+  const preview = nodeDetailPreview(node);
+  if (preview.imageUrl) {
+    return "图片内容";
+  }
+  if (preview.videoUrl) {
+    return "视频内容";
+  }
+  if (preview.audioUrl) {
+    return "音频内容";
+  }
+  if (preview.fileUrl) {
+    return preview.text || "文件内容";
+  }
+  return (
+    displayTextFromOutput(nodeEnergonOutput(node), node.description || "") ||
+    "暂无内容"
   );
 }
 
 function parseEditableRichContent(value: string) {
   const parsed = parseMaybeJSON(value);
   const rich = safeRichDocument(parsed);
-  return rich || plainTextToRichDocument(value);
+  return rich || markdownToRichDocument(value) || plainTextToRichDocument(value);
+}
+
+function richDocumentToEditableMarkdown(value: ReturnType<typeof richDocument>) {
+  if (!value) {
+    return "";
+  }
+  return richNodesToEditableMarkdown(value.content || []).trim();
+}
+
+function richNodesToEditableMarkdown(nodes: any[], depth = 0): string {
+  return nodes
+    .map((node) => richNodeToEditableMarkdown(node, depth))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function richNodeToEditableMarkdown(node: any, depth = 0): string {
+  switch (node?.type) {
+    case "heading": {
+      const level = Math.min(Math.max(Number(node.attrs?.level || 2), 1), 6);
+      return `${"#".repeat(level)} ${richInlineToEditableMarkdown(
+        node.content || [],
+      )}`;
+    }
+    case "paragraph":
+      return richInlineToEditableMarkdown(node.content || []);
+    case "bulletList":
+      return (node.content || [])
+        .map((child: any) => richListItemToEditableMarkdown(child, depth, "-"))
+        .join("\n");
+    case "orderedList":
+      return (node.content || [])
+        .map((child: any, index: number) =>
+          richListItemToEditableMarkdown(child, depth, `${index + 1}.`),
+        )
+        .join("\n");
+    case "blockquote":
+      return richNodesToEditableMarkdown(node.content || [], depth)
+        .split(/\r?\n/)
+        .map((line) => `> ${line}`)
+        .join("\n");
+    case "horizontalRule":
+      return "---";
+    case "editorMediaImage":
+      return node.attrs?.src
+        ? `![${String(node.attrs.alt || "图片")}](${String(node.attrs.src)})`
+        : "";
+    default:
+      if (Array.isArray(node?.content)) {
+        return richNodesToEditableMarkdown(node.content, depth);
+      }
+      return node?.text ? String(node.text) : "";
+  }
+}
+
+function richListItemToEditableMarkdown(
+  node: any,
+  depth: number,
+  marker: string,
+) {
+  const indent = "  ".repeat(depth);
+  const blocks = Array.isArray(node?.content) ? node.content : [];
+  const [firstBlock, ...restBlocks] = blocks;
+  const firstText = richNodeToEditableMarkdown(firstBlock, depth).trim();
+  const restText = richNodesToEditableMarkdown(restBlocks, depth + 1);
+  return [`${indent}${marker} ${firstText}`, restText]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function richInlineToEditableMarkdown(nodes: any[]) {
+  return nodes
+    .map((node) => {
+      if (node?.type === "hardBreak") {
+        return "\n";
+      }
+      if (node?.type !== "text") {
+        return richNodeToEditableMarkdown(node);
+      }
+      let text = String(node.text || "");
+      for (const mark of node.marks || []) {
+        switch (mark?.type) {
+          case "bold":
+            text = `**${text}**`;
+            break;
+          case "italic":
+            text = `*${text}*`;
+            break;
+          case "strike":
+            text = `~~${text}~~`;
+            break;
+          case "code":
+            text = `\`${text}\``;
+            break;
+          case "link":
+            if (mark.attrs?.href) {
+              text = `[${text}](${String(mark.attrs.href)})`;
+            }
+            break;
+          default:
+            break;
+        }
+      }
+      return text;
+    })
+    .join("");
 }
 
 function CanvasConfirmDialog({
@@ -3154,14 +3962,383 @@ function RichDocumentEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
-  return (
-    <textarea
-      className="ws-rich-document-editor"
-      value={value}
-      placeholder="编辑内容"
-      onChange={(event) => onChange(event.target.value)}
-    />
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const localValueRef = useRef(value);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    if (mountedRef.current && value === localValueRef.current) {
+      return;
+    }
+    editor.innerHTML = markdownToEditorHtml(value);
+    localValueRef.current = value;
+    mountedRef.current = true;
+  }, [value]);
+  const commitChange = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    const nextValue = editorElementToMarkdown(editor);
+    localValueRef.current = nextValue;
+    onChange(nextValue);
+  }, [onChange]);
+  const runCommand = useCallback(
+    (command: DocumentEditorCommand) => {
+      const editor = editorRef.current;
+      if (!editor) {
+        return;
+      }
+      applyRichEditorCommand(editor, command, commitChange);
+    },
+    [commitChange],
   );
+  return (
+    <DocumentEditorShell onCommand={runCommand}>
+      <div
+        ref={editorRef}
+        className="ws-rich-document-editor"
+        contentEditable
+        suppressContentEditableWarning
+        data-placeholder="编辑内容"
+        onInput={commitChange}
+      />
+    </DocumentEditorShell>
+  );
+}
+
+type DocumentEditorCommand =
+  | "bold"
+  | "italic"
+  | "strike"
+  | "code"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "bullet"
+  | "ordered"
+  | "quote"
+  | "hr"
+  | "emoji"
+  | "image"
+  | "undo"
+  | "redo";
+
+function DocumentEditorShell({
+  children,
+  onCommand,
+}: {
+  children: ReactNode;
+  onCommand?: (command: DocumentEditorCommand) => void;
+}) {
+  return (
+    <div className="ws-document-editor-shell">
+      {onCommand ? <DocumentEditorToolbar onCommand={onCommand} /> : null}
+      <div className="ws-document-editor-content">{children}</div>
+    </div>
+  );
+}
+
+function DocumentEditorToolbar({
+  onCommand,
+}: {
+  onCommand: (command: DocumentEditorCommand) => void;
+}) {
+  const groups: Array<
+    Array<{
+      label: string;
+      icon?: ReactNode;
+      text?: string;
+      command: DocumentEditorCommand;
+    }>
+  > = [
+    [
+      { label: "加粗", icon: <Bold size={16} />, command: "bold" },
+      { label: "斜体", icon: <Italic size={16} />, command: "italic" },
+      { label: "删除线", icon: <Strikethrough size={16} />, command: "strike" },
+      { label: "代码", icon: <Code2 size={16} />, command: "code" },
+    ],
+    [
+      { label: "一级标题", text: "H1", command: "h1" },
+      { label: "二级标题", text: "H2", command: "h2" },
+      { label: "三级标题", text: "H3", command: "h3" },
+    ],
+    [
+      { label: "项目列表", icon: <List size={16} />, command: "bullet" },
+      { label: "编号列表", icon: <ListOrdered size={16} />, command: "ordered" },
+      { label: "引用", icon: <Quote size={16} />, command: "quote" },
+    ],
+    [
+      { label: "分割线", text: "-", command: "hr" },
+      { label: "表情", icon: <Smile size={16} />, command: "emoji" },
+      { label: "图片", icon: <ImageIcon size={16} />, command: "image" },
+    ],
+    [
+      { label: "撤销", icon: <Undo2 size={16} />, command: "undo" },
+      { label: "重做", icon: <Redo2 size={16} />, command: "redo" },
+    ],
+  ];
+  return (
+    <div className="ws-document-editor-toolbar" aria-label="编辑器工具栏">
+      {groups.map((group, groupIndex) => (
+        <div className="ws-document-toolbar-group" key={groupIndex}>
+          {group.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              title={item.label}
+              aria-label={item.label}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onCommand(item.command)}
+            >
+              {item.icon || <span>{item.text}</span>}
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function applyRichEditorCommand(
+  editor: HTMLElement,
+  command: DocumentEditorCommand,
+  onChange: () => void,
+) {
+  editor.focus();
+  const selectionText = window.getSelection()?.toString() || "";
+  switch (command) {
+    case "bold":
+      document.execCommand("bold");
+      break;
+    case "italic":
+      document.execCommand("italic");
+      break;
+    case "strike":
+      document.execCommand("strikeThrough");
+      break;
+    case "code":
+      document.execCommand(
+        "insertHTML",
+        false,
+        `<code>${escapeHtml(selectionText || "代码")}</code>`,
+      );
+      break;
+    case "h1":
+      document.execCommand("formatBlock", false, "H1");
+      break;
+    case "h2":
+      document.execCommand("formatBlock", false, "H2");
+      break;
+    case "h3":
+      document.execCommand("formatBlock", false, "H3");
+      break;
+    case "bullet":
+      document.execCommand("insertUnorderedList");
+      break;
+    case "ordered":
+      document.execCommand("insertOrderedList");
+      break;
+    case "quote":
+      document.execCommand("formatBlock", false, "BLOCKQUOTE");
+      break;
+    case "hr":
+      document.execCommand("insertHorizontalRule");
+      break;
+    case "emoji":
+      document.execCommand("insertText", false, "🙂");
+      break;
+    case "image":
+      document.execCommand("insertHTML", false, "![图片](图片地址)");
+      break;
+    case "undo":
+      document.execCommand("undo");
+      break;
+    case "redo":
+      document.execCommand("redo");
+      break;
+    default:
+      break;
+  }
+  requestAnimationFrame(onChange);
+}
+
+function markdownToEditorHtml(value: string) {
+  const lines = String(value || "").split(/\r?\n/);
+  const blocks: string[] = [];
+  let paragraph: string[] = [];
+  let listItems: string[] = [];
+  let listType: "ul" | "ol" | "" = "";
+
+  const flushParagraph = () => {
+    const text = paragraph.join(" ").trim();
+    paragraph = [];
+    if (text) {
+      blocks.push(`<p>${markdownInlineToHtml(text)}</p>`);
+    }
+  };
+  const flushList = () => {
+    if (!listType || listItems.length === 0) {
+      return;
+    }
+    blocks.push(
+      `<${listType}>${listItems
+        .map((item) => `<li>${markdownInlineToHtml(item)}</li>`)
+        .join("")}</${listType}>`,
+    );
+    listItems = [];
+    listType = "";
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    if (/^---+$/.test(line)) {
+      flushParagraph();
+      flushList();
+      blocks.push("<hr>");
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(6, heading[1].length);
+      blocks.push(`<h${level}>${markdownInlineToHtml(heading[2])}</h${level}>`);
+      continue;
+    }
+    const bullet = /^[-*]\s+(.+)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      if (listType && listType !== "ul") {
+        flushList();
+      }
+      listType = "ul";
+      listItems.push(bullet[1]);
+      continue;
+    }
+    const ordered = /^\d+\.\s+(.+)$/.exec(line);
+    if (ordered) {
+      flushParagraph();
+      if (listType && listType !== "ol") {
+        flushList();
+      }
+      listType = "ol";
+      listItems.push(ordered[1]);
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+  }
+  flushParagraph();
+  flushList();
+  return blocks.length > 0 ? blocks.join("") : "<p><br></p>";
+}
+
+function markdownInlineToHtml(value: string) {
+  return escapeHtml(value)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/~~([^~]+)~~/g, "<s>$1</s>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+}
+
+function editorElementToMarkdown(editor: HTMLElement) {
+  const blocks = Array.from(editor.childNodes)
+    .map((node) => editorBlockToMarkdown(node))
+    .filter(Boolean);
+  return blocks.join("\n\n").trim();
+}
+
+function editorBlockToMarkdown(node: ChildNode): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return String(node.textContent || "").trim();
+  }
+  if (!(node instanceof HTMLElement)) {
+    return "";
+  }
+  const tag = node.tagName.toLowerCase();
+  if (/^h[1-6]$/.test(tag)) {
+    const level = Number(tag.slice(1));
+    return `${"#".repeat(level)} ${editorInlineToMarkdown(node)}`.trim();
+  }
+  if (tag === "ul" || tag === "ol") {
+    return Array.from(node.children)
+      .filter((child) => child.tagName.toLowerCase() === "li")
+      .map((child, index) => {
+        const marker = tag === "ol" ? `${index + 1}.` : "-";
+        return `${marker} ${editorInlineToMarkdown(child as HTMLElement)}`.trim();
+      })
+      .join("\n");
+  }
+  if (tag === "blockquote") {
+    return editorInlineToMarkdown(node)
+      .split(/\r?\n/)
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+  if (tag === "hr") {
+    return "---";
+  }
+  if (tag === "br") {
+    return "";
+  }
+  return editorInlineToMarkdown(node).trim();
+}
+
+function editorInlineToMarkdown(node: ChildNode): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return String(node.textContent || "");
+  }
+  if (!(node instanceof HTMLElement)) {
+    return "";
+  }
+  const tag = node.tagName.toLowerCase();
+  const text = Array.from(node.childNodes).map(editorInlineToMarkdown).join("");
+  switch (tag) {
+    case "strong":
+    case "b":
+      return text ? `**${text}**` : "";
+    case "em":
+    case "i":
+      return text ? `*${text}*` : "";
+    case "s":
+    case "strike":
+    case "del":
+      return text ? `~~${text}~~` : "";
+    case "code":
+      return text ? `\`${text}\`` : "";
+    case "a": {
+      const href = node.getAttribute("href");
+      return href && text ? `[${text}](${href})` : text;
+    }
+    case "img": {
+      const src = node.getAttribute("src");
+      const alt = node.getAttribute("alt") || "图片";
+      return src ? `![${alt}](${src})` : "";
+    }
+    case "br":
+      return "\n";
+    default:
+      return text;
+  }
+}
+
+function escapeHtml(value: string) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function RichDocumentView({
@@ -3818,6 +4995,26 @@ function buildCanvasExecutionGraph(
   };
 }
 
+function canvasExecutionNodeIds(
+  startNodeId: string,
+  nodes: SpaceCanvasNode[],
+  edges: SpaceCanvasEdge[],
+) {
+  const graph = buildCanvasExecutionGraph(nodes, edges);
+  const result = new Set<string>();
+  const visit = (nodeId: string) => {
+    for (const targetId of graph.outgoing.get(nodeId) || []) {
+      if (result.has(targetId)) {
+        continue;
+      }
+      result.add(targetId);
+      visit(targetId);
+    }
+  };
+  visit(startNodeId);
+  return [...result];
+}
+
 async function runCanvasExecutionNode(
   input: CanvasStartRunInput,
   graph: CanvasExecutionGraph,
@@ -4056,6 +5253,7 @@ async function executeCanvasFunctionNode(
       assetCateId: Number(node.assetCateId || input.assetCate.id || 0),
       name: functionAssetName(node, inputContext),
       kind: String(node.kind || input.assetCate.kind || ""),
+      role: "content",
       content: output,
     });
     input.onAssetCreated(asset);
@@ -4478,6 +5676,12 @@ function fixedTiptapRichDocument(value: any, seen = new Set<any>()): any {
     return null;
   }
   seen.add(parsed);
+  const markdownRich = richDocumentFromMarkdownPayload(
+    parsed as Record<string, any>,
+  );
+  if (markdownRich) {
+    return markdownRich;
+  }
   if (isRichDocumentLike(parsed)) {
     return fixedTiptapRichDocumentFromTextDoc(parsed, seen) || parsed;
   }
@@ -4747,6 +5951,10 @@ function richDocumentFromPayload(
   if (isRichDocumentLike(payload)) {
     return payload;
   }
+  const markdownRich = richDocumentFromMarkdownPayload(payload);
+  if (markdownRich) {
+    return markdownRich;
+  }
   if (
     Array.isArray(payload.content) &&
     (String(payload.format || "").toLowerCase() === "rich_json" ||
@@ -4762,6 +5970,18 @@ function richDocumentFromPayload(
     payload.rich != null
   ) {
     return fixedRichDocument(payload.rich);
+  }
+  return null;
+}
+
+function richDocumentFromMarkdownPayload(
+  payload: Record<string, any>,
+): ReturnType<typeof richDocument> {
+  if (
+    String(payload?.format || "").toLowerCase() === "markdown" &&
+    typeof payload?.text === "string"
+  ) {
+    return markdownToRichDocument(payload.text);
   }
   return null;
 }
@@ -5614,6 +6834,7 @@ function looksLikeStructuredJSONSnippet(value: string) {
 function buildComposerAssetLibrary(
   space: SpaceBootstrap | null,
   inputContext: NodeInputContext | null,
+  activeCate?: AssetCate | null,
 ): { current: ComposerAssetItem[]; assets: ComposerAssetItem[] } {
   const current = (inputContext?.sources || []).map((source) => ({
     id: source.nodeId,
@@ -5633,6 +6854,7 @@ function buildComposerAssetLibrary(
       id: String(asset.id),
       title: asset.name || `资产 ${asset.id}`,
       kind: composerKindFromPreview(preview, String(asset.kind || "")),
+      role: activeCate ? assetRoleForView(asset, activeCate) : String(asset.role || ""),
       source: "asset" as const,
       output,
       preview,
@@ -5661,31 +6883,37 @@ async function uploadSpaceFiles(
 ): Promise<UploadPreview[]> {
   const previews: UploadPreview[] = [];
   for (const file of files) {
+    const hash = await computeSpaceUploadHash(file);
     const init = await initSpaceUpload({
       projectId,
       ruleId,
       name: file.name,
       size: file.size,
       mime: file.type,
+      hash,
       kind: uploadKindFromFile(file),
     });
     if (String(init.transport || "relay").toLowerCase() === "direct") {
-      throw new Error("当前导入入口暂不支持前端直传规则");
-    }
-    const chunkSize = Math.max(1, Number(init.chunk_size || file.size || 1));
-    const chunkTotal = Math.max(
-      1,
-      Number(init.chunk_total || Math.ceil(file.size / chunkSize)),
-    );
-    for (let index = 0; index < chunkTotal; index += 1) {
-      const start = index * chunkSize;
-      const end = Math.min(file.size, start + chunkSize);
-      await uploadSpacePart({
-        projectId,
-        sessionId: Number(init.session_id || 0),
-        partNumber: index + 1,
-        file: file.slice(start, end),
-      });
+      if (!uploadFileDirect) {
+        throw new Error("当前导入入口缺少前端直传能力");
+      }
+      await uploadFileDirect(file, init.direct);
+    } else {
+      const chunkSize = Math.max(1, Number(init.chunk_size || file.size || 1));
+      const chunkTotal = Math.max(
+        1,
+        Number(init.chunk_total || Math.ceil(file.size / chunkSize)),
+      );
+      for (let index = 0; index < chunkTotal; index += 1) {
+        const start = index * chunkSize;
+        const end = Math.min(file.size, start + chunkSize);
+        await uploadSpacePart({
+          projectId,
+          sessionId: Number(init.session_id || 0),
+          partNumber: index + 1,
+          file: file.slice(start, end),
+        });
+      }
     }
     const completed = await completeSpaceUpload({
       projectId,
@@ -5694,6 +6922,14 @@ async function uploadSpaceFiles(
     previews.push(uploadPreviewFromPayload(completed, file));
   }
   return previews;
+}
+
+async function computeSpaceUploadHash(file: File) {
+  const hash = digestUploadFile ? await digestUploadFile(file) : "";
+  if (!hash) {
+    throw new Error("文件标识生成失败，请重新选择文件");
+  }
+  return hash;
 }
 
 function uploadKindFromFile(file: File) {
@@ -5962,6 +7198,25 @@ function stableStringifyCanvas(canvas: SpaceCanvasState) {
     edges: canvas.edges,
     viewport: canvas.viewport || {},
   });
+}
+
+function persistentCanvasState(canvas: SpaceCanvasState): SpaceCanvasState {
+  return {
+    ...canvas,
+    nodes: canvas.nodes.map((node) => {
+      const { feedbackRequests: _feedbackRequests, ...rest } = node as any;
+      return rest as SpaceCanvasNode;
+    }),
+  };
+}
+
+function persistentCanvasMap(canvases: Record<string, SpaceCanvasState>) {
+  return Object.fromEntries(
+    Object.entries(canvases).map(([key, canvas]) => [
+      key,
+      persistentCanvasState(canvas),
+    ]),
+  );
 }
 
 function resolveProximityConnection(
@@ -6237,6 +7492,9 @@ function NodeSelectionOverlays({
   const onRunStartNode = (node as any).onRunStartNode as
     | NodeStartRunner
     | undefined;
+  const onClearFeedbackRecords = (node as any).onClearFeedbackRecords as
+    | ((nodeIds: string[]) => void)
+    | undefined;
   const requestConfirm = (node as any).requestConfirm as
     | ConfirmRequester
     | undefined;
@@ -6253,6 +7511,7 @@ function NodeSelectionOverlays({
         onAddConfiguredNode={onAddConfiguredNode}
         onAssetCreated={onAssetCreated}
         onRunStartNode={onRunStartNode}
+        onClearFeedbackRecords={onClearFeedbackRecords}
         requestConfirm={requestConfirm}
       />
     </>
@@ -6657,6 +7916,7 @@ function NodeBottomSettings({
   onAddConfiguredNode,
   onAssetCreated,
   onRunStartNode,
+  onClearFeedbackRecords,
   requestConfirm,
 }: {
   node: SpaceCanvasNode;
@@ -6668,6 +7928,7 @@ function NodeBottomSettings({
   onAddConfiguredNode?: AddConfiguredNodeHandler;
   onAssetCreated?: (asset: ProjectAsset) => void;
   onRunStartNode?: NodeStartRunner;
+  onClearFeedbackRecords?: (nodeIds: string[]) => void;
   requestConfirm?: ConfirmRequester;
 }) {
   const [prompt, setPrompt] = useState("");
@@ -6707,9 +7968,11 @@ function NodeBottomSettings({
   const overlayStyle = stableNodeOverlayStyle(viewportZoom);
   const flowRunOverlayStyle = stableFlowRunOverlayStyle();
   const space = ((node as any).space || null) as SpaceBootstrap | null;
+  const nodeAssetCateId = Number(node.assetCateId || 0);
+  const nodeAssetCate = space ? assetCateById(space, nodeAssetCateId) : null;
   const assetLibrary = useMemo(
-    () => buildComposerAssetLibrary(space, inputContext),
-    [inputContext, space],
+    () => buildComposerAssetLibrary(space, inputContext, nodeAssetCate),
+    [inputContext, nodeAssetCateId, space],
   );
 
   useEffect(() => {
@@ -7235,6 +8498,7 @@ function NodeBottomSettings({
   }
 
   const runNodeNow = async () => {
+    onClearFeedbackRecords?.([node.id]);
     setRunning(true);
     setRunningNode({
       nodeId: node.id,
@@ -7308,6 +8572,7 @@ function NodeBottomSettings({
             assetCateId: Number(node.assetCateId || 0),
             name: functionAssetName(node, inputContext),
             kind: String(node.kind || ""),
+            role: "content",
             content: upstreamOutput,
           });
           onAssetCreated?.(asset);
@@ -7936,10 +9201,7 @@ function stableFlowRunOverlayStyle(): CSSProperties {
 }
 
 function shouldConfirmNodeRun(node: SpaceCanvasNode) {
-  if (node.type === "function") {
-    return node.functionOption?.key === "start";
-  }
-  return node.type === "power" || node.type === "agent" || node.type === "flow";
+  return node.type === "function" && node.functionOption?.key === "start";
 }
 
 function nodeRunConfirmDescription(node: SpaceCanvasNode) {
@@ -8168,10 +9430,10 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
     const renderResultCard = shouldRenderFunctionResultCard(node);
     const inputHandleStyle: CSSProperties = renderResultCard
       ? { left: "0px", top: "19px" }
-      : { left: "-8px" };
+      : { left: "0px" };
     const outputHandleStyle: CSSProperties = renderResultCard
       ? { left: "128px", right: "auto", top: "19px" }
-      : { right: "-8px" };
+      : { right: "0px" };
     const runFunctionNode = () => {
       if (nodeRunning) {
         return;

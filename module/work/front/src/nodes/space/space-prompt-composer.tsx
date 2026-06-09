@@ -34,6 +34,7 @@ export type ComposerAssetItem = {
   id: string;
   title: string;
   kind: string;
+  role?: "content" | "material" | string;
   source: "current" | "asset";
   output?: unknown;
   preview: ComposerAssetPreview;
@@ -316,8 +317,6 @@ export function PromptComposer({
                   assetPickerParam,
                   appendUploadPreviews(assetPickerParam, current, previews),
                 );
-                setAssetPickerParam(null);
-                onAssetPickerClose?.();
               }}
               onUploadFiles={onLocalUpload}
             />,
@@ -435,12 +434,20 @@ export function AssetReferenceDialog({
   ) => Promise<UploadPreview[]>;
 }) {
   const [tab, setTab] = useState<"current" | "asset">("current");
+  const [roleFilter, setRoleFilter] = useState<"all" | "content" | "material">(
+    "all",
+  );
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const acceptedKinds = acceptedAssetKinds(param);
-  const items = filterComposerAssets(library[tab] || [], acceptedKinds, query);
+  const items = filterComposerAssets(
+    library[tab] || [],
+    acceptedKinds,
+    roleFilter,
+    query,
+  );
 
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
@@ -454,6 +461,8 @@ export function AssetReferenceDialog({
         ? await onUploadFiles(files, param)
         : files.map(fileToUploadPreview);
       onLocalUpload(previews);
+      setTab("asset");
+      setRoleFilter("material");
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "上传失败");
     } finally {
@@ -514,6 +523,24 @@ export function AssetReferenceDialog({
               ? acceptedKinds.map(kindLabel).join(" / ")
               : "全部类型"}
           </span>
+          <div className="ws-asset-role-tabs" aria-label="内容筛选">
+            {[
+              ["all", "全部"],
+              ["content", "内容"],
+              ["material", "素材"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={roleFilter === key ? "is-active" : ""}
+                onClick={() =>
+                  setRoleFilter(key as "all" | "content" | "material")
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             disabled={uploading}
@@ -687,10 +714,18 @@ function acceptedAssetKinds(param: PowerParam) {
 function filterComposerAssets(
   items: ComposerAssetItem[],
   acceptedKinds: string[],
+  roleFilter: "all" | "content" | "material",
   query: string,
 ) {
   const normalizedQuery = query.trim().toLowerCase();
   return items.filter((item) => {
+    if (
+      roleFilter !== "all" &&
+      item.source === "asset" &&
+      String(item.role || "").toLowerCase() !== roleFilter
+    ) {
+      return false;
+    }
     if (
       acceptedKinds.length > 0 &&
       !acceptedKinds.includes(String(item.kind || "").toLowerCase())

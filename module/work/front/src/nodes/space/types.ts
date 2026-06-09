@@ -1,5 +1,6 @@
 export type AssetKind = "text" | "image" | "audio" | "video" | "file" | "mixed" | string;
 export type AssetCardinality = "single" | "multiple" | "ordered" | string;
+export type AssetRole = "content" | "material" | string;
 export type SpaceNodeType = "asset" | "power" | "agent" | "flow" | "function";
 
 export type WorkProject = {
@@ -162,6 +163,7 @@ export type ProjectAsset = {
   asset_cate_id: number;
   name: string;
   kind: AssetKind;
+  role?: AssetRole;
   version_id: number;
   sort: number;
   created_at?: string;

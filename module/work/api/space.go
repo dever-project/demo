@@ -182,6 +182,7 @@ func (Space) PostAsset(c *server.Context) error {
 		bodyUint64(body, "asset_cate_id", "assetCateId"),
 		bodyText(body, "name"),
 		bodyText(body, "kind"),
+		bodyText(body, "role", "asset_role", "assetRole"),
 		body["content"],
 	)
 	return workJSON(c, data, err)
