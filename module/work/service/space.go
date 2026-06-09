@@ -12,6 +12,7 @@ import (
 	agentmodel "my/package/bot/model/agent"
 	teammodel "my/package/bot/model/team"
 	agentservice "my/package/bot/service/agent"
+	agentaction "my/package/bot/service/agent/action"
 	assetservice "my/package/bot/service/asset"
 	bodyservice "my/package/bot/service/body"
 	teamservice "my/package/bot/service/team"
@@ -33,6 +34,7 @@ type CanvasAgentRunRequest struct {
 	NodeName string
 	AgentID  uint64
 	Input    map[string]any
+	History  []any
 }
 
 func NewSpaceService() SpaceService {
@@ -172,6 +174,59 @@ func (s SpaceService) SaveAssetVersion(ctx context.Context, projectID uint64, as
 	return map[string]any{
 		"asset": item,
 	}, nil
+}
+
+func (s SpaceService) SaveCanvasAsset(ctx context.Context, projectID uint64, assetCateID uint64, name string, kind string, content any) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	assetCate, err := s.requireProjectAssetCate(ctx, project.TeamID, assetCateID)
+	if err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = assetCate.Name
+	}
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		kind = assetCate.Kind
+	}
+	savedAsset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
+		ProjectID:   project.ID,
+		BodyID:      project.BodyID,
+		TeamID:      project.TeamID,
+		AssetCateID: assetCate.ID,
+		ReleaseID:   project.ReleaseID,
+		Name:        name,
+		Kind:        kind,
+		Content:     content,
+		Sort:        100,
+	})
+	if err != nil {
+		return nil, err
+	}
+	item := assetservice.AssetToMap(*savedAsset)
+	item["version"] = assetservice.VersionToMap(*version)
+	return map[string]any{
+		"asset": item,
+	}, nil
+}
+
+func (s SpaceService) requireProjectAssetCate(ctx context.Context, teamID uint64, assetCateID uint64) (*teammodel.AssetCate, error) {
+	if teamID == 0 || assetCateID == 0 {
+		return nil, fmt.Errorf("资产分类不存在")
+	}
+	row := teammodel.NewAssetCateModel().Find(ctx, map[string]any{
+		"id":      assetCateID,
+		"team_id": teamID,
+		"status":  teammodel.StatusEnabled,
+	})
+	if row == nil {
+		return nil, fmt.Errorf("资产分类不存在")
+	}
+	return row, nil
 }
 
 func (s SpaceService) PrepareUploadInit(ctx context.Context, projectID uint64, body map[string]any) error {
@@ -325,18 +380,40 @@ func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req 
 		return nil, fmt.Errorf("智能体不存在或未开启")
 	}
 	input := cloneSpaceInput(req.Input)
+	var internalRunID uint64
+	var internalRequestID string
 	result, err := s.agent.RunInternal(ctx, agentservice.InternalRunRequest{
 		AgentID: req.AgentID,
 		Input:   input,
-		Options: map[string]any{"full_runtime": false},
+		History: req.History,
+		Options: map[string]any{"full_runtime": true},
+		OnRunCreated: func(runID uint64, requestID string) {
+			internalRunID = runID
+			internalRequestID = strings.TrimSpace(requestID)
+		},
 	})
 	if err != nil {
+		if fallback := canvasAgentFallbackResult(ctx, internalRunID, internalRequestID, result); len(fallback.Output) > 0 {
+			result = fallback
+		} else {
+			return map[string]any{
+				"run_id":     result.RunID,
+				"request_id": result.RequestID,
+				"status":     "fail",
+				"output":     result.Output,
+			}, err
+		}
+	}
+	if interaction := canvasAgentInteraction(result.Output); len(interaction) > 0 {
 		return map[string]any{
-			"run_id":     result.RunID,
-			"request_id": result.RequestID,
-			"status":     "fail",
-			"output":     result.Output,
-		}, err
+			"run_id":      result.RunID,
+			"request_id":  result.RequestID,
+			"status":      "waiting",
+			"output":      result.Output,
+			"interaction": interaction,
+			"text":        strings.TrimSpace(result.Summary),
+			"pending":     true,
+		}, nil
 	}
 	nodeName := strings.TrimSpace(req.NodeName)
 	if nodeName == "" {
@@ -540,6 +617,123 @@ func cloneSpaceInput(input map[string]any) map[string]any {
 		result[key] = value
 	}
 	return result
+}
+
+func canvasAgentInteraction(output map[string]any) map[string]any {
+	if len(output) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(spaceTextValue(output["event"]), "interaction") {
+		return nil
+	}
+	interaction := spaceMapValue(output["interaction"])
+	if spaceTextValue(interaction["type"]) == "" {
+		return nil
+	}
+	return interaction
+}
+
+func canvasAgentFallbackOutput(output map[string]any, summary string) map[string]any {
+	fallback := agentaction.NormalizeAgentFinalOutput(output, summary)
+	if !agentaction.HasDisplayOutput(fallback) {
+		return nil
+	}
+	return fallback
+}
+
+func canvasAgentFallbackResult(ctx context.Context, runID uint64, requestID string, current agentservice.InternalRunResult) agentservice.InternalRunResult {
+	if fallback := canvasAgentFallbackOutput(current.Output, current.Summary); len(fallback) > 0 {
+		current.Output = fallback
+		current.Summary = strings.TrimSpace(spaceTextValue(fallback["text"]))
+		return current
+	}
+	run := canvasAgentRunRecord(ctx, firstUint64(current.RunID, runID), firstText(current.RequestID, requestID))
+	if run == nil {
+		return agentservice.InternalRunResult{}
+	}
+	output := canvasAgentFallbackOutput(internalCanvasAgentOutput(run.Output), "")
+	if len(output) == 0 {
+		return agentservice.InternalRunResult{}
+	}
+	return agentservice.InternalRunResult{
+		Output:    output,
+		Summary:   strings.TrimSpace(agentaction.SummaryText(output)),
+		RequestID: firstText(current.RequestID, run.RequestID, requestID),
+		RunID:     firstUint64(current.RunID, run.ID, runID),
+	}
+}
+
+func canvasAgentRunRecord(ctx context.Context, runID uint64, requestID string) *agentmodel.Run {
+	if runID > 0 {
+		if run := agentmodel.NewRunModel().Find(ctx, map[string]any{"id": runID}); run != nil {
+			return run
+		}
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return nil
+	}
+	return agentmodel.NewRunModel().Find(ctx, map[string]any{"request_id": requestID})
+}
+
+func internalCanvasAgentOutput(raw string) map[string]any {
+	var value any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &value); err != nil {
+		if text := strings.TrimSpace(raw); text != "" {
+			return map[string]any{"text": text}
+		}
+		return map[string]any{}
+	}
+	if row, ok := value.(map[string]any); ok {
+		return row
+	}
+	if text := spaceTextValue(value); text != "" {
+		return map[string]any{"text": text}
+	}
+	if value != nil {
+		return map[string]any{"value": value}
+	}
+	return map[string]any{}
+}
+
+func firstUint64(values ...uint64) uint64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstText(values ...any) string {
+	for _, value := range values {
+		if text := spaceTextValue(value); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func spaceMapValue(raw any) map[string]any {
+	if value, ok := raw.(map[string]any); ok && value != nil {
+		return value
+	}
+	return nil
+}
+
+func spaceTextValue(raw any) string {
+	switch value := raw.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case fmt.Stringer:
+		return strings.TrimSpace(value.String())
+	default:
+		text := strings.TrimSpace(fmt.Sprint(raw))
+		if text == "<nil>" {
+			return ""
+		}
+		return text
+	}
 }
 
 func powerKindOptions(powers []teamservice.PowerOption) []teamservice.PowerKindOption {

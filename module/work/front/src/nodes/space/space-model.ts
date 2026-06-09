@@ -165,7 +165,7 @@ export function createLocalNode(
     function: [
       selectedFunction?.label || "保存节点",
       "功能",
-      selectedFunction?.description || "保存、条件、上下文、人工确认等控制节点。",
+      selectedFunction?.description || "开始、导入、保存、展示等功能节点。",
     ],
   };
   const [title, subtitle, description] = labels[type];
@@ -524,7 +524,7 @@ function nodeDefaultSize(type: SpaceCanvasNode["type"]) {
     case "flow":
       return { width: 210, height: 160 };
     case "function":
-      return { width: 150, height: 140 };
+      return { width: 128, height: 46 };
     case "power":
       return { width: 180, height: 180 };
     default:

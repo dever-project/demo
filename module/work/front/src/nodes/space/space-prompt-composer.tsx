@@ -62,6 +62,7 @@ type PromptComposerProps = {
     param: PowerParam,
     alias: string,
   ) => void;
+  onAssetPickerClose?: () => void;
   onLocalUpload?: (
     files: File[],
     param: PowerParam,
@@ -101,6 +102,7 @@ export function PromptComposer({
   onParamChange,
   onSourceChange,
   onAssetReference,
+  onAssetPickerClose,
   onLocalUpload,
   onSubmit,
 }: PromptComposerProps) {
@@ -282,7 +284,10 @@ export function PromptComposer({
                 uploadPreviews[assetPickerParam.key] ||
                 previewsFromValue(paramValues[assetPickerParam.key])
               }
-              onClose={() => setAssetPickerParam(null)}
+              onClose={() => {
+                setAssetPickerParam(null);
+                onAssetPickerClose?.();
+              }}
               onPick={(asset) => {
                 const current =
                   uploadPreviews[assetPickerParam.key] ||
@@ -301,6 +306,7 @@ export function PromptComposer({
                 onChange(appendReferenceMention(value, alias));
                 onAssetReference?.(asset, assetPickerParam, alias);
                 setAssetPickerParam(null);
+                onAssetPickerClose?.();
               }}
               onLocalUpload={(previews) => {
                 const current =
@@ -311,6 +317,7 @@ export function PromptComposer({
                   appendUploadPreviews(assetPickerParam, current, previews),
                 );
                 setAssetPickerParam(null);
+                onAssetPickerClose?.();
               }}
               onUploadFiles={onLocalUpload}
             />,

@@ -116,6 +116,8 @@ export async function runSpaceAgent(input: {
   prompt: string;
   files?: unknown[];
   context?: unknown[];
+  history?: unknown[];
+  feedback?: Record<string, unknown>;
 }) {
   const result = await request(joinSiteApi("space/run_canvas_agent"), "post", {
     project_id: input.projectId,
@@ -132,7 +134,9 @@ export async function runSpaceAgent(input: {
       files: input.files || [],
       reference_files: input.files || [],
       context: input.context || [],
+      feedback: input.feedback || undefined,
     },
+    history: input.history || [],
   });
   if (!isSuccessResponse(result)) {
     throw new Error(result.message || result.msg || "智能体节点执行失败");
@@ -226,6 +230,30 @@ export async function saveSpaceAssetVersion(input: {
   return normalizeProjectAsset(asset);
 }
 
+export async function saveSpaceCanvasAsset(input: {
+  projectId: number;
+  assetCateId: number;
+  name: string;
+  kind: string;
+  content: unknown;
+}): Promise<ProjectAsset> {
+  const result = await request(joinSiteApi("space/asset"), "post", {
+    project_id: input.projectId,
+    asset_cate_id: input.assetCateId,
+    name: input.name,
+    kind: input.kind,
+    content: input.content,
+  });
+  if (!isSuccessResponse(result)) {
+    throw new Error(result.message || result.msg || "保存资产失败");
+  }
+  const asset = (result.data as any)?.asset;
+  if (!asset) {
+    throw new Error("保存资产后未返回资产内容");
+  }
+  return normalizeProjectAsset(asset);
+}
+
 export async function saveSpaceCanvas(
   projectId: number,
   assetCateId: number,
@@ -288,7 +316,7 @@ export async function uploadSpacePart(input: {
   form.append("file", input.file);
   const response = await fetch(joinSiteApi("space/upload_part"), {
     method: "POST",
-    credentials: "same-origin",
+    credentials: "include",
     body: form,
   });
   const result = await parseUploadResponse(response);

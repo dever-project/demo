@@ -98,6 +98,7 @@ func (Space) PostRunCanvasAgent(c *server.Context) error {
 		NodeName: bodyText(body, "node_name", "nodeName", "name"),
 		AgentID:  bodyUint64(body, "agent_id", "agentId"),
 		Input:    bodyMap(body, "input"),
+		History:  bodyList(body, "history"),
 	})
 	return workJSON(c, data, err)
 }
@@ -170,6 +171,22 @@ func (Space) PostAssetVersion(c *server.Context) error {
 	return workJSON(c, data, err)
 }
 
+func (Space) PostAsset(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.SaveCanvasAsset(
+		c.Context(),
+		bodyUint64(body, "project_id", "projectId", "id"),
+		bodyUint64(body, "asset_cate_id", "assetCateId"),
+		bodyText(body, "name"),
+		bodyText(body, "kind"),
+		body["content"],
+	)
+	return workJSON(c, data, err)
+}
+
 func (Space) PostUploadInit(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {
@@ -223,6 +240,13 @@ func bodyMap(body map[string]any, key string) map[string]any {
 		return value
 	}
 	return map[string]any{}
+}
+
+func bodyList(body map[string]any, key string) []any {
+	if value, ok := body[key].([]any); ok && value != nil {
+		return value
+	}
+	return []any{}
 }
 
 func queryUint64(c *server.Context, keys ...string) uint64 {

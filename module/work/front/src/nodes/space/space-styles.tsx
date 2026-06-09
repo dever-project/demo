@@ -1188,7 +1188,7 @@ export function WorkSpaceStyles() {
 	      .ws-add-menu {
 	        position: absolute;
 	        z-index: 35;
-	        width: min(324px, calc(100vw - 28px));
+	        width: min(292px, calc(100vw - 28px));
 	        max-height: min(520px, calc(100vh - 76px));
 	        border: 1px solid var(--ws-border);
 	        border-radius: 18px;
@@ -1257,12 +1257,12 @@ export function WorkSpaceStyles() {
 	        display: flex;
 	        width: 100%;
 	        align-items: center;
-	        gap: 12px;
+	        gap: 10px;
 	        border: none;
 	        border-radius: 10px;
 	        background: transparent;
 	        color: var(--ws-text);
-	        padding: 6px 8px;
+	        padding: 6px 7px;
 	        cursor: pointer;
 	        text-align: left;
 	        transition: background 0.15s ease, transform 0.15s ease;
@@ -1275,8 +1275,8 @@ export function WorkSpaceStyles() {
 
 	      .ws-add-icon {
 	        display: inline-flex;
-	        width: 32px;
-	        height: 32px;
+	        width: 30px;
+	        height: 30px;
 	        flex: 0 0 auto;
 	        align-items: center;
 	        justify-content: center;
@@ -1305,8 +1305,8 @@ export function WorkSpaceStyles() {
 	      }
 
 	      .ws-add-item.is-import .ws-add-icon {
-	        background: rgba(16, 185, 129, 0.16);
-	        color: #34d399;
+	        background: rgba(244, 63, 94, 0.15);
+	        color: #fb7185;
 	      }
 
 	      .ws-add-copy {
@@ -1371,8 +1371,8 @@ export function WorkSpaceStyles() {
 	      }
 
 	      .ws-page.is-light .ws-add-item.is-import .ws-add-icon {
-	        background: rgba(16, 185, 129, 0.1);
-	        color: #059669;
+	        background: rgba(244, 63, 94, 0.08);
+	        color: #e11d48;
 	      }
 
 	      .ws-page.is-light .ws-add-desc {
@@ -2276,21 +2276,6 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: center;
       }
-      .ws-node-agent-wrap::before {
-        content: "";
-        position: absolute;
-        inset: 2px;
-        z-index: 0;
-        border-radius: 999px;
-        border: var(--ws-node-border-size) solid transparent;
-        border-top-color: rgba(245, 158, 11, 0.86);
-        border-right-color: rgba(245, 158, 11, 0.18);
-        opacity: 0;
-        pointer-events: none;
-        transform: rotate(0deg);
-        filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.22));
-        transition: opacity 0.18s ease;
-      }
       .ws-node-circle {
         position: relative;
         z-index: 1;
@@ -2299,25 +2284,23 @@ export function WorkSpaceStyles() {
         border-radius: 999px;
         background: var(--ws-panel);
         backdrop-filter: blur(16px);
-        border: 1px solid var(--ws-border);
+        border: var(--ws-node-border-size) solid var(--ws-border);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
-        transition: all 0.25s ease;
-      }
-      .ws-node-agent-wrap.is-selected::before,
-      .ws-node-agent-wrap:hover::before {
-        opacity: 1;
-        animation: ws-node-agent-border-spin 1.05s linear infinite;
+        box-shadow: var(--ws-node-shadow);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
       }
       .ws-node-agent-wrap.is-selected .ws-node-circle,
       .ws-node-agent-wrap:hover .ws-node-circle {
-        border-color: rgba(245, 158, 11, 0.58);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04), 0 0 18px rgba(245, 158, 11, 0.24);
-        transform: scale(1.02);
+        border-color: var(--ws-amber);
+        box-shadow: var(--ws-node-shadow), 0 0 18px rgba(245, 158, 11, 0.32);
+        transform: scale(1.01);
+      }
+      .ws-node-agent-wrap.is-running .ws-node-circle {
+        border-color: transparent;
       }
       .ws-node-circle-avatar {
         width: 44px;
@@ -2342,42 +2325,22 @@ export function WorkSpaceStyles() {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .ws-node-circle-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 8px;
-        color: var(--ws-muted);
-        font-weight: 800;
-        margin-top: 2px;
-      }
-      .ws-ping-dot {
-        width: 6px;
-        height: 6px;
-        background: #10b981;
-        border-radius: 999px;
-        display: inline-block;
-        animation: ws-ping 1.5s infinite;
-      }
-      @keyframes ws-ping {
-        0% { transform: scale(0.85); opacity: 0.5; }
-        50% { transform: scale(1.2); opacity: 1; }
-        100% { transform: scale(0.85); opacity: 0.5; }
-      }
-      @keyframes ws-node-agent-border-spin {
-        to { transform: rotate(360deg); }
-      }
       .ws-agent-result-bubble {
         position: absolute;
-        top: 14px;
+        top: 50%;
         left: calc(100% + 12px);
-        width: 226px;
+        width: max-content;
+        min-width: 168px;
+        max-width: 260px;
+        min-height: 48px;
         max-height: 112px;
         overflow: visible;
         background: var(--ws-panel-strong);
         border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
         border-radius: 18px;
         padding: 12px 14px;
+        display: flex;
+        align-items: center;
         box-shadow: 0 18px 46px rgba(15, 23, 42, 0.12);
         z-index: 10;
         text-align: left;
@@ -2385,6 +2348,7 @@ export function WorkSpaceStyles() {
         font: inherit;
         appearance: none;
         cursor: pointer;
+        transform: translateY(-50%);
         transition:
           transform 0.18s ease,
           box-shadow 0.18s ease,
@@ -2393,20 +2357,77 @@ export function WorkSpaceStyles() {
       .ws-agent-result-bubble::before {
         content: "";
         position: absolute;
-        left: -9px;
-        top: 38px;
+        left: -8px;
+        top: 50%;
         width: 16px;
         height: 16px;
         background: var(--ws-panel-strong);
         border-left: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
         border-bottom: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.24);
-        transform: rotate(45deg);
+        transform: translateY(-50%) rotate(45deg);
         border-radius: 0 0 0 4px;
+        pointer-events: none;
       }
       .ws-agent-result-bubble:hover {
-        transform: translateX(2px);
+        transform: translate(2px, -50%);
         border-color: rgba(245, 158, 11, 0.34);
         box-shadow: 0 24px 58px rgba(15, 23, 42, 0.16);
+      }
+      .ws-node-feedback-beacon {
+        position: absolute;
+        top: -10px;
+        right: -6px;
+        z-index: 18;
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 158, 11, 0.32);
+        background: rgba(255, 251, 235, 0.96);
+        color: #d97706;
+        box-shadow:
+          0 12px 28px rgba(146, 64, 14, 0.16),
+          0 0 0 5px rgba(245, 158, 11, 0.08);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        appearance: none;
+        padding: 0;
+      }
+      .ws-node-feedback-beacon span {
+        position: absolute;
+        right: -5px;
+        bottom: -4px;
+        min-width: 15px;
+        height: 15px;
+        border-radius: 999px;
+        background: var(--ws-text);
+        color: var(--ws-panel-strong);
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 15px;
+        text-align: center;
+      }
+      .ws-node-feedback-beacon.is-pending {
+        animation: ws-feedback-pulse 1.3s ease-in-out infinite;
+      }
+      .ws-node-feedback-beacon.is-done {
+        opacity: 0.76;
+      }
+      .ws-node-feedback-beacon:hover {
+        transform: translateY(-1px);
+        box-shadow:
+          0 16px 34px rgba(146, 64, 14, 0.22),
+          0 0 0 6px rgba(245, 158, 11, 0.12);
+      }
+      @keyframes ws-feedback-pulse {
+        0%,
+        100% {
+          transform: translateY(0) scale(1);
+        }
+        50% {
+          transform: translateY(-2px) scale(1.06);
+        }
       }
       .ws-result-text {
         position: relative;
@@ -2507,69 +2528,176 @@ export function WorkSpaceStyles() {
         white-space: nowrap;
       }
 
-      /* Function Nodes Triangle */
+      /* Function Nodes Command Capsule */
       .ws-node-function-wrap {
         position: relative;
-        width: 120px;
-        height: 120px;
+        width: 128px;
+        height: 46px;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: transform 0.2s ease;
+        transition: transform 0.16s ease;
       }
       .ws-node-function-wrap.is-selected,
       .ws-node-function-wrap:hover {
-        transform: scale(1.01);
+        transform: translateY(-1px);
       }
-      .ws-triangle-svg {
-        position: absolute;
-        inset: 0;
+      .ws-node-function-wrap.has-result-card {
         width: 100%;
         height: 100%;
-        color: var(--ws-panel);
-        filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.18));
-        transition: filter 0.2s ease, color 0.2s ease;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 10px;
       }
-      .ws-triangle-svg polygon {
-        stroke: var(--ws-border) !important;
-        stroke-width: var(--ws-node-border-size) !important;
-        vector-effect: non-scaling-stroke;
-        transition: stroke 0.2s ease, stroke-width 0.2s ease;
+      .ws-node-function-wrap.has-result-card .ws-node-function-pill {
+        width: auto;
+        min-width: 128px;
+        max-width: 100%;
+        align-self: flex-start;
       }
-      .ws-node-function-wrap.is-selected .ws-triangle-svg,
-      .ws-node-function-wrap:hover .ws-triangle-svg {
-        filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.16)) drop-shadow(0 0 18px rgba(244,63,94,0.36));
-      }
-      .ws-node-function-wrap.is-selected .ws-triangle-svg polygon,
-      .ws-node-function-wrap:hover .ws-triangle-svg polygon {
-        stroke: var(--ws-rose) !important;
-        stroke-width: var(--ws-node-border-size) !important;
-      }
-      .ws-node-function-content {
-        position: absolute;
-        inset: 32% 10% 8%;
-        bottom: auto;
+      .ws-node-function-pill {
+        position: relative;
         z-index: 2;
         display: flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 8px;
+        width: 100%;
+        min-width: 106px;
+        height: 38px;
+        border: 1px solid rgba(244, 63, 94, 0.22);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.94);
+        color: var(--ws-rose);
+        padding: 7px 12px 7px 8px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 20px rgba(244, 63, 94, 0.08);
+        backdrop-filter: blur(16px);
+        transition:
+          border-color 0.16s ease,
+          box-shadow 0.16s ease,
+          background 0.16s ease,
+          transform 0.16s ease;
+      }
+      .ws-node-function-wrap:hover .ws-node-function-pill,
+      .ws-node-function-wrap.is-selected .ws-node-function-pill {
+        border-color: rgba(244, 63, 94, 0.55);
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14), 0 0 26px rgba(244, 63, 94, 0.18);
       }
       .ws-node-function-icon {
         display: flex;
-        width: 34px;
-        height: 34px;
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
         align-items: center;
         justify-content: center;
-        border: 1px solid rgba(244,63,94,0.28);
+        border: 0;
         border-radius: 999px;
-        background: rgba(244,63,94,0.1);
-        box-shadow: 0 0 15px rgba(244,63,94,0.18);
+        background: var(--ws-rose);
+        color: #ffffff;
+        box-shadow: 0 8px 18px rgba(244, 63, 94, 0.24);
       }
       .ws-node-function-title {
-        font-size: 10px;
-        font-weight: 800;
-        margin-top: 4px;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--ws-rose);
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0;
+        line-height: 1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ws-node-function-pill[role="button"] {
+        cursor: pointer;
+      }
+      .ws-node-function-pill[aria-disabled="true"] {
+        cursor: wait;
+        opacity: 0.76;
+      }
+      .ws-node-function-wrap.is-running .ws-node-function-pill {
+        border-color: rgba(244, 63, 94, 0.68);
+        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14), 0 0 30px rgba(244, 63, 94, 0.28);
+      }
+      .ws-node-function-result-card {
+        position: relative;
+        width: 100%;
+        min-height: 184px;
+        flex: 1;
+        overflow: hidden;
+        border: var(--ws-node-border-size) solid rgba(148, 163, 184, 0.34);
+        border-radius: 16px;
+        background: var(--ws-panel);
+        box-shadow: var(--ws-node-shadow);
+        color: var(--ws-text);
+        cursor: pointer;
+        appearance: none;
+        padding: 18px 20px;
+        text-align: left;
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.2s ease;
+      }
+      .ws-node-function-wrap.has-result-card:hover .ws-node-function-result-card,
+      .ws-node-function-wrap.has-result-card.is-selected .ws-node-function-result-card {
+        border-color: var(--ws-green);
+        box-shadow: var(--ws-node-shadow), 0 0 22px rgba(16,185,129,0.24);
+      }
+      .ws-node-function-result-preview {
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .ws-node-function-result-preview :where(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
+        margin-top: 0;
+        margin-bottom: 6px;
+      }
+      .ws-node-function-result-preview :where(h1, h2, h3, h4, h5, h6) {
+        font-size: 14px;
+        font-weight: 850;
+        line-height: 1.35;
+      }
+      .ws-node-function-result-text {
+        display: -webkit-box;
+        margin: 0;
+        overflow: hidden;
+        color: var(--ws-text);
+        font-size: 15px;
+        line-height: 1.55;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 7;
+      }
+      .ws-node-function-result-media {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.04);
+      }
+      .ws-node-function-result-media img,
+      .ws-node-function-result-media video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .ws-page:not(.is-light) .ws-node-function-pill {
+        border-color: rgba(251, 113, 133, 0.28);
+        background: rgba(15, 23, 42, 0.9);
+        color: #fecdd3;
+      }
+      .ws-page:not(.is-light) .ws-node-function-title {
+        color: #fecdd3;
+      }
+      .ws-page:not(.is-light) .ws-node-function-result-card {
+        border-color: rgba(148, 163, 184, 0.24);
+        background: rgba(15, 23, 42, 0.92);
+      }
+      .ws-triangle-svg,
+      .ws-node-function-content,
+      .ws-node-function-run {
+        display: none;
       }
 
       /* Assets Nodes */
@@ -2783,6 +2911,16 @@ export function WorkSpaceStyles() {
         overflow: visible;
         pointer-events: none;
       }
+      .ws-node-running-border.is-circle {
+        inset: 0;
+        z-index: 3;
+        width: 100%;
+        height: 100%;
+      }
+      .ws-node-running-border.is-circle .ws-node-running-track,
+      .ws-node-running-border.is-circle .ws-node-running-progress {
+        stroke-width: var(--ws-node-border-size);
+      }
       .ws-node-running-track,
       .ws-node-running-progress {
         fill: transparent;
@@ -2797,6 +2935,13 @@ export function WorkSpaceStyles() {
         stroke-width: 5px;
         stroke-linecap: round;
         filter: drop-shadow(0 0 7px rgba(99, 102, 241, 0.68));
+      }
+      .ws-node-running-border.is-circle.is-agent .ws-node-running-track {
+        stroke: rgba(245, 158, 11, 0.14);
+      }
+      .ws-node-running-border.is-circle.is-agent .ws-node-running-progress {
+        stroke: var(--ws-amber);
+        filter: drop-shadow(0 0 7px rgba(245, 158, 11, 0.64));
       }
       .ws-node-running-border.is-spin .ws-node-running-progress {
         animation: ws-node-border-spin 1s linear infinite, ws-node-border-breathe 1.2s ease-in-out infinite;
@@ -3060,6 +3205,14 @@ export function WorkSpaceStyles() {
         right: -32px;
         top: 50%;
         transform: translate(0, -50%) scale(0.82);
+      }
+
+      .ws-canvas-wrap .react-flow__node .ws-node-function-wrap.has-result-card .ws-rf-handle.is-in::after {
+        left: -20px;
+      }
+
+      .ws-canvas-wrap .react-flow__node .ws-node-function-wrap.has-result-card .ws-rf-handle.is-out::after {
+        right: -20px;
       }
 
       .ws-canvas-wrap .react-flow__node:hover .ws-rf-handle::after,
@@ -3371,6 +3524,13 @@ export function WorkSpaceStyles() {
         white-space: nowrap;
       }
 
+      .ws-node-settings-state.is-function-desc {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .ws-node-settings-flow-copy {
         display: flex;
         min-width: 0;
@@ -3452,6 +3612,103 @@ export function WorkSpaceStyles() {
         opacity: 0.72;
       }
 
+      .ws-confirm-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(15, 23, 42, 0.34);
+        backdrop-filter: blur(8px);
+      }
+
+      .ws-confirm-card {
+        width: min(420px, calc(100vw - 48px));
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.96);
+        color: #0f172a;
+        box-shadow: 0 30px 90px rgba(15, 23, 42, 0.24);
+        padding: 22px;
+      }
+
+      .ws-confirm-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .ws-confirm-copy h3 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .ws-confirm-copy p {
+        margin: 0;
+        color: rgba(71, 85, 105, 0.95);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .ws-confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .ws-confirm-actions button {
+        min-width: 82px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.95);
+        color: #334155;
+        padding: 9px 16px;
+        font-size: 13px;
+        font-weight: 850;
+        cursor: pointer;
+        transition:
+          transform 140ms ease,
+          border-color 140ms ease,
+          background 140ms ease,
+          box-shadow 140ms ease;
+      }
+
+      .ws-confirm-actions button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(15, 23, 42, 0.18);
+        background: #ffffff;
+      }
+
+      .ws-confirm-actions button.is-primary,
+      .ws-confirm-actions button.is-danger {
+        border-color: transparent;
+        color: #ffffff;
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+      }
+
+      .ws-confirm-actions button.is-primary {
+        background: #0f172a;
+      }
+
+      .ws-confirm-actions button.is-danger {
+        background: #ef4444;
+      }
+
+      .ws-page.is-dark .ws-confirm-card {
+        border-color: rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.96);
+        color: #f8fafc;
+      }
+
+      .ws-page.is-dark .ws-confirm-copy p {
+        color: rgba(203, 213, 225, 0.86);
+      }
+
       .ws-node-save-run {
         border-color: transparent;
         background: #10b981;
@@ -3509,6 +3766,45 @@ export function WorkSpaceStyles() {
         color: #64748b;
         font-size: 13px;
         line-height: 1.5;
+      }
+
+      .ws-flow-feedback-tabs {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 14px 20px 0;
+      }
+
+      .ws-flow-feedback-tabs button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 999px;
+        background: rgba(248, 250, 252, 0.9);
+        color: #64748b;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 750;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .ws-flow-feedback-tabs button span {
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.08);
+        color: #0f172a;
+        font-size: 10px;
+        line-height: 16px;
+        text-align: center;
+      }
+
+      .ws-flow-feedback-tabs button.is-active {
+        border-color: rgba(245, 158, 11, 0.42);
+        background: rgba(255, 251, 235, 0.95);
+        color: #b45309;
       }
 
       .ws-flow-feedback-close {
