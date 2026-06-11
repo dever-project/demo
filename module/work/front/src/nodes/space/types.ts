@@ -168,6 +168,7 @@ export type ProjectAsset = {
   sort: number;
   created_at?: string;
   version?: AssetVersion;
+  versions?: AssetVersion[];
 };
 
 export type SpaceBootstrap = {

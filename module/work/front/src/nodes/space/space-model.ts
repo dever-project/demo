@@ -2,6 +2,7 @@ import type {
   AssetCardinality,
   AssetCate,
   AssetKind,
+  AssetVersion,
   CanvasFunctionOption,
   PowerKindOption,
   PowerOption,
@@ -390,7 +391,12 @@ function normalizePowerKind(value: Record<string, unknown>): PowerKindOption {
 }
 
 function normalizeAsset(value: Record<string, unknown>): ProjectAsset {
-  const version = asRecord(value.version);
+  const version = normalizeAssetVersion(asRecord(value.version));
+  const versions = asRecords(
+    firstDefined(value.versions, value.version_list, value.history_versions),
+  )
+    .map(normalizeAssetVersion)
+    .filter((item): item is AssetVersion => Boolean(item));
   return {
     id: numberValue(value.id),
     project_id: numberValue(value.project_id),
@@ -404,18 +410,27 @@ function normalizeAsset(value: Record<string, unknown>): ProjectAsset {
     version_id: numberValue(value.version_id),
     sort: numberValue(value.sort),
     created_at: stringValue(value.created_at),
-    version: version.id
-      ? {
-          id: numberValue(version.id),
-          asset_id: numberValue(version.asset_id),
-          run_id: numberValue(version.run_id),
-          node_run_id: numberValue(version.node_run_id),
-          release_id: numberValue(version.release_id),
-          version: numberValue(version.version),
-          content: version.content,
-          created_at: stringValue(version.created_at),
-        }
-      : undefined,
+    version,
+    versions: versions.length ? versions : undefined,
+  };
+}
+
+function normalizeAssetVersion(
+  value: Record<string, unknown>,
+): ProjectAsset["version"] {
+  const id = numberValue(value.id);
+  if (!id && value.content == null) {
+    return undefined;
+  }
+  return {
+    id,
+    asset_id: numberValue(value.asset_id),
+    run_id: numberValue(value.run_id),
+    node_run_id: numberValue(value.node_run_id),
+    release_id: numberValue(value.release_id),
+    version: numberValue(value.version),
+    content: value.content,
+    created_at: stringValue(value.created_at),
   };
 }
 

@@ -1680,32 +1680,33 @@ export function WorkSpaceStyles() {
         z-index: 90;
         display: flex;
         flex-direction: column;
-        background: rgba(0, 0, 0, 0.86);
-        color: rgba(255, 255, 255, 0.92);
-        backdrop-filter: blur(20px);
+        background: #f8fafc;
+        color: #111827;
+        font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
       }
 
       .ws-node-detail-modal {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: 56px minmax(0, 1fr);
+        grid-template-rows: 46px minmax(0, 1fr);
         min-height: 0;
         flex: 1;
       }
 
       .ws-node-detail-modal.has-version-sidebar {
-        grid-template-columns: minmax(0, 1fr) 360px;
-        grid-template-rows: 56px minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr) 340px;
+        grid-template-rows: 46px minmax(0, 1fr);
       }
 
       .ws-node-detail-head {
         display: flex;
-        min-height: 56px;
+        min-height: 46px;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 0 16px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.86);
+        padding: 0 14px;
       }
 
       .ws-node-detail-modal .ws-node-detail-head,
@@ -1717,7 +1718,7 @@ export function WorkSpaceStyles() {
         display: flex;
         min-width: 0;
         align-items: center;
-        gap: 10px;
+        gap: 9px;
         overflow: hidden;
       }
 
@@ -1725,18 +1726,42 @@ export function WorkSpaceStyles() {
         overflow: hidden;
         min-width: 0;
         max-width: min(900px, 62vw);
-        color: rgba(255, 255, 255, 0.94);
-        font-size: 15px;
+        color: #111827;
+        font-size: 13px;
         font-weight: 880;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
       .ws-node-detail-title span {
-        color: rgba(255, 255, 255, 0.48);
-        font-size: 12px;
+        color: #64748b;
+        font-size: 11px;
         font-weight: 720;
         white-space: nowrap;
+      }
+
+      .ws-node-detail-title em {
+        color: #64748b;
+        font-size: 11px;
+        font-style: normal;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+
+      .ws-node-detail-title em.is-typing {
+        color: #f59e0b;
+      }
+
+      .ws-node-detail-title em.is-saving {
+        color: #3b82f6;
+      }
+
+      .ws-node-detail-title em.is-error {
+        color: #e11d48;
+      }
+
+      .ws-node-detail-title em.is-saved {
+        color: rgba(100, 116, 139, 0.92);
       }
 
       .ws-node-detail-actions {
@@ -1749,15 +1774,15 @@ export function WorkSpaceStyles() {
       .ws-node-detail-head button,
       .ws-node-detail-actions a {
         display: inline-flex;
-        width: 36px;
-        height: 36px;
+        width: 32px;
+        height: 32px;
         flex-shrink: 0;
         align-items: center;
         justify-content: center;
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(148, 163, 184, 0.24);
         border-radius: 10px;
-        background: rgba(255, 255, 255, 0.06);
-        color: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.76);
+        color: #111827;
         cursor: pointer;
         text-decoration: none;
       }
@@ -1858,10 +1883,10 @@ export function WorkSpaceStyles() {
         display: flex;
         width: 100%;
         min-width: 0;
-        height: 100%;
+        min-height: 0;
         max-height: none;
         flex-direction: column;
-        overflow: auto;
+        overflow: hidden;
         border: 0;
         border-radius: 0;
         background: transparent;
@@ -1878,9 +1903,9 @@ export function WorkSpaceStyles() {
         grid-column: 2;
         grid-row: 2;
         min-height: 0;
-        border-left: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.06);
-        padding: 22px 20px;
+        border-left: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.72);
+        padding: 12px;
         overflow: auto;
       }
 
@@ -1889,8 +1914,8 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        margin-bottom: 10px;
-        color: rgba(255, 255, 255, 0.74);
+        margin-bottom: 12px;
+        color: #334155;
         font-size: 12px;
         font-weight: 850;
       }
@@ -1902,46 +1927,9 @@ export function WorkSpaceStyles() {
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.82);
+        background: #e5e7eb;
+        color: #475569;
         font-size: 12px;
-      }
-
-      .ws-node-detail-side-current {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        margin-bottom: 14px;
-        border: 1px solid rgba(244, 63, 94, 0.26);
-        border-radius: 16px;
-        background: rgba(244, 63, 94, 0.08);
-        padding: 12px 13px;
-        color: #0f172a;
-      }
-
-      .ws-node-detail-side-current span {
-        color: #f43f5e;
-        font-size: 12px;
-        font-weight: 900;
-      }
-
-      .ws-node-detail-side-current strong {
-        overflow: hidden;
-        color: #111827;
-        font-size: 14px;
-        font-weight: 900;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .ws-node-detail-side-current small {
-        display: -webkit-box;
-        overflow: hidden;
-        color: #64748b;
-        font-size: 12px;
-        line-height: 1.45;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
       }
 
       .ws-node-detail-side-list {
@@ -1955,28 +1943,70 @@ export function WorkSpaceStyles() {
         width: 100%;
         flex-direction: column;
         align-items: flex-start;
-        gap: 4px;
+        gap: 5px;
         border: 1px solid rgba(148, 163, 184, 0.18);
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.58);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.88);
         color: #111827;
         cursor: pointer;
-        padding: 11px 12px;
+        padding: 10px 11px;
         text-align: left;
+        transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+      }
+
+      .ws-node-detail-side-list button:hover:not(:disabled) {
+        transform: translateY(-1px);
       }
 
       .ws-node-detail-side-list button.is-active {
-        border-color: rgba(16, 185, 129, 0.46);
-        background: rgba(16, 185, 129, 0.12);
+        border-color: rgba(16, 185, 129, 0.42);
+        background: rgba(209, 250, 229, 0.78);
       }
 
-      .ws-node-detail-side-list button span {
+      .ws-node-detail-side-list button.is-current:not(.is-active) {
+        border-color: rgba(244, 63, 94, 0.22);
+        background: rgba(244, 63, 94, 0.07);
+      }
+
+      .ws-node-detail-side-list button.is-switching {
+        cursor: wait;
+        opacity: 0.72;
+      }
+
+      .ws-node-detail-version-title {
+        display: flex;
         width: 100%;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .ws-node-detail-version-title strong {
         overflow: hidden;
         font-size: 13px;
         font-weight: 850;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .ws-node-detail-version-title i {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid rgba(244, 63, 94, 0.2);
+        border-radius: 999px;
+        background: rgba(244, 63, 94, 0.08);
+        color: #f43f5e;
+        padding: 3px 6px;
+        font-size: 10px;
+        font-style: normal;
+        font-weight: 900;
+      }
+
+      .ws-node-detail-version-title i svg {
+        flex-shrink: 0;
       }
 
       .ws-node-detail-side-list button em {
@@ -1996,147 +2026,230 @@ export function WorkSpaceStyles() {
         -webkit-line-clamp: 2;
       }
 
-      .ws-document-editor-shell {
+      .ws-node-detail-rich-editor {
         display: flex;
-        min-height: 0;
-        flex: 1;
         flex-direction: column;
-        background: linear-gradient(110deg, #fff7ff 0%, #edf6ff 100%);
-      }
-
-      .ws-document-editor-toolbar {
-        display: flex;
-        min-height: 42px;
-        flex-shrink: 0;
-        align-items: center;
-        gap: 6px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-        background: rgba(255, 255, 255, 0.62);
-        padding: 0 12px;
-        backdrop-filter: blur(16px);
-      }
-
-      .ws-document-toolbar-group {
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-        padding-right: 8px;
-        border-right: 1px solid rgba(148, 163, 184, 0.22);
-      }
-
-      .ws-document-toolbar-group:last-child {
-        border-right: 0;
-        padding-right: 0;
-      }
-
-      .ws-document-toolbar-group button {
-        display: inline-flex;
-        min-width: 28px;
-        height: 28px;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid transparent;
-        border-radius: 7px;
-        background: transparent;
-        color: #64748b;
-        cursor: pointer;
-        font-size: 11px;
-        font-weight: 850;
-      }
-
-      .ws-document-toolbar-group button:hover {
-        border-color: rgba(226, 232, 240, 0.96);
-        background: rgba(255, 255, 255, 0.86);
-        color: #f43f5e;
-        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
-      }
-
-      .ws-document-toolbar-group button.is-active {
-        border-color: rgba(226, 232, 240, 0.96);
-        background: rgba(255, 255, 255, 0.86);
-        color: #f43f5e;
-        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
-      }
-
-      .ws-document-editor-content {
-        display: flex;
         min-height: 0;
-        flex: 1;
-        overflow: hidden;
-      }
-
-      .ws-rich-document-editor {
-        display: block;
-        width: 100%;
-        min-height: 100%;
-        flex: 1;
-        overflow-y: auto;
+        height: 100%;
         border: 0;
-        outline: none;
-        background: transparent;
+        border-radius: 0;
+        background: linear-gradient(105deg, #fff8ff 0%, #edf6ff 100%);
+        box-shadow: none;
+      }
+
+      .ws-node-detail-rich-editor > div:first-of-type {
+        min-height: 28px;
+        gap: 3px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(255, 255, 255, 0.7);
+        padding: 2px 8px;
+        backdrop-filter: blur(12px);
+      }
+
+      .ws-node-detail-rich-editor button {
+        height: 22px;
+        min-width: 22px;
+        padding: 0 6px;
+        border-radius: 6px;
+      }
+
+      .ws-node-detail-rich-editor > div:last-of-type {
+        flex: 1;
+        max-height: none !important;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .ws-node-detail-rich-editor > div:last-of-type > div {
+        min-height: 0 !important;
+        height: auto !important;
+        padding: 0 !important;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] {
+        min-height: auto !important;
+        height: auto !important;
+        padding: 18px 24px 72px;
         color: #111827;
-        padding: 22px 20px 54px;
-        font: 15px/1.66 "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+        font: 14px/1.75 "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
       }
 
-      .ws-rich-document-editor:empty::before {
-        color: rgba(100, 116, 139, 0.7);
-        content: attr(data-placeholder);
+      .ws-node-detail-rich-editor .ProseMirror {
+        min-height: 0 !important;
       }
 
-      .ws-rich-document-editor :where(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
-        margin: 0 0 12px;
+      .ws-node-detail-rich-editor [contenteditable] > *:first-child {
+        margin-top: 0;
       }
 
-      .ws-rich-document-editor :where(h1, h2, h3, h4, h5, h6) {
-        margin-top: 18px;
-        margin-bottom: 8px;
-        color: #0f172a;
-        font-weight: 880;
-        line-height: 1.4;
+      .ws-node-detail-rich-editor [contenteditable] > *:last-child {
+        margin-bottom: 0;
       }
 
-      .ws-rich-document-editor h1 {
-        font-size: 24px;
-      }
-
-      .ws-rich-document-editor h2 {
+      .ws-node-detail-rich-editor [contenteditable] h1 {
+        margin: 16px 0 12px;
         font-size: 20px;
       }
 
-      .ws-rich-document-editor h3 {
+      .ws-node-detail-rich-editor [contenteditable] h2 {
+        margin: 16px 0 10px;
         font-size: 18px;
       }
 
-      .ws-rich-document-editor :where(ul, ol) {
-        padding-left: 24px;
+      .ws-node-detail-rich-editor [contenteditable] h3 {
+        margin: 12px 0 8px;
+        font-size: 16px;
       }
 
-      .ws-rich-document-editor li {
+      .ws-node-detail-rich-editor [contenteditable] :where(h1, h2, h3) {
+        color: #0f172a;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] :where(h4, h5) {
+        margin: 12px 0 6px;
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] :where(h6) {
+        margin: 12px 0 6px;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.45;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] p {
         margin: 6px 0;
       }
 
-      .ws-rich-document-editor blockquote {
-        border-left: 3px solid rgba(148, 163, 184, 0.7);
-        color: #475569;
-        padding-left: 14px;
+      .ws-node-detail-rich-editor [contenteditable] :where(ul, ol) {
+        margin: 12px 0;
+        padding-left: 24px;
       }
 
-      .ws-rich-document-editor code {
-        border-radius: 6px;
-        background: rgba(15, 23, 42, 0.08);
-        padding: 1px 5px;
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-        font-size: 0.92em;
+      .ws-node-detail-rich-editor [contenteditable] ul {
+        list-style: disc;
       }
 
-      .ws-rich-document-editor img {
+      .ws-node-detail-rich-editor [contenteditable] ol {
+        list-style: decimal;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] li {
+        margin: 4px 0;
+        padding-left: 0;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] blockquote {
+        margin: 12px 0;
+        border-left: 2px solid rgba(148, 163, 184, 0.5);
+        padding-left: 12px;
+        color: #64748b;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] hr {
+        margin: 16px 0;
+        border: 0;
+        border-top: 1px solid rgba(148, 163, 184, 0.28);
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] img {
         display: block;
         max-width: min(620px, 82%);
         max-height: 440px;
         margin: 20px auto;
         border-radius: 10px;
         object-fit: contain;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] pre {
+        overflow: auto;
+        max-height: 460px;
+        margin: 12px 0;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 8px;
+        background: rgba(241, 245, 249, 0.72);
+        color: #0f172a;
+        padding: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: 12px/1.65 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] pre code {
+        display: block;
+        background: transparent;
+        color: inherit;
+        padding: 0;
+        font: inherit;
+        white-space: inherit;
+      }
+
+      .ws-node-detail-rich-editor .hljs-keyword {
+        color: #be185d;
+      }
+
+      .ws-node-detail-rich-editor .hljs-string {
+        color: #b45309;
+      }
+
+      .ws-node-detail-rich-editor .hljs-comment,
+      .ws-node-detail-rich-editor .hljs-meta {
+        color: #64748b;
+      }
+
+      .ws-node-detail-rich-editor .hljs-title,
+      .ws-node-detail-rich-editor .hljs-built_in,
+      .ws-node-detail-rich-editor .hljs-type {
+        color: #7c3aed;
+      }
+
+      .ws-node-detail-rich-editor .hljs-name,
+      .ws-node-detail-rich-editor .hljs-tag,
+      .ws-node-detail-rich-editor .hljs-selector-class,
+      .ws-node-detail-rich-editor .hljs-selector-id {
+        color: #047857;
+      }
+
+      .ws-node-detail-rich-editor .hljs-attr,
+      .ws-node-detail-rich-editor .hljs-attribute,
+      .ws-node-detail-rich-editor .hljs-property {
+        color: #0369a1;
+      }
+
+      .ws-node-detail-rich-editor .hljs-number,
+      .ws-node-detail-rich-editor .hljs-literal {
+        color: #4338ca;
+      }
+
+      .ws-node-detail-rich-editor .hljs-variable,
+      .ws-node-detail-rich-editor .hljs-regexp {
+        color: #be123c;
+      }
+
+      .ws-node-detail-rich-editor [contenteditable] :not(pre) > code {
+        border-radius: 6px;
+        background: rgba(226, 232, 240, 0.72);
+        color: #0f172a;
+        padding: 1px 5px;
+        font: 0.92em/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      }
+
+      .ws-node-detail-fallback-editor {
+        flex: 1;
+        min-height: 0;
+        border: 0;
+        outline: none;
+        resize: none;
+        background: linear-gradient(110deg, #fff7ff 0%, #edf6ff 100%);
+        color: #111827;
+        padding: 24px 24px 32px;
+        font: 14px/1.75 "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
       }
 
       .ws-node-detail-output {
@@ -2150,91 +2263,18 @@ export function WorkSpaceStyles() {
         font: 15px/1.66 "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
       }
 
-      .ws-node-detail-rich-preview :where(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
-        margin: 0 0 12px;
-      }
-
-      .ws-node-detail-rich-preview :where(h1, h2, h3, h4, h5, h6) {
-        margin-top: 22px;
-        margin-bottom: 10px;
-        color: #0f172a;
-        font-weight: 880;
-        line-height: 1.4;
-      }
-
-      .ws-node-detail-rich-preview h1 {
-        font-size: 26px;
-      }
-
-      .ws-node-detail-rich-preview h2 {
-        font-size: 21px;
-      }
-
-      .ws-node-detail-rich-preview h3 {
-        font-size: 18px;
-      }
-
-      .ws-node-detail-rich-preview :where(ul, ol) {
-        padding-left: 22px;
-      }
-
-      .ws-node-detail-rich-preview li {
-        margin: 5px 0;
-      }
-
-      .ws-node-detail-rich-preview img {
-        display: block;
-        max-width: min(560px, 70%);
-        max-height: 420px;
-        margin: 20px auto;
-        border-radius: 8px;
-        object-fit: contain;
-      }
-
       .ws-node-detail-empty {
         color: rgba(100, 116, 139, 0.7);
       }
 
-      .ws-node-detail-save-row {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        border-top: 1px solid rgba(15, 23, 42, 0.08);
-        background: rgba(255, 255, 255, 0.84);
-        padding: 14px 22px;
-      }
-
-      .ws-node-detail-save-row button {
-        display: inline-flex;
-        min-width: 104px;
-        height: 38px;
-        align-items: center;
-        justify-content: center;
-        gap: 7px;
-        border: 0;
-        border-radius: 12px;
-        background: #0f172a;
-        color: #ffffff;
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 850;
-        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
-      }
-
-      .ws-node-detail-save-row button:disabled {
-        cursor: not-allowed;
-        opacity: 0.58;
-        box-shadow: none;
-      }
-
       .ws-page.is-light .ws-node-detail-backdrop {
-        background: rgba(248, 250, 252, 0.78);
+        background: #f8fafc;
         color: #111827;
       }
 
       .ws-page.is-light .ws-node-detail-head {
         border-bottom-color: rgba(15, 23, 42, 0.08);
-        background: rgba(255, 255, 255, 0.72);
+        background: rgba(255, 255, 255, 0.86);
       }
 
       .ws-page.is-light .ws-node-detail-title strong {
@@ -2243,6 +2283,10 @@ export function WorkSpaceStyles() {
 
       .ws-page.is-light .ws-node-detail-title span {
         color: rgba(71, 85, 105, 0.76);
+      }
+
+      .ws-page.is-light .ws-node-detail-title em.is-saved {
+        color: rgba(100, 116, 139, 0.9);
       }
 
       .ws-page.is-light .ws-node-detail-head button,
