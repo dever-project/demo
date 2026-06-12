@@ -59,12 +59,13 @@ export function emptyCanvasState(assetCateId: number): SpaceCanvasState {
 
 export function normalizeCanvasState(value: unknown, fallbackAssetCateId = 0): SpaceCanvasState {
   const row = asRecord(value);
-  const assetCateId = numberValue(firstDefined(row.asset_cate_id, row.assetCateId, fallbackAssetCateId));
+  const assetCateId = numberValue(firstDefined(row.asset_cate_id, fallbackAssetCateId));
   return {
     assetCateId,
     nodes: asRecords(row.nodes).map(normalizeCanvasNode).filter((node): node is SpaceCanvasNode => Boolean(node)),
     edges: asRecords(row.edges).map(normalizeCanvasEdge).filter((edge): edge is SpaceCanvasEdge => Boolean(edge)),
     viewport: normalizeCanvasViewport(row.viewport),
+    updatedAt: stringValue(row.updated_at),
   };
 }
 
@@ -392,9 +393,7 @@ function normalizePowerKind(value: Record<string, unknown>): PowerKindOption {
 
 function normalizeAsset(value: Record<string, unknown>): ProjectAsset {
   const version = normalizeAssetVersion(asRecord(value.version));
-  const versions = asRecords(
-    firstDefined(value.versions, value.version_list, value.history_versions),
-  )
+  const versions = asRecords(value.versions)
     .map(normalizeAssetVersion)
     .filter((item): item is AssetVersion => Boolean(item));
   return {
@@ -406,7 +405,7 @@ function normalizeAsset(value: Record<string, unknown>): ProjectAsset {
     asset_cate_id: numberValue(value.asset_cate_id),
     name: stringValue(value.name),
     kind: (stringValue(value.kind) || "text") as AssetKind,
-    role: stringValue(firstDefined(value.role, value.asset_role)),
+    role: stringValue(value.role),
     version_id: numberValue(value.version_id),
     sort: numberValue(value.sort),
     created_at: stringValue(value.created_at),
@@ -459,8 +458,7 @@ function normalizeCanvasNode(value: Record<string, unknown>): SpaceCanvasNode | 
   if (!id || !type) {
     return null;
   }
-  return {
-    ...value,
+  const node: SpaceCanvasNode = {
     id,
     type,
     title: stringValue(value.title),
@@ -470,15 +468,158 @@ function normalizeCanvasNode(value: Record<string, unknown>): SpaceCanvasNode | 
     y: numberValue(value.y),
     width: numberValue(value.width),
     height: numberValue(value.height),
-    assetCateId: numberValue(firstDefined(value.assetCateId, value.asset_cate_id)),
+    assetCateId: numberValue(value.asset_cate_id),
     count: value.count == null ? undefined : numberValue(value.count),
+    functionOption: normalizeCanvasFunctionOption(value.function_option),
+    composerDraft: normalizeCanvasComposerDraft(value.composer_draft),
+    resultRef: normalizeCanvasResultRef(value.result_ref),
     local: value.local !== false,
+  };
+  const kind = stringValue(value.kind) as SpaceCanvasNode["kind"];
+  const cardinality = stringValue(value.cardinality) as SpaceCanvasNode["cardinality"];
+  const flow = normalizeCanvasFlow(value.flow);
+  const role = normalizeCanvasRole(value.role);
+  const asset = normalizeCanvasAssetRef(value.asset);
+  const power = normalizeCanvasPower(value.power);
+  if (kind) {
+    node.kind = kind;
+  }
+  if (cardinality) {
+    node.cardinality = cardinality;
+  }
+  if (flow) {
+    node.flow = flow;
+  }
+  if (role) {
+    node.role = role;
+  }
+  if (asset) {
+    node.asset = asset;
+  }
+  if (power) {
+    node.power = power;
+  }
+  return node;
+}
+
+function normalizeCanvasFlow(value: unknown) {
+  const row = asRecord(value);
+  const id = numberValue(row.id);
+  const key = stringValue(row.key);
+  const name = stringValue(row.name);
+  if (!id && !key && !name) {
+    return undefined;
+  }
+  return {
+    id,
+    key,
+    name,
+    goal: stringValue(row.goal),
+  } as TeamFlow;
+}
+
+function normalizeCanvasRole(value: unknown) {
+  const row = asRecord(value);
+  const id = numberValue(row.id);
+  const name = stringValue(row.name);
+  if (!id && !name) {
+    return undefined;
+  }
+  return {
+    id,
+    name,
+    role_type: stringValue(row.role_type),
+    agent_id: numberValue(row.agent_id),
+    asset_cate_id: numberValue(row.asset_cate_id),
+  } as TeamRole;
+}
+
+function normalizeCanvasAssetRef(value: unknown) {
+  const row = asRecord(value);
+  const id = numberValue(row.id);
+  if (!id) {
+    return undefined;
+  }
+  return {
+    id,
+    project_id: 0,
+    body_id: 0,
+    team_id: 0,
+    flow_id: 0,
+    asset_cate_id: numberValue(row.asset_cate_id),
+    name: stringValue(row.name),
+    kind: stringValue(row.kind) as ProjectAsset["kind"],
+    role: stringValue(row.role) as ProjectAsset["role"],
+    version_id: numberValue(row.version_id),
+    sort: 0,
+  } as ProjectAsset;
+}
+
+function normalizeCanvasPower(value: unknown) {
+  const row = asRecord(value);
+  const id = numberValue(row.id);
+  const key = stringValue(row.key);
+  if (!id && !key) {
+    return undefined;
+  }
+  return {
+    id,
+    key,
+    name: stringValue(row.name),
+    kind: stringValue(row.kind) as PowerOption["kind"],
+    icon: stringValue(row.icon),
+  } as PowerOption;
+}
+
+function normalizeCanvasFunctionOption(value: unknown) {
+  const row = asRecord(value);
+  const key = stringValue(row.key);
+  if (!key) {
+    return undefined;
+  }
+  return {
+    key,
+    label: stringValue(row.label),
+    description: stringValue(row.description),
+  };
+}
+
+function normalizeCanvasComposerDraft(value: unknown) {
+  const row = asRecord(value);
+  if (!Object.keys(row).length) {
+    return undefined;
+  }
+  return {
+    prompt: stringValue(row.prompt),
+    paramValues: asRecord(firstDefined(row.paramValues, row.param_values)),
+    selectedTargetId: numberValue(
+      firstDefined(row.selectedTargetId, row.selected_target_id),
+    ),
+  };
+}
+
+function normalizeCanvasResultRef(value: unknown) {
+  const row = asRecord(value);
+  if (!Object.keys(row).length) {
+    return undefined;
+  }
+  return {
+    run_id: numberValue(row.run_id),
+    request_id: stringValue(row.request_id),
+    flow_run_id: numberValue(row.flow_run_id),
+    node_run_id: numberValue(row.node_run_id),
+    asset_id: numberValue(row.asset_id),
+    version_id: numberValue(row.version_id),
+    release_id: numberValue(row.release_id),
+    role: stringValue(row.role),
+    status: stringValue(row.status),
+    updated_at: stringValue(row.updated_at),
   };
 }
 
 function normalizeCanvasEdge(value: Record<string, unknown>): SpaceCanvasEdge | null {
-  const from = stringValue(firstDefined(value.from, value.source));
-  const to = stringValue(firstDefined(value.to, value.target));
+  const from = stringValue(value.from);
+  const to = stringValue(value.to);
   if (!from || !to) {
     return null;
   }

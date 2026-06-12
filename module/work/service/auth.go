@@ -21,6 +21,8 @@ const tokenScopeWork = "work"
 
 type AuthService struct{}
 
+type workUserContextKey struct{}
+
 type AuthRequiredError struct {
 	Message string
 }
@@ -100,6 +102,9 @@ func (AuthService) Profile(ctx context.Context) (map[string]any, error) {
 }
 
 func CurrentUserID(ctx context.Context) (uint64, error) {
+	if userID, ok := ctx.Value(workUserContextKey{}).(uint64); ok && userID > 0 {
+		return userID, nil
+	}
 	if !hasWorkTokenScope(ctx) {
 		return 0, NewAuthRequiredError("用户信息不正确")
 	}
@@ -108,6 +113,16 @@ func CurrentUserID(ctx context.Context) (uint64, error) {
 		return 0, NewAuthRequiredError("用户信息不正确")
 	}
 	return uint64(uid), nil
+}
+
+func withWorkUserID(ctx context.Context, userID uint64) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if userID == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, workUserContextKey{}, userID)
 }
 
 func hasWorkTokenScope(ctx context.Context) bool {

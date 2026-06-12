@@ -26,15 +26,23 @@ type SpaceService struct {
 	team    teamservice.Service
 }
 
-const spaceDefaultUploadRuleID uint64 = 7
-
 type CanvasAgentRunRequest struct {
-	FlowID   uint64
-	NodeKey  string
-	NodeName string
-	AgentID  uint64
-	Input    map[string]any
-	History  []any
+	FlowID      uint64
+	AssetCateID uint64
+	NodeKey     string
+	NodeName    string
+	AgentID     uint64
+	Input       map[string]any
+	RunID       uint64
+	RequestID   string
+	NodeRunID   uint64
+	ReleaseID   uint64
+}
+
+type CanvasPowerRunRequest struct {
+	teamservice.CanvasPowerRunRequest
+	RunID     uint64
+	NodeRunID uint64
 }
 
 func NewSpaceService() SpaceService {
@@ -87,7 +95,7 @@ func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[stri
 		return nil, err
 	}
 	if items, ok := assetsPayload["items"]; ok {
-		payload["assets"] = items
+		payload["assets"] = slimBootstrapAssets(items)
 	}
 
 	powerCatalog, err := s.powerCatalog(ctx, project.ReleaseID, project.BodyID)
@@ -103,20 +111,24 @@ func (s SpaceService) Bootstrap(ctx context.Context, projectID uint64) (map[stri
 	return payload, nil
 }
 
-func (s SpaceService) SaveCanvas(ctx context.Context, projectID uint64, assetCateID uint64, canvas map[string]any) (map[string]any, error) {
+func (s SpaceService) SaveCanvas(ctx context.Context, projectID uint64, assetCateID uint64, baseRevision string, canvas map[string]any) (map[string]any, error) {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	nodes, err := marshalCanvasList(canvas["nodes"])
+	clean, err := sanitizeCanvasPayload(assetCateID, canvas)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := marshalCleanCanvasList(clean.Nodes)
 	if err != nil {
 		return nil, fmt.Errorf("画布节点格式错误")
 	}
-	edges, err := marshalCanvasList(canvas["edges"])
+	edges, err := marshalCleanCanvasList(clean.Edges)
 	if err != nil {
 		return nil, fmt.Errorf("画布连线格式错误")
 	}
-	viewport, err := marshalCanvasObject(canvas["viewport"])
+	viewport, err := marshalCleanCanvasObject(clean.Viewport)
 	if err != nil {
 		return nil, fmt.Errorf("画布视图格式错误")
 	}
@@ -124,8 +136,11 @@ func (s SpaceService) SaveCanvas(ctx context.Context, projectID uint64, assetCat
 	now := time.Now()
 	row := model.Find(ctx, map[string]any{
 		"project_id":    project.ID,
-		"asset_cate_id": assetCateID,
+		"asset_cate_id": clean.AssetCateID,
 	})
+	if err := ensureCanvasRevision(row, baseRevision); err != nil {
+		return nil, err
+	}
 	record := map[string]any{
 		"nodes":      nodes,
 		"edges":      edges,
@@ -134,18 +149,87 @@ func (s SpaceService) SaveCanvas(ctx context.Context, projectID uint64, assetCat
 	}
 	if row == nil {
 		record["project_id"] = project.ID
-		record["asset_cate_id"] = assetCateID
+		record["asset_cate_id"] = clean.AssetCateID
 		record["created_at"] = now
 		model.Insert(ctx, record)
 	} else {
 		model.Update(ctx, map[string]any{"id": row.ID}, record)
 	}
 	return map[string]any{
-		"canvas": decodeProjectCanvas(assetCateID, nodes, edges, viewport),
+		"canvas": decodeProjectCanvas(clean.AssetCateID, nodes, edges, viewport, now),
 	}, nil
 }
 
-func (s SpaceService) SaveAssetVersion(ctx context.Context, projectID uint64, assetID uint64, content any) (map[string]any, error) {
+func (s SpaceService) SaveAssetEditVersion(ctx context.Context, projectID uint64, assetID uint64, versionID uint64, content any, requestID string) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	sourceAsset := s.asset.FindProjectAsset(ctx, project.ID, assetID)
+	if sourceAsset == nil {
+		return nil, fmt.Errorf("资产不存在")
+	}
+	if versionID > 0 {
+		sourceVersion := s.asset.FindVersion(ctx, versionID)
+		if sourceVersion == nil || sourceVersion.AssetID != sourceAsset.ID {
+			return nil, fmt.Errorf("资产版本不存在")
+		}
+	}
+	if existing := s.existingCanvasResultByRequestID(ctx, project.ID, sourceAsset.Role, SaveCanvasResultRequest{
+		Purpose:   CanvasResultEdit,
+		RequestID: strings.TrimSpace(requestID),
+	}); len(existing) > 0 {
+		return map[string]any{"asset": existing["asset"]}, nil
+	}
+	saved, err := withCanvasAssetVersionLock(ctx, project.ID, []string{
+		fmt.Sprintf("asset:%d", sourceAsset.ID),
+	}, func() (canvasSavedAssetVersion, error) {
+		savedAsset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
+			ProjectID:   project.ID,
+			BodyID:      project.BodyID,
+			TeamID:      sourceAsset.TeamID,
+			FlowID:      sourceAsset.FlowID,
+			AssetCateID: sourceAsset.AssetCateID,
+			ReleaseID:   project.ReleaseID,
+			Name:        sourceAsset.Name,
+			Kind:        sourceAsset.Kind,
+			Role:        sourceAsset.Role,
+			Content:     content,
+			Sort:        sourceAsset.Sort,
+		})
+		return canvasSavedAssetVersion{Asset: savedAsset, Version: version}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if saved.Asset == nil || saved.Version == nil {
+		return nil, fmt.Errorf("资产版本保存失败")
+	}
+	if strings.TrimSpace(requestID) != "" {
+		s.recordCanvasResultAsset(ctx, project.ID, sourceAsset.AssetCateID, saved.Asset.ID, saved.Version.ID, CanvasResultEdit, "", "", sourceAsset.Name, SaveCanvasResultRequest{
+			RequestID: strings.TrimSpace(requestID),
+		}, project.ReleaseID)
+	}
+	return map[string]any{
+		"asset": s.asset.AssetDetailMap(ctx, *saved.Asset, saved.Version),
+	}, nil
+}
+
+func (s SpaceService) UseAssetVersion(ctx context.Context, projectID uint64, assetID uint64, versionID uint64) (map[string]any, error) {
+	project, err := s.project.RequireProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	savedAsset, version, err := s.asset.UseVersion(ctx, project.ID, assetID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"asset": s.asset.AssetDetailMap(ctx, *savedAsset, version),
+	}, nil
+}
+
+func (s SpaceService) AssetDetail(ctx context.Context, projectID uint64, assetID uint64) (map[string]any, error) {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -154,65 +238,8 @@ func (s SpaceService) SaveAssetVersion(ctx context.Context, projectID uint64, as
 	if asset == nil {
 		return nil, fmt.Errorf("资产不存在")
 	}
-	savedAsset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
-		ProjectID:   asset.ProjectID,
-		BodyID:      asset.BodyID,
-		TeamID:      asset.TeamID,
-		FlowID:      asset.FlowID,
-		AssetCateID: asset.AssetCateID,
-		ReleaseID:   project.ReleaseID,
-		Name:        asset.Name,
-		Kind:        asset.Kind,
-		Role:        asset.Role,
-		Content:     content,
-		Sort:        asset.Sort,
-	})
-	if err != nil {
-		return nil, err
-	}
-	item := assetservice.AssetToMap(*savedAsset)
-	item["version"] = assetservice.VersionToMap(*version)
 	return map[string]any{
-		"asset": item,
-	}, nil
-}
-
-func (s SpaceService) SaveCanvasAsset(ctx context.Context, projectID uint64, assetCateID uint64, name string, kind string, role string, content any) (map[string]any, error) {
-	project, err := s.project.RequireProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	assetCate, err := s.requireProjectAssetCate(ctx, project.TeamID, assetCateID)
-	if err != nil {
-		return nil, err
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = assetCate.Name
-	}
-	kind = strings.TrimSpace(kind)
-	if kind == "" {
-		kind = assetCate.Kind
-	}
-	savedAsset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
-		ProjectID:   project.ID,
-		BodyID:      project.BodyID,
-		TeamID:      project.TeamID,
-		AssetCateID: assetCate.ID,
-		ReleaseID:   project.ReleaseID,
-		Name:        name,
-		Kind:        kind,
-		Role:        role,
-		Content:     content,
-		Sort:        100,
-	})
-	if err != nil {
-		return nil, err
-	}
-	item := assetservice.AssetToMap(*savedAsset)
-	item["version"] = assetservice.VersionToMap(*version)
-	return map[string]any{
-		"asset": item,
+		"asset": s.asset.AssetDetailMap(ctx, *asset, nil),
 	}, nil
 }
 
@@ -231,13 +258,70 @@ func (s SpaceService) requireProjectAssetCate(ctx context.Context, teamID uint64
 	return row, nil
 }
 
+func slimBootstrapAssets(value any) []any {
+	switch items := value.(type) {
+	case []map[string]any:
+		result := make([]any, 0, len(items))
+		for _, item := range items {
+			result = append(result, slimBootstrapAsset(item))
+		}
+		return result
+	case []any:
+		result := make([]any, 0, len(items))
+		for _, item := range items {
+			if row, ok := item.(map[string]any); ok {
+				result = append(result, slimBootstrapAsset(row))
+				continue
+			}
+			result = append(result, item)
+		}
+		return result
+	default:
+		return []any{}
+	}
+}
+
+func slimBootstrapAsset(item map[string]any) map[string]any {
+	result := make(map[string]any, len(item))
+	for key, value := range item {
+		if key == "versions" {
+			continue
+		}
+		if key == "version" {
+			result[key] = slimBootstrapAssetVersion(value)
+			continue
+		}
+		result[key] = value
+	}
+	return result
+}
+
+func slimBootstrapAssetVersion(value any) any {
+	row, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	result := make(map[string]any, len(row))
+	for key, current := range row {
+		if key == "content" {
+			continue
+		}
+		result[key] = current
+	}
+	return result
+}
+
 func (s SpaceService) PrepareUploadInit(ctx context.Context, projectID uint64, body map[string]any) error {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
+	ruleID := spaceUploadRuleID(body)
+	if ruleID == 0 {
+		return fmt.Errorf("上传规则不能为空")
+	}
 	body["project_id"] = project.ID
-	body["rule_id"] = spaceUploadRuleID(body)
+	body["rule_id"] = ruleID
 	body["biz_key"] = spaceUploadBizKey(project.ID)
 	body["biz_name"] = fmt.Sprintf("作品 %d", project.ID)
 	return nil
@@ -295,6 +379,10 @@ func (s SpaceService) Chat(ctx context.Context, projectID uint64, message string
 }
 
 func (s SpaceService) RunFlow(ctx context.Context, projectID uint64, flowID uint64, input map[string]any) (map[string]any, error) {
+	return s.runFlow(ctx, projectID, flowID, "", input)
+}
+
+func (s SpaceService) runFlow(ctx context.Context, projectID uint64, flowID uint64, requestID string, input map[string]any) (map[string]any, error) {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -302,13 +390,17 @@ func (s SpaceService) RunFlow(ctx context.Context, projectID uint64, flowID uint
 	if flowID == 0 {
 		return nil, fmt.Errorf("请选择流程")
 	}
+	if started := canvasProjectRunRef(ctx, project.ID, requestID); len(started) > 0 {
+		return started, nil
+	}
 	return s.team.RunFlow(ctx, teamservice.RunRequest{
 		TeamID:    project.TeamID,
 		FlowID:    flowID,
 		ReleaseID: project.ReleaseID,
 		ProjectID: project.ID,
+		RequestID: strings.TrimSpace(requestID),
 		Input:     input,
-		Mode:      "flow",
+		Mode:      "sub_flow",
 	})
 }
 
@@ -316,6 +408,16 @@ func (s SpaceService) RunStatus(ctx context.Context, projectID uint64, runID uin
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if run := resolveCanvasRun(ctx, project.ID, runID, requestID); run != nil {
+		if run.Status == teammodel.RunStatusRunning {
+			if !s.dispatchRunnableCanvasRun(ctx, project.ID, run) {
+				if refreshed := resolveCanvasRun(ctx, project.ID, runID, requestID); refreshed != nil {
+					run = refreshed
+				}
+			}
+		}
+		return s.canvasRunRecordPayload(ctx, project.ID, run)
 	}
 	return s.team.ProjectRunStatus(ctx, project.ID, runID, requestID)
 }
@@ -343,7 +445,7 @@ func (s SpaceService) CanvasPowerForm(ctx context.Context, projectID uint64, flo
 	return s.team.CanvasPowerForm(ctx, project.ReleaseID, flowID, powerID, powerKey, targetID)
 }
 
-func (s SpaceService) RunCanvasPower(ctx context.Context, projectID uint64, req teamservice.CanvasPowerRunRequest) (map[string]any, error) {
+func (s SpaceService) RunCanvasPower(ctx context.Context, projectID uint64, req CanvasPowerRunRequest) (map[string]any, error) {
 	project, err := s.project.RequireProject(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -355,11 +457,51 @@ func (s SpaceService) RunCanvasPower(ctx context.Context, projectID uint64, req 
 	if err := requireBodyPower(ctx, s.project.body, project.BodyID, req.PowerID); err != nil {
 		return nil, err
 	}
-	req.ProjectID = project.ID
-	req.BodyID = project.BodyID
-	req.TeamID = project.TeamID
-	req.ReleaseID = project.ReleaseID
-	return s.team.RunCanvasPower(ctx, req)
+	powerReq := req.CanvasPowerRunRequest
+	powerReq.ProjectID = project.ID
+	powerReq.BodyID = project.BodyID
+	powerReq.TeamID = project.TeamID
+	powerReq.ReleaseID = project.ReleaseID
+	powerReq.NodeName = s.canvasResultAssetName(
+		ctx,
+		project.ID,
+		powerReq.AssetCateID,
+		"material",
+		CanvasResultMaterial,
+		strings.TrimSpace(powerReq.NodeKey),
+		"",
+		powerReq.NodeName,
+	)
+	result, err := withCanvasAssetVersionLock(ctx, project.ID, canvasResultVersionLockParts(
+		powerReq.AssetCateID,
+		assetservice.NormalizeRole("material"),
+		CanvasResultMaterial,
+		strings.TrimSpace(powerReq.NodeKey),
+		"",
+		powerReq.NodeName,
+	), func() (map[string]any, error) {
+		return s.team.RunCanvasPower(ctx, powerReq)
+	})
+	if err != nil {
+		return result, err
+	}
+	if result == nil {
+		result = map[string]any{}
+	}
+	if _, ok := result["persists_result"]; !ok {
+		result["persists_result"] = true
+	}
+	if _, ok := result["role"]; !ok {
+		result["role"] = "material"
+	}
+	if _, ok := result["node_key"]; !ok && strings.TrimSpace(req.NodeKey) != "" {
+		result["node_key"] = strings.TrimSpace(req.NodeKey)
+	}
+	if _, ok := result["node_type"]; !ok {
+		result["node_type"] = "power"
+	}
+	s.recordCanvasPowerResult(ctx, project.ID, powerReq, req.RunID, req.NodeRunID, result)
+	return result, nil
 }
 
 func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req CanvasAgentRunRequest) (map[string]any, error) {
@@ -382,16 +524,37 @@ func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req 
 		return nil, fmt.Errorf("智能体不存在或未开启")
 	}
 	input := cloneSpaceInput(req.Input)
+	requestID := strings.TrimSpace(req.RequestID)
+	if existing := canvasAgentRunRecord(ctx, 0, requestID); existing != nil {
+		result, err := waitCanvasAgentRunCompletion(ctx, existing)
+		if err != nil {
+			return nil, err
+		}
+		s.recordCanvasAgentRunInput(ctx, req.NodeRunID, input, nil)
+		return s.finishCanvasAgentResult(ctx, project, *agent, req, input, result)
+	}
+	memoryScope := CanvasAgentMemoryScope{
+		ProjectID:   project.ID,
+		AssetCateID: req.AssetCateID,
+		NodeKey:     req.NodeKey,
+		AgentID:     req.AgentID,
+		RunID:       req.RunID,
+		NodeRunID:   req.NodeRunID,
+	}
+	history := s.canvasAgentHistory(ctx, memoryScope)
+	s.recordCanvasAgentRunInput(ctx, req.NodeRunID, input, history)
 	var internalRunID uint64
 	var internalRequestID string
 	result, err := s.agent.RunInternal(ctx, agentservice.InternalRunRequest{
-		AgentID: req.AgentID,
-		Input:   input,
-		History: req.History,
-		Options: map[string]any{"full_runtime": true},
+		AgentID:   req.AgentID,
+		RequestID: requestID,
+		Input:     input,
+		History:   history,
+		Options:   map[string]any{"full_runtime": true},
 		OnRunCreated: func(runID uint64, requestID string) {
 			internalRunID = runID
 			internalRequestID = strings.TrimSpace(requestID)
+			s.recordCanvasAgentRunRef(ctx, req.NodeRunID, internalRunID, internalRequestID)
 		},
 	})
 	if err != nil {
@@ -406,7 +569,59 @@ func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req 
 			}, err
 		}
 	}
+	return s.finishCanvasAgentResult(ctx, project, *agent, req, input, result)
+}
+
+func (s SpaceService) recordCanvasAgentRunInput(ctx context.Context, nodeRunID uint64, input map[string]any, history []any) {
+	patch := map[string]any{
+		"agent_input": cloneSpaceInput(input),
+	}
+	if history != nil {
+		patch["agent_history"] = history
+	}
+	s.mergeCanvasNodeInput(ctx, nodeRunID, patch)
+}
+
+func (s SpaceService) recordCanvasAgentRunRef(ctx context.Context, nodeRunID uint64, runID uint64, requestID string) {
+	patch := map[string]any{}
+	if runID > 0 {
+		patch["agent_run_id"] = runID
+	}
+	if strings.TrimSpace(requestID) != "" {
+		patch["agent_request_id"] = strings.TrimSpace(requestID)
+	}
+	s.mergeCanvasNodeInput(ctx, nodeRunID, patch)
+}
+
+func (s SpaceService) finishCanvasAgentResult(
+	ctx context.Context,
+	project *workmodel.Project,
+	agent agentmodel.Agent,
+	req CanvasAgentRunRequest,
+	input map[string]any,
+	result agentservice.InternalRunResult,
+) (map[string]any, error) {
+	if project == nil {
+		return nil, fmt.Errorf("项目不存在")
+	}
+	s.recordCanvasAgentRunRef(ctx, req.NodeRunID, result.RunID, result.RequestID)
+	memoryScope := CanvasAgentMemoryScope{
+		ProjectID:   project.ID,
+		AssetCateID: req.AssetCateID,
+		NodeKey:     req.NodeKey,
+		AgentID:     req.AgentID,
+		RunID:       req.RunID,
+		NodeRunID:   req.NodeRunID,
+		AgentRunID:  result.RunID,
+	}
 	if interaction := canvasAgentInteraction(result.Output); len(interaction) > 0 {
+		s.appendCanvasAgentMemory(ctx, memoryScope,
+			canvasAgentUserMemory(input),
+			canvasAgentAssistantMemory(
+				result.Output,
+				canvasAgentInteractionMemoryText(interaction, result.Summary),
+			),
+		)
 		return map[string]any{
 			"run_id":      result.RunID,
 			"request_id":  result.RequestID,
@@ -424,31 +639,40 @@ func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req 
 	if nodeName == "" {
 		nodeName = "智能体运行结果"
 	}
-	asset, version, err := s.asset.SaveVersion(ctx, assetservice.SaveVersionRequest{
-		ProjectID: project.ID,
-		BodyID:    project.BodyID,
-		TeamID:    project.TeamID,
-		ReleaseID: project.ReleaseID,
-		FlowID:    req.FlowID,
-		RunID:     result.RunID,
-		Name:      nodeName,
-		Kind:      "text",
-		Role:      assetservice.NormalizeRole("content"),
-		Content:   result.Output,
+	saved, err := s.SaveCanvasMaterial(ctx, project.ID, SaveCanvasResultRequest{
+		AssetCateID: req.AssetCateID,
+		Name:        nodeName,
+		Kind:        "text",
+		Content:     result.Output,
+		RunID:       req.RunID,
+		NodeRunID:   req.NodeRunID,
+		ReleaseID:   firstUint64(req.ReleaseID, project.ReleaseID),
+		NodeKey:     req.NodeKey,
 	})
 	if err != nil {
 		return nil, err
 	}
-	item := assetservice.AssetToMap(*asset)
-	item["version"] = assetservice.VersionToMap(*version)
-	return map[string]any{
-		"run_id":     result.RunID,
-		"request_id": result.RequestID,
-		"status":     "success",
-		"output":     result.Output,
-		"asset":      item,
-		"version":    assetservice.VersionToMap(*version),
-	}, nil
+	asset := spaceMapValue(saved["asset"])
+	version := spaceMapValue(saved["version"])
+	response := map[string]any{
+		"run_id":          req.RunID,
+		"request_id":      result.RequestID,
+		"node_run_id":     req.NodeRunID,
+		"release_id":      firstUint64(req.ReleaseID, project.ReleaseID),
+		"agent_run_id":    result.RunID,
+		"persists_result": true,
+		"role":            "material",
+		"status":          "success",
+		"output":          result.Output,
+		"asset":           asset,
+		"version":         version,
+	}
+	s.appendCanvasAgentMemory(ctx, memoryScope,
+		canvasAgentUserMemory(input),
+		canvasAgentFeedbackMemory(input),
+		canvasAgentAssistantMemory(result.Output, result.Summary),
+	)
+	return response, nil
 }
 
 func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64, bodyID uint64) (map[string]any, error) {
@@ -465,12 +689,12 @@ func (s SpaceService) powerCatalog(ctx context.Context, releaseID uint64, bodyID
 }
 
 func spaceUploadRuleID(body map[string]any) uint64 {
-	for _, key := range []string{"rule_id", "ruleId", "upload_rule_id", "uploadRuleId"} {
+	for _, key := range []string{"rule_id", "upload_rule_id"} {
 		if value := uint64Value(body[key]); value > 0 {
 			return value
 		}
 	}
-	return spaceDefaultUploadRuleID
+	return 0
 }
 
 func spaceUploadBizKey(projectID uint64) string {
@@ -514,48 +738,42 @@ func (s SpaceService) projectCanvases(ctx context.Context, projectID uint64) map
 			continue
 		}
 		key := fmt.Sprintf("%d", row.AssetCateID)
-		result[key] = decodeProjectCanvas(row.AssetCateID, row.Nodes, row.Edges, row.Viewport)
+		result[key] = decodeProjectCanvas(row.AssetCateID, row.Nodes, row.Edges, row.Viewport, row.UpdatedAt)
 	}
 	return result
 }
 
-func decodeProjectCanvas(assetCateID uint64, nodes string, edges string, viewport string) map[string]any {
-	return map[string]any{
+func decodeProjectCanvas(assetCateID uint64, nodes string, edges string, viewport string, updatedAt time.Time) map[string]any {
+	result := map[string]any{
 		"asset_cate_id": assetCateID,
 		"nodes":         jsonList(nodes),
 		"edges":         jsonList(edges),
 		"viewport":      jsonObject(viewport),
 	}
+	if !updatedAt.IsZero() {
+		result["updated_at"] = updatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return result
 }
 
-func marshalCanvasList(value any) (string, error) {
-	if value == nil {
-		value = []any{}
+func ensureCanvasRevision(row *workmodel.ProjectCanvas, baseRevision string) error {
+	if row == nil {
+		return nil
 	}
-	items, ok := value.([]any)
-	if !ok {
-		return "", fmt.Errorf("expected list")
+	if strings.TrimSpace(baseRevision) == "" {
+		return nil
 	}
-	content, err := json.Marshal(items)
-	if err != nil {
-		return "", err
+	if canvasRevision(row.UpdatedAt) != strings.TrimSpace(baseRevision) {
+		return fmt.Errorf("画布已被其他页面更新，请刷新后再保存")
 	}
-	return string(content), nil
+	return nil
 }
 
-func marshalCanvasObject(value any) (string, error) {
-	if value == nil {
-		value = map[string]any{}
+func canvasRevision(updatedAt time.Time) string {
+	if updatedAt.IsZero() {
+		return ""
 	}
-	row, ok := value.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("expected object")
-	}
-	content, err := json.Marshal(row)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
+	return updatedAt.UTC().Format(time.RFC3339Nano)
 }
 
 func jsonList(text string) []any {
@@ -664,6 +882,50 @@ func canvasAgentFallbackResult(ctx context.Context, runID uint64, requestID stri
 		RequestID: firstText(current.RequestID, run.RequestID, requestID),
 		RunID:     firstUint64(current.RunID, run.ID, runID),
 	}
+}
+
+func waitCanvasAgentRunCompletion(ctx context.Context, run *agentmodel.Run) (agentservice.InternalRunResult, error) {
+	if run == nil {
+		return agentservice.InternalRunResult{}, fmt.Errorf("智能体运行不存在")
+	}
+	var current *agentmodel.Run
+	for index := 0; index < canvasFlowPollAttempts; index++ {
+		current = run
+		if index > 0 {
+			current = agentmodel.NewRunModel().Find(ctx, map[string]any{"id": run.ID})
+		}
+		if current == nil {
+			return agentservice.InternalRunResult{}, fmt.Errorf("智能体运行不存在")
+		}
+		output := internalCanvasAgentOutput(current.Output)
+		result := agentservice.InternalRunResult{
+			Output:    output,
+			Summary:   strings.TrimSpace(agentaction.SummaryText(output)),
+			RequestID: current.RequestID,
+			RunID:     current.ID,
+		}
+		switch current.Status {
+		case teammodel.RunStatusSuccess:
+			return result, nil
+		case teammodel.RunStatusFail, teammodel.RunStatusCanceled:
+			return result, fmt.Errorf("%s", firstText(current.Error, result.Summary, "智能体运行失败"))
+		}
+		select {
+		case <-ctx.Done():
+			return agentservice.InternalRunResult{}, ctx.Err()
+		case <-time.After(canvasFlowPollInterval):
+		}
+	}
+	if current == nil {
+		return agentservice.InternalRunResult{}, fmt.Errorf("%w: 智能体仍在运行，请稍后刷新查看结果", errCanvasExternalStillRunning)
+	}
+	output := internalCanvasAgentOutput(current.Output)
+	return agentservice.InternalRunResult{
+		Output:    output,
+		Summary:   strings.TrimSpace(agentaction.SummaryText(output)),
+		RequestID: current.RequestID,
+		RunID:     current.ID,
+	}, fmt.Errorf("%w: 智能体仍在运行，请稍后刷新查看结果", errCanvasExternalStillRunning)
 }
 
 func canvasAgentRunRecord(ctx context.Context, runID uint64, requestID string) *agentmodel.Run {

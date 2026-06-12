@@ -20,7 +20,10 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { defaultPowerParamValue } from "./space-power-param";
 import type { PowerParam, PowerParamSource } from "./types";
+
+export { defaultPowerParamValue } from "./space-power-param";
 
 export type ComposerAssetPreview = {
   text: string;
@@ -1034,23 +1037,6 @@ export function isToolbarPowerParam(param: PowerParam) {
     return false;
   }
   return true;
-}
-
-export function defaultPowerParamValue(param: PowerParam) {
-  const raw = param.default_value ?? "";
-  if (param.type === "switch") {
-    return truthy(raw);
-  }
-  if (param.type === "multi_option" || param.type === "files") {
-    return valueAsList(parseJSONValue(raw));
-  }
-  if (param.type === "option" || param.type === "select") {
-    return raw || param.options?.[0]?.value || "";
-  }
-  if (param.value_type === "number") {
-    return raw === "" ? "" : Number(raw);
-  }
-  return raw;
 }
 
 function paramControlLabel(param: PowerParam, value: unknown) {

@@ -79,3 +79,16 @@ func bodyText(body map[string]any, keys ...string) string {
 	}
 	return ""
 }
+
+func bodyBool(body map[string]any, key string) bool {
+	switch value := body[key].(type) {
+	case bool:
+		return value
+	case string:
+		text := strings.ToLower(strings.TrimSpace(value))
+		return text == "1" || text == "true" || text == "yes" || text == "on"
+	default:
+		text := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+		return text == "1" || text == "true" || text == "yes" || text == "on"
+	}
+}

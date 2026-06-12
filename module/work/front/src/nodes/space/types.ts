@@ -171,6 +171,32 @@ export type ProjectAsset = {
   versions?: AssetVersion[];
 };
 
+export type CanvasResultRef = {
+  run_id?: number;
+  request_id?: string;
+  flow_run_id?: number;
+  node_run_id?: number;
+  asset_id?: number;
+  version_id?: number;
+  release_id?: number;
+  role?: string;
+  status?: string;
+  updated_at?: string;
+};
+
+export type CanvasResultSourceRef = {
+  sourceRunId?: number;
+  sourceNodeRunId?: number;
+  sourceAssetId?: number;
+  sourceVersionId?: number;
+  sourceReleaseId?: number;
+  sourceRequestId?: string;
+  sourceNodeKey?: string;
+  sourceNodeType?: string;
+  sourceStatus?: string;
+  sourceKey?: string;
+};
+
 export type SpaceBootstrap = {
   project: WorkProject;
   team: WorkTeam;
@@ -205,6 +231,8 @@ export type SpaceCanvasNode = {
   asset?: ProjectAsset;
   power?: PowerOption;
   functionOption?: CanvasFunctionOption;
+  resultRef?: CanvasResultRef;
+  resultOutput?: unknown;
   local?: boolean;
 };
 
@@ -225,4 +253,5 @@ export type SpaceCanvasState = {
   nodes: SpaceCanvasNode[];
   edges: SpaceCanvasEdge[];
   viewport: SpaceCanvasViewport;
+  updatedAt?: string;
 };

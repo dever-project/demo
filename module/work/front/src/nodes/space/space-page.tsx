@@ -17,7 +17,6 @@ import {
 import { createPortal } from "react-dom";
 import * as LucideIcons from "lucide-react";
 import {
-  Background,
   Handle,
   MiniMap,
   Position,
@@ -31,7 +30,6 @@ import {
   type NodeProps,
   type OnConnect,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import {
   ArrowLeft,
   Bot,
@@ -83,26 +81,62 @@ import {
 import { toast } from "sonner";
 import { getCompatModule, useNavigate } from "@dever/front-plugin";
 import {
+  fetchSpaceAssetDetail,
   fetchSpaceBootstrap,
-  fetchSpaceBootstrapAssets,
   fetchSpacePowerForm,
   fetchSpacePowers,
   fetchSpaceRunStatus,
-  completeSpaceUpload,
-  initSpaceUpload,
-  runSpaceAgent,
-  runSpacePower,
-  runSpaceFlow,
-  saveSpaceCanvasAsset,
+  recoverSpaceCanvasRuns,
+  resumeSpaceCanvas,
+  runSpaceCanvas,
   saveSpaceCanvas,
+  saveSpaceCanvasContent,
+  saveSpaceCanvasMaterial,
   sendSpaceMessage,
-  SPACE_UPLOAD_RULE_ID,
-  submitSpaceApproval,
-  uploadSpacePart,
+  saveSpaceAssetEditVersion,
+  useSpaceAssetVersion,
 } from "./space-api";
+import { persistedCanvasState } from "./space-canvas-state";
+import {
+  mergeProjectAssetVersionHistory,
+  resultAssetKind,
+  runResultAsset,
+  withRunResultAsset,
+} from "./space-assets";
+import {
+  buildNodeResultRef,
+  canvasResultSourceFromNode,
+} from "./space-result";
+import {
+  AssetPickerButton,
+  AssetWorkspacePanel,
+  EmptyAssetDetail,
+  WorkspaceSurface,
+  assetRoleForView,
+  type AssetDetailRenderInput,
+} from "./space-asset-viewer";
+import {
+  normalizeCanvasRunRef,
+  type CanvasNodeResultRef,
+  type CanvasRunRef,
+} from "./space-runner";
+import {
+  FEEDBACK_REPLACED_MESSAGE,
+  agentFeedbackFromResult,
+  createNodeFeedbackRecord,
+  currentNodeFeedbackRecords,
+  flowFeedbackFromSnapshot,
+  isFeedbackReplacedError,
+  isReadonlyFeedbackRecord,
+  normalizeFlowRunSnapshot,
+  submitNodeFeedbackRecord,
+  type FlowFeedbackPrompt,
+  type FlowFeedbackRequester,
+  type NodeFeedbackRecord,
+} from "./space-feedback";
+import { uploadAssetContent, uploadSpaceFiles } from "./space-upload";
 import {
   assetCateById,
-  assetsForCate,
   createLocalNode,
   defaultAssetCateId,
   documentPreview,
@@ -119,6 +153,7 @@ import { WorkSpaceStyles } from "./space-styles";
 import type {
   AssetCate,
   AssetVersion,
+  CanvasResultSourceRef,
   CanvasFunctionOption,
   PowerForm,
   PowerKindOption,
@@ -137,11 +172,11 @@ import {
   type ComposerAssetItem,
   type UploadPreview,
   PromptComposer,
-  defaultPowerParamValue,
   isPromptPowerParam,
   isToolbarPowerParam,
   isUploadPowerParam,
 } from "./space-prompt-composer";
+import { defaultPowerParamValues } from "./space-power-param";
 
 const { EnergonContentView, normalizeEnergonOutput } = getCompatModule(
   "@/components/energon/content-view",
@@ -167,14 +202,6 @@ const { RichTextEditor: CompatRichTextEditor } = getCompatModule(
 const { normalizeAgentResultOutputValue } = getCompatModule("@/lib/agent-result-protocol") as {
   normalizeAgentResultOutputValue?: (value: any) => any;
 };
-const { digestUploadFile, uploadFileDirect } = getCompatModule("@/lib/upload") as {
-  digestUploadFile?: (file: File) => Promise<string>;
-  uploadFileDirect?: (
-    file: File,
-    direct: unknown,
-    onProgress?: (loaded: number, total: number) => void,
-  ) => Promise<void>;
-};
 
 type WorkMode = "create" | "result";
 type WorkSpaceTheme = "dark" | "light";
@@ -185,7 +212,8 @@ type RunningNodeState = {
   progress: number;
   status: "running" | "success" | "error";
 };
-type RunningNodeSetter = Dispatch<SetStateAction<RunningNodeState | null>>;
+type RunningNodeMap = Record<string, RunningNodeState>;
+type RunningNodeSetter = Dispatch<SetStateAction<RunningNodeMap>>;
 type NodeResultSetter = (
   nodeId: string,
   patch: Partial<SpaceCanvasNode>,
@@ -197,6 +225,20 @@ type ComposerDraft = {
 };
 type NodeDraftSetter = (nodeId: string, draft: ComposerDraft) => void;
 type NodeStartRunner = (node: SpaceCanvasNode) => Promise<void>;
+type BackendNodeRunner = (node: SpaceCanvasNode) => Promise<void>;
+
+function omitRunningNode(nodes: RunningNodeMap, nodeId: string): RunningNodeMap {
+  if (!nodes[nodeId]) {
+    return nodes;
+  }
+  const next = { ...nodes };
+  delete next[nodeId];
+  return next;
+}
+
+function hasRunningCanvasNode(nodes: RunningNodeMap) {
+  return Object.values(nodes).some((node) => node.status === "running");
+}
 type ConfirmRequest = {
   title: string;
   description: string;
@@ -228,7 +270,6 @@ type GeneratedNodePreview = {
   audioUrl: string;
   fileUrl: string;
 };
-type AssetViewerMode = "browse" | "select" | "detail";
 type NodeInputContext = {
   text: string;
   sources: Array<{
@@ -237,58 +278,8 @@ type NodeInputContext = {
     type: SpaceCanvasNode["type"];
     output: unknown;
     preview: GeneratedNodePreview;
+    resultRef?: SpaceCanvasNode["resultRef"];
   }>;
-};
-type FlowRunStatus = "running" | "waiting" | "success" | "fail" | "canceled" | string;
-type FlowRunSnapshot = {
-  runId: number;
-  requestId: string;
-  status: FlowRunStatus;
-  output: unknown;
-  error: string;
-  approvals: FlowApproval[];
-  raw: any;
-};
-type FlowApproval = {
-  id: number;
-  title: string;
-  status: string;
-  decision: string;
-  content: Record<string, any>;
-};
-type FlowFeedbackPrompt = {
-  approval: FlowApproval;
-  title: string;
-  description: string;
-  fields: PowerParam[];
-  values: Record<string, unknown>;
-};
-type FlowFeedbackRequester = (input: {
-  node: SpaceCanvasNode;
-  prompt: FlowFeedbackPrompt;
-}) => Promise<Record<string, unknown>>;
-type NodeFeedbackRecord = {
-  id: string;
-  nodeId: string;
-  title: string;
-  description: string;
-  prompt: FlowFeedbackPrompt;
-  values?: Record<string, unknown>;
-  status: "pending" | "submitted";
-  createdAt: string;
-  submittedAt?: string;
-};
-const FEEDBACK_REPLACED_MESSAGE = "反馈已被新的运行替换";
-
-function isFeedbackReplacedError(err: unknown) {
-  return err instanceof Error && err.message === FEEDBACK_REPLACED_MESSAGE;
-}
-
-type AgentMemoryEntry = {
-  role: "user" | "assistant" | "feedback";
-  text: string;
-  data?: unknown;
-  createdAt: string;
 };
 type PendingNodeConnection = {
   nodeId: string;
@@ -306,8 +297,6 @@ type AddNodeMenuState = {
   view: "types" | "assets" | "powers" | "agents" | "flows" | "functions";
   connection?: PendingNodeConnection;
 };
-
-const canvasAgentMemoryStore = new Map<string, AgentMemoryEntry[]>();
 
 const functionOptions: CanvasFunctionOption[] = [
   {
@@ -369,7 +358,7 @@ export function WorkSpacePage() {
   const [powersLoading, setPowersLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
-  const [runningNode, setRunningNode] = useState<RunningNodeState | null>(null);
+  const [runningNodes, setRunningNodes] = useState<RunningNodeMap>({});
   const [nodeResultOverrides, setNodeResultOverrides] = useState<
     Record<string, Partial<SpaceCanvasNode>>
   >({});
@@ -389,6 +378,7 @@ export function WorkSpacePage() {
   } | null>(null);
   const loadedCanvasesRef = useRef<Record<string, string>>({});
   const pendingImportNodeRef = useRef<SpaceCanvasNode | null>(null);
+  const requestedAssetDetailsRef = useRef<Set<number>>(new Set());
   const startFlowFeedbackRef = useRef<{
     nodeId: string;
     recordId: string;
@@ -406,13 +396,18 @@ export function WorkSpacePage() {
     setError("");
     try {
       const nextSpace = await fetchSpaceBootstrap(projectId);
-      const canvases = persistentCanvasMap(nextSpace.canvases || {});
+      const canvases = hydrateCanvasMapAssets(
+        nextSpace.canvases || {},
+        nextSpace.assets || [],
+      );
       setSpace(nextSpace);
       setCanvasStates(canvases);
       loadedCanvasesRef.current = serializeCanvasMap(canvases);
       setActiveCateId(defaultAssetCateId(nextSpace));
       setPowers(nextSpace.powers || []);
       setPowerKinds(nextSpace.powerKinds || []);
+      requestedAssetDetailsRef.current = new Set();
+      void recoverSpaceCanvasRuns(projectId).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载创作空间失败");
     } finally {
@@ -664,13 +659,16 @@ export function WorkSpacePage() {
       if (!space || !activeCate) {
         return;
       }
-      setRunningNode({
-        nodeId: startNode.id,
-        title: startNode.title,
-        startedAt: Date.now(),
-        progress: 0,
-        status: "running",
-      });
+      setRunningNodes((current) => ({
+        ...current,
+        [startNode.id]: {
+          nodeId: startNode.id,
+          title: startNode.title,
+          startedAt: Date.now(),
+          progress: 0,
+          status: "running",
+        },
+      }));
       try {
         clearNodeFeedbackRecords(
           canvasExecutionNodeIds(
@@ -686,52 +684,104 @@ export function WorkSpacePage() {
           startNode,
           nodes: canvasModel.nodes,
           edges: canvasModel.edges,
+          viewport: activeCanvas.viewport,
           onNodeResult: updateNodeResult,
           onAssetCreated: upsertSpaceAsset,
-          setRunningNode,
+          setRunningNode: setRunningNodes,
           requestFlowFeedback: requestStartFlowFeedback,
         });
-        setRunningNode({
-          nodeId: startNode.id,
-          title: startNode.title,
-          startedAt: Date.now(),
-          progress: 100,
-          status: "success",
-        });
+        setRunningNodes((current) => ({
+          ...current,
+          [startNode.id]: {
+            nodeId: startNode.id,
+            title: startNode.title,
+            startedAt: Date.now(),
+            progress: 100,
+            status: "success",
+          },
+        }));
         toast.success("开始节点执行完成");
         window.setTimeout(() => {
-          setRunningNode((current) =>
-            current?.nodeId === startNode.id ? null : current,
-          );
+          setRunningNodes((current) => omitRunningNode(current, startNode.id));
         }, 700);
       } catch (err) {
         if (isFeedbackReplacedError(err)) {
+          setRunningNodes((current) => omitRunningNode(current, startNode.id));
           return;
         }
         const message = err instanceof Error ? err.message : "开始节点执行失败";
-        setRunningNode({
-          nodeId: startNode.id,
-          title: startNode.title,
-          startedAt: Date.now(),
-          progress: 92,
-          status: "error",
-        });
+        setRunningNodes((current) => ({
+          ...current,
+          [startNode.id]: {
+            nodeId: startNode.id,
+            title: startNode.title,
+            startedAt: Date.now(),
+            progress: 92,
+            status: "error",
+          },
+        }));
         toast.error(message);
         window.setTimeout(() => {
-          setRunningNode((current) =>
-            current?.nodeId === startNode.id ? null : current,
-          );
+          setRunningNodes((current) => omitRunningNode(current, startNode.id));
         }, 1400);
       }
     },
     [
       activeCate,
+      activeCanvas.viewport,
       canvasModel.edges,
       canvasModel.nodes,
       clearNodeFeedbackRecords,
       projectId,
       requestStartFlowFeedback,
-      setRunningNode,
+      setRunningNodes,
+      space,
+      updateNodeResult,
+      upsertSpaceAsset,
+    ],
+  );
+
+  const runBackendSingleNode = useCallback<BackendNodeRunner>(
+    async (node) => {
+      if (!space || !activeCate) {
+        return;
+      }
+      const targetNode = mergeBackendSingleNodeDraft(node);
+      const inputContext = buildNodeInputContext(
+        node.id,
+        canvasModel.nodes,
+        canvasModel.edges.map((edge) => ({
+          source: edge.from,
+          target: edge.to,
+        })),
+      );
+      await runCanvasFromStartNode({
+        projectId,
+        assetCate: activeCate,
+        space,
+        startNode: targetNode,
+        singleNode: true,
+        nodes: [targetNode],
+        edges: [],
+        viewport: activeCanvas.viewport,
+        runInput: {
+          _manual_input_context: inputContext || undefined,
+          manual_node_id: node.id,
+        },
+        onNodeResult: updateNodeResult,
+        onAssetCreated: upsertSpaceAsset,
+        setRunningNode: setRunningNodes,
+        requestFlowFeedback: requestStartFlowFeedback,
+      });
+    },
+    [
+      activeCate,
+      activeCanvas.viewport,
+      canvasModel.edges,
+      canvasModel.nodes,
+      projectId,
+      requestStartFlowFeedback,
+      setRunningNodes,
       space,
       updateNodeResult,
       upsertSpaceAsset,
@@ -745,16 +795,15 @@ export function WorkSpacePage() {
     const dirtyCanvases = Object.entries(canvasStates).filter(
       ([key, canvas]) =>
         loadedCanvasesRef.current[key] !==
-        stableStringifyCanvas(persistentCanvasState(canvas)),
+        stableStringifyCanvas(canvas),
     );
     if (dirtyCanvases.length === 0) {
       return;
     }
     const timer = window.setTimeout(() => {
       for (const [key, canvas] of dirtyCanvases) {
-        const persistentCanvas = persistentCanvasState(canvas);
-        const submittedCanvasSnapshot = stableStringifyCanvas(persistentCanvas);
-        void saveSpaceCanvas(space.project.id, canvas.assetCateId, persistentCanvas)
+        const submittedCanvasSnapshot = stableStringifyCanvas(canvas);
+        void saveSpaceCanvas(space.project.id, canvas.assetCateId, canvas)
           .then((savedCanvas) => {
             const savedCanvasSnapshot = stableStringifyCanvas(savedCanvas);
             loadedCanvasesRef.current[key] = savedCanvasSnapshot;
@@ -776,12 +825,45 @@ export function WorkSpacePage() {
             });
           })
           .catch((err) => {
+            loadedCanvasesRef.current[key] = submittedCanvasSnapshot;
             toast.error(err instanceof Error ? err.message : "保存画布失败");
           });
       }
     }, 520);
     return () => window.clearTimeout(timer);
   }, [canvasStates, space]);
+
+  useEffect(() => {
+    if (!space) {
+      return;
+    }
+    hydrateMissingCanvasAssetDetails({
+      projectId,
+      nodes: activeCanvas.nodes,
+      requested: requestedAssetDetailsRef.current,
+      fetchAsset: (assetId) => fetchSpaceAssetDetail({ projectId, assetId }),
+      onAsset: (asset) => {
+        upsertSpaceAsset(asset);
+        setNodeResultOverrides((current) => {
+          const next = { ...current };
+          let changed = false;
+          for (const node of activeCanvas.nodes) {
+            const assetId = canvasNodeReferencedAssetID(node);
+            if (assetId !== asset.id) {
+              continue;
+            }
+            const patchedNode = {
+              ...node,
+              ...(current[node.id] || {}),
+            };
+            next[node.id] = buildAssetVersionNodePatch(patchedNode, asset);
+            changed = true;
+          }
+          return changed ? next : current;
+        });
+      },
+    });
+  }, [activeCanvas.nodes, projectId, space, upsertSpaceAsset]);
 
   function switchCate(cateId: number) {
     setActiveCateId(cateId);
@@ -1034,19 +1116,18 @@ export function WorkSpacePage() {
         {
           output,
           asset,
-          version: asset.version,
         },
         "导入资产",
       ),
     );
-    patchDirectDisplayNodes(nodeId, output);
+    void patchDirectDisplayNodes(nodeId, output);
   }
 
-  function patchDirectDisplayNodes(sourceNodeId: string, output: unknown) {
+  async function patchDirectDisplayNodes(sourceNodeId: string, output: unknown) {
     if (!sourceNodeId) {
       return;
     }
-    const directDisplayNodeIds = activeCanvas.edges
+    const directDisplayNodes = activeCanvas.edges
       .filter((edge) => edge.from === sourceNodeId)
       .map((edge) => activeCanvas.nodes.find((node) => node.id === edge.to))
       .filter(
@@ -1054,23 +1135,20 @@ export function WorkSpacePage() {
           Boolean(node) &&
           node.type === "function" &&
           node.functionOption?.key === "display",
-      )
-      .map((node) => node.id);
-    if (directDisplayNodeIds.length === 0) {
+      );
+    if (directDisplayNodes.length === 0) {
       return;
     }
-    updateActiveCanvas((canvas) => ({
-      ...canvas,
-      nodes: canvas.nodes.map((node) => {
-        if (!directDisplayNodeIds.includes(node.id)) {
-          return node;
-        }
-        return {
-          ...node,
-          ...buildGeneratedNodeResultPatch(node, { output }, "展示导入结果"),
-        };
-      }),
-    }));
+    for (const displayNode of directDisplayNodes) {
+      updateNodeResult(
+        displayNode.id,
+        buildGeneratedNodeResultPatch(
+          displayNode,
+          { output },
+          "展示导入结果",
+        ),
+      );
+    }
   }
 
   function useImportedAsset(asset: ProjectAsset) {
@@ -1116,17 +1194,18 @@ export function WorkSpacePage() {
     const previews = await uploadSpaceFiles(
       projectId,
       files,
-      param.upload_rule_id || SPACE_UPLOAD_RULE_ID,
+      param.upload_rule_id,
     );
+    const assetCateId = requireRealAssetCateId(Number(activeCate.id || 0));
     for (const preview of previews) {
       try {
-        const asset = await saveSpaceCanvasAsset({
+        const asset = await saveSpaceCanvasMaterial({
           projectId,
-          assetCateId: Number(activeCate.id || 0),
+          assetCateId,
           name: preview.name || activeCate.name,
           kind: String(preview.kind || activeCate.kind || "file"),
-          role: "material",
           content: uploadAssetContent(preview),
+          requestId: createCanvasSaveRequestId("import", nodeId, preview.name),
         });
         upsertSpaceAsset({
           ...asset,
@@ -1297,15 +1376,15 @@ export function WorkSpacePage() {
         onFocusNodeRequestConsumed={consumeFocusNodeRequest}
         projectId={projectId}
         space={space}
-        runningNode={runningNode}
-        setRunningNode={setRunningNode}
+        runningNodes={runningNodes}
+        setRunningNode={setRunningNodes}
         onNodeResult={updateNodeResult}
         onNodeDraftChange={updateNodeComposerDraft}
         onAssetCreated={upsertSpaceAsset}
         onRunStartNode={runStartNode}
+        onRunBackendNode={runBackendSingleNode}
         onOpenImportPicker={openImportPicker}
         onClearFeedbackRecords={clearNodeFeedbackRecords}
-        requestFlowFeedback={requestStartFlowFeedback}
         requestConfirm={requestConfirm}
         onOpenFeedbackRecord={(node, record) => {
           if (
@@ -1380,6 +1459,7 @@ export function WorkSpacePage() {
           space={space}
           activeCate={activeCate}
           onClose={() => setWorkMode("create")}
+          renderAssetDetail={(input) => <AssetEditorSurface {...input} />}
         />
       ) : null}
 
@@ -1476,6 +1556,7 @@ export function WorkSpacePage() {
 
       {nodeDetail ? (
         <NodeDetailDialog
+          projectId={space.project.id}
           node={nodeDetail}
           onNodeUpdated={(nodePatch) => {
             updateNodeResult(nodeDetail.id, nodePatch);
@@ -1807,225 +1888,6 @@ function renderAddMenuSection<T>({
   );
 }
 
-function AssetWorkspacePanel({
-  space,
-  activeCate,
-  onClose,
-}: {
-  space: SpaceBootstrap;
-  activeCate: AssetCate;
-  onClose: () => void;
-}) {
-  return (
-    <WorkspaceSurface className="ws-asset-workspace">
-      <AssetViewer
-        mode="browse"
-        space={space}
-        activeCate={activeCate}
-        onClose={onClose}
-      />
-    </WorkspaceSurface>
-  );
-}
-
-function AssetViewer({
-  mode,
-  space,
-  activeCate,
-  selectedAsset: controlledSelectedAsset,
-  onClose,
-  onPickAsset,
-}: {
-  mode: AssetViewerMode;
-  space: SpaceBootstrap;
-  activeCate: AssetCate;
-  selectedAsset?: ProjectAsset | null;
-  onClose: () => void;
-  onPickAsset?: (asset: ProjectAsset) => void;
-}) {
-  const assets = useMemo(
-    () => assetsForCate(space, activeCate.id),
-    [activeCate.id, space],
-  );
-  const groups = useMemo(
-    () => groupAssetsByRole(assets, activeCate),
-    [activeCate, assets],
-  );
-  const firstAsset = groups.content[0] || groups.material[0] || null;
-  const [selectedAssetId, setSelectedAssetId] = useState(
-    controlledSelectedAsset?.id || firstAsset?.id || 0,
-  );
-  const selectedAsset =
-    controlledSelectedAsset ||
-    assets.find((asset) => asset.id === selectedAssetId) ||
-    firstAsset;
-
-  useEffect(() => {
-    setSelectedAssetId(controlledSelectedAsset?.id || firstAsset?.id || 0);
-  }, [activeCate.id, controlledSelectedAsset?.id, firstAsset?.id]);
-
-  const title =
-    mode === "select" ? "选择引用内容" : mode === "detail" ? "查看详情" : "结果";
-
-  return (
-    <section className="ws-asset-editor-shell has-list is-viewer">
-      <button
-        type="button"
-        className="ws-workspace-close"
-        onClick={onClose}
-        aria-label="关闭资产查看器"
-      >
-        <X size={18} />
-      </button>
-      <aside className="ws-asset-list-pane ws-asset-tree-pane">
-        <div className="ws-asset-list-title">
-          <strong>{activeCate.name}</strong>
-          <span>{title}</span>
-        </div>
-        <AssetViewerTree
-          activeCate={activeCate}
-          groups={groups}
-          selectedAssetId={selectedAsset?.id || 0}
-          onSelectAsset={(asset) => {
-            setSelectedAssetId(asset.id);
-            if (mode === "select") {
-              onPickAsset?.(asset);
-            }
-          }}
-        />
-      </aside>
-      <AssetEditorSurface
-        activeCate={activeCate}
-        asset={selectedAsset}
-        mode={mode}
-        onPickAsset={
-          mode === "select" && selectedAsset
-            ? () => onPickAsset?.(selectedAsset)
-            : undefined
-        }
-      />
-    </section>
-  );
-}
-
-function AssetViewerTree({
-  activeCate,
-  groups,
-  selectedAssetId,
-  onSelectAsset,
-}: {
-  activeCate: AssetCate;
-  groups: AssetRoleGroups;
-  selectedAssetId: number;
-  onSelectAsset: (asset: ProjectAsset) => void;
-}) {
-  return (
-    <div className="ws-asset-tree custom-scrollbar">
-      <AssetViewerGroup
-        title="内容"
-        count={groups.content.length}
-        emptyText={`暂无${activeCate.name}内容`}
-        assets={groups.content}
-        selectedAssetId={selectedAssetId}
-        onSelectAsset={onSelectAsset}
-      />
-      <AssetViewerGroup
-        title="素材"
-        count={groups.material.length}
-        emptyText="暂无素材"
-        assets={groups.material}
-        selectedAssetId={selectedAssetId}
-        onSelectAsset={onSelectAsset}
-      />
-    </div>
-  );
-}
-
-function AssetViewerGroup({
-  title,
-  count,
-  emptyText,
-  assets,
-  selectedAssetId,
-  onSelectAsset,
-}: {
-  title: string;
-  count: number;
-  emptyText: string;
-  assets: ProjectAsset[];
-  selectedAssetId: number;
-  onSelectAsset: (asset: ProjectAsset) => void;
-}) {
-  return (
-    <div className="ws-tree-group">
-      <div className="ws-tree-head is-open">
-        <span className="ws-tree-label">
-          <FolderIcon />
-          {title}
-        </span>
-        <small>{count}</small>
-      </div>
-      <div className="ws-tree-list">
-        {assets.length > 0 ? (
-          assets.map((asset, index) => (
-            <button
-              key={asset.id}
-              type="button"
-              className={`ws-tree-asset ${asset.id === selectedAssetId ? "is-active" : ""}`}
-              onClick={() => onSelectAsset(asset)}
-            >
-              <span>{asset.name || `${title} ${index + 1}`}</span>
-              <small>
-                {asset.created_at || asset.version?.created_at || "未保存时间"}
-              </small>
-            </button>
-          ))
-        ) : (
-          <div className="ws-tree-empty">{emptyText}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FolderIcon() {
-  return <Layers size={14} />;
-}
-
-type AssetRoleGroups = {
-  content: ProjectAsset[];
-  material: ProjectAsset[];
-};
-
-function groupAssetsByRole(
-  assets: ProjectAsset[],
-  activeCate: AssetCate,
-): AssetRoleGroups {
-  return assets.reduce<AssetRoleGroups>(
-    (groups, asset) => {
-      groups[assetRoleForView(asset, activeCate)].push(asset);
-      return groups;
-    },
-    { content: [], material: [] },
-  );
-}
-
-function assetRoleForView(
-  asset: ProjectAsset | null | undefined,
-  activeCate: AssetCate,
-): "content" | "material" {
-  const role = String(asset?.role || "").toLowerCase();
-  if (role === "content" || role === "material") {
-    return role;
-  }
-  if (!asset) {
-    return "material";
-  }
-  const cateKind = String(activeCate.kind || "").toLowerCase();
-  const assetKind = String(asset.kind || "").toLowerCase();
-  return cateKind && assetKind === cateKind ? "content" : "material";
-}
-
 function CommunicationWorkspacePanel({
   activeCate,
   prompt,
@@ -2094,31 +1956,12 @@ function CommunicationWorkspacePanel({
   );
 }
 
-function WorkspaceSurface({
-  className,
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`ws-workspace-overlay ${className || ""}`.trim()}>
-      {children}
-    </div>
-  );
-}
-
 function AssetEditorSurface({
   activeCate,
   asset,
   mode = "browse",
   onPickAsset,
-}: {
-  activeCate: AssetCate;
-  asset: ProjectAsset | null;
-  mode?: AssetViewerMode;
-  onPickAsset?: () => void;
-}) {
+}: AssetDetailRenderInput) {
   const displayValue = assetDisplayValue(asset?.version?.content);
   const preview = generatedPreviewFromValue(
     firstDefined(asset?.version?.content, displayValue),
@@ -2145,19 +1988,13 @@ function AssetEditorSurface({
             </button>
           ) : null}
           {mode === "select" && asset && onPickAsset ? (
-            <button type="button" onClick={onPickAsset}>
-              <CheckCircle2 size={14} />
-              <span>使用</span>
-            </button>
+            <AssetPickerButton onPickAsset={onPickAsset} />
           ) : null}
         </div>
       </header>
       <div className="ws-asset-editor-body custom-scrollbar">
         {!asset ? (
-          <div className="ws-asset-empty-detail">
-            <FileSearch size={32} />
-            <span>暂无可查看内容</span>
-          </div>
+          <EmptyAssetDetail activeCate={activeCate} />
         ) : preview.imageUrl ? (
           <div className="ws-asset-media-detail">
             <img src={preview.imageUrl} alt={asset.name || activeCate.name} />
@@ -2246,15 +2083,15 @@ function CanvasWorkbench({
   onFocusNodeRequestConsumed,
   projectId,
   space,
-  runningNode,
+  runningNodes,
   setRunningNode,
   onNodeResult,
   onNodeDraftChange,
   onAssetCreated,
   onRunStartNode,
+  onRunBackendNode,
   onOpenImportPicker,
   onClearFeedbackRecords,
-  requestFlowFeedback,
   requestConfirm,
   onOpenFeedbackRecord,
 }: {
@@ -2282,7 +2119,7 @@ function CanvasWorkbench({
   onFocusNodeRequestConsumed: (request: NodeFocusRequest) => void;
   projectId: number;
   space: SpaceBootstrap;
-  runningNode: RunningNodeState | null;
+  runningNodes: RunningNodeMap;
   setRunningNode: RunningNodeSetter;
   onNodeResult: NodeResultSetter;
   onNodeDraftChange: NodeDraftSetter;
@@ -2290,8 +2127,8 @@ function CanvasWorkbench({
   onRunStartNode: NodeStartRunner;
   onOpenImportPicker: (nodeId: string) => void;
   onClearFeedbackRecords: (nodeIds: string[]) => void;
-  requestFlowFeedback: FlowFeedbackRequester;
   requestConfirm: ConfirmRequester;
+  onRunBackendNode: BackendNodeRunner;
   onOpenFeedbackRecord: (
     node: SpaceCanvasNode,
     record: NodeFeedbackRecord,
@@ -2338,8 +2175,8 @@ function CanvasWorkbench({
         ...node,
         projectId,
         space,
-        runningNode: runningNode?.nodeId === node.id ? runningNode : null,
-        canvasRunningNode: runningNode,
+        runningNode: runningNodes[node.id] || null,
+        canvasRunningNodes: runningNodes,
         setRunningNode,
         onAddConfiguredNode,
         onNodeResult,
@@ -2348,10 +2185,10 @@ function CanvasWorkbench({
         onRunStartNode,
         onOpenImportPicker,
         onClearFeedbackRecords,
-        requestFlowFeedback,
         onOpenFeedbackRecord,
         onShowNodeDetail,
         requestConfirm,
+        onRunBackendNode,
         viewportZoom,
         inputContext: buildNodeInputContext(node.id, nodes, contextEdges),
       };
@@ -2404,12 +2241,12 @@ function CanvasWorkbench({
     onNodeDraftChange,
     onOpenFeedbackRecord,
     onOpenImportPicker,
+    onRunBackendNode,
     onRunStartNode,
-    requestFlowFeedback,
     onShowNodeDetail,
     projectId,
     requestConfirm,
-    runningNode,
+    runningNodes,
     selectedNodeId,
     setRunningNode,
     space,
@@ -2980,10 +2817,17 @@ function CanvasWorkbench({
     flowInstance?.zoomOut?.({ duration: 140 });
   }, [flowInstance, viewportZoom]);
 
+  const canvasWrapClassName = [
+    "ws-canvas-wrap",
+    draggingNodeId ? "is-dragging" : "",
+    interactive ? "is-interactive" : "is-passive",
+    mode === "result" ? "is-result-mode" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <section
-      className={`ws-canvas-wrap ${draggingNodeId ? "is-dragging" : ""} ${interactive ? "is-interactive" : "is-passive"} ${mode === "result" ? "is-result-mode" : ""}`}
-    >
+    <section className={canvasWrapClassName}>
       <ReactFlow
         nodes={flowNodes}
         edges={renderedEdges}
@@ -3071,12 +2915,6 @@ function CanvasWorkbench({
         fitView={viewport.zoom == null}
         fitViewOptions={{ padding: 0.32, maxZoom: 0.72 }}
       >
-        <Background
-          variant="dots"
-          color="var(--ws-flow-dot)"
-          gap={18}
-          size={1.5}
-        />
         {interactive && showMiniMap && nodes.length > 0 ? (
           <MiniMap
             position="bottom-left"
@@ -3245,15 +3083,63 @@ function CanvasViewControls({
 }
 
 function NodeDetailDialog({
+  projectId,
   node,
   onNodeUpdated,
   onClose,
 }: {
+  projectId: number;
   node: SpaceCanvasNode;
   onNodeUpdated?: (patch: Partial<SpaceCanvasNode>) => void;
   onClose: () => void;
 }) {
-  const versionItems = useMemo(() => nodeDetailVersionItems(node), [node]);
+  const [detailNode, setDetailNode] = useState(node);
+  useEffect(() => {
+    setDetailNode((current) => {
+      const currentAssetId = Number(current.asset?.id || 0);
+      const nextAssetId = Number(node.asset?.id || 0);
+      if (
+        current.id === node.id &&
+        currentAssetId > 0 &&
+        currentAssetId === nextAssetId &&
+        node.asset
+      ) {
+        return {
+          ...node,
+          asset: mergeProjectAssetVersionHistory(node.asset, current.asset),
+        };
+      }
+      return node;
+    });
+  }, [node]);
+  useEffect(() => {
+    const assetId = Number(node.asset?.id || 0);
+    if (!assetId) {
+      return;
+    }
+    let canceled = false;
+    fetchSpaceAssetDetail({ projectId, assetId })
+      .then((asset) => {
+        if (canceled) {
+          return;
+        }
+        setDetailNode((current) => ({
+          ...current,
+          ...buildAssetVersionNodePatch(
+            current,
+            mergeProjectAssetVersionHistory(asset, current.asset || node.asset),
+          ),
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [node.asset?.id, projectId]);
+  const versionItems = useMemo(
+    () => nodeDetailVersionItems(detailNode),
+    [detailNode],
+  );
   const currentVersionItemId = versionItems[0]?.id || "current";
   const [activeVersionId, setActiveVersionId] = useState(
     () => currentVersionItemId,
@@ -3261,7 +3147,7 @@ function NodeDetailDialog({
   const activeVersion =
     versionItems.find((candidate) => candidate.id === activeVersionId) ||
     versionItems[0];
-  const activeNode = activeVersion?.node || node;
+  const activeNode = activeVersion?.node || detailNode;
   const detailRich = nodeRichDocument(activeNode);
   const displayOutput = nodeEnergonOutput(activeNode);
   const detailText = displayTextFromOutput(
@@ -3309,8 +3195,14 @@ function NodeDetailDialog({
   const preview = nodeDetailPreview(activeNode);
   const downloadUrl =
     preview.imageUrl || preview.videoUrl || preview.audioUrl || preview.fileUrl;
-  const canAutoSaveVersion = activeVersion?.isCurrent !== false;
-  const hasVersionSidebar = versionItems.length > 0 && nodeHasResultContent(node);
+  const activeDetailAsset = activeNode.asset || node.asset;
+  const activeDetailVersion = activeDetailAsset?.version;
+  const canAutoSaveVersion = Boolean(
+    activeVersion?.isCurrent &&
+      activeDetailAsset?.id &&
+      activeDetailVersion?.id,
+  );
+  const hasVersionSidebar = versionItems.length > 0;
   const isMediaDetail = Boolean(
     preview.imageUrl ||
       preview.videoUrl ||
@@ -3323,24 +3215,39 @@ function NodeDetailDialog({
     canAutoSaveVersion,
   );
   const persistCurrentContent = useCallback(
-    (content: string) => {
-      if (!onNodeUpdated) {
+    async (content: string) => {
+      const asset = activeNode.asset || node.asset;
+      const version = asset?.version;
+      if (!onNodeUpdated || !asset?.id || !version?.id) {
         return;
       }
       setSaveStatus("saving");
-      const savedAtIso = new Date().toISOString();
       const contentValue = parseEditableContentForSave(
         content,
         editableSource.contentFormat,
       );
-      onNodeUpdated(
-        buildNodeDetailContentPatch(activeNode, contentValue, savedAtIso),
-      );
-      savedContentRef.current = content;
-      setSavedAt(formatNodeDetailTime(savedAtIso));
-      setSaveStatus("saved");
+      try {
+        const savedAsset = await saveSpaceAssetEditVersion({
+          projectId,
+          assetId: asset.id,
+          versionId: version.id,
+          content: contentValue,
+          requestId: createCanvasSaveRequestId("edit", activeNode.id, content),
+        });
+        const normalizedAsset = mergeProjectAssetVersionHistory(
+          savedAsset,
+          asset,
+        );
+        onNodeUpdated(buildAssetVersionNodePatch(activeNode, normalizedAsset));
+        savedContentRef.current = content;
+        setSavedAt(nodeDetailAssetUpdatedAt(normalizedAsset));
+        setSaveStatus("saved");
+      } catch (err) {
+        setSaveStatus("error");
+        toast.error(err instanceof Error ? err.message : "保存失败");
+      }
     },
-    [activeNode, editableSource.contentFormat, onNodeUpdated],
+    [activeNode, editableSource.contentFormat, node.asset, onNodeUpdated, projectId],
   );
 
   useEffect(() => {
@@ -3369,10 +3276,14 @@ function NodeDetailDialog({
     saveStatus,
   ]);
 
-  function handleVersionSelect(candidate: NodeDetailVersionItem) {
+  async function handleVersionSelect(candidate: NodeDetailVersionItem) {
     if (candidate.id === activeVersion?.id) {
       setActiveVersionId(candidate.id);
       return;
+    }
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
     }
     setActiveVersionId(candidate.id);
     const candidateSource = nodeDetailEditorSource(
@@ -3388,11 +3299,27 @@ function NodeDetailDialog({
     setSaveStatus("saved");
     setSavedAt(nodeDetailUpdatedAt(candidate.node));
     if (!candidate.isCurrent && onNodeUpdated) {
-      const candidateVersion = (candidate.node as any).version as
-        | AssetVersion
-        | undefined;
-      if (candidateVersion) {
-        onNodeUpdated(buildNodeCurrentVersionPatch(node, candidateVersion));
+      const candidateVersion = candidate.node.asset?.version;
+      const asset = node.asset;
+      if (candidateVersion?.id && asset?.id) {
+        try {
+          const savedAsset = await useSpaceAssetVersion({
+            projectId,
+            assetId: asset.id,
+            versionId: candidateVersion.id,
+          });
+          const normalizedAsset = mergeProjectAssetVersionHistory(
+            savedAsset,
+            asset,
+          );
+          onNodeUpdated(buildAssetVersionNodePatch(node, normalizedAsset));
+          const currentVersionId =
+            normalizedAsset.version?.id || candidateVersion.id;
+          setActiveVersionId(`version-${currentVersionId}`);
+          setSavedAt(nodeDetailAssetUpdatedAt(normalizedAsset));
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "切换版本失败");
+        }
       }
     }
   }
@@ -3528,44 +3455,31 @@ function nodeDetailSaveStatusLabel(
 }
 
 function nodeDetailVersionItems(node: SpaceCanvasNode): NodeDetailVersionItem[] {
-  const versions = nodeDetailOrderedVersions(node);
-  if (versions.length) {
-    return versions.map((version, index) =>
-      nodeDetailVersionItem(node, version, index === 0),
-    );
+  if (!node.asset?.id) {
+    return [];
   }
-
-  const items: NodeDetailVersionItem[] = [];
-  if (!items.length && nodeHasResultContent(node)) {
-    items.push({
-      id: "current-result",
-      title: "当前结果",
-      summary: nodeDetailResultSummary(node),
-      time: nodeDetailUpdatedAt(node),
-      isCurrent: true,
+  const currentVersionId = Number(
+    node.asset.version_id || node.asset.version?.id || 0,
+  );
+  return nodeDetailOrderedVersions(node).map((version, index) =>
+    nodeDetailVersionItem(
       node,
-    });
-  }
-
-  if (!items.length) {
-    items.push({
-      id: "current",
-      title: "当前内容",
-      summary: node.description || "暂无内容",
-      time: nodeDetailUpdatedAt(node),
-      isCurrent: true,
-      node,
-    });
-  }
-
-  return items;
+      version,
+      currentVersionId > 0
+        ? Number(version.id || 0) === currentVersionId
+        : index === 0,
+    ),
+  );
 }
 
 function nodeDetailOrderedVersions(node: SpaceCanvasNode): AssetVersion[] {
+  if (!node.asset?.id) {
+    return [];
+  }
   const versions: AssetVersion[] = [];
   const seen = new Set<string>();
   const appendVersion = (version: AssetVersion | undefined | null) => {
-    if (!version || (version.content == null && Number(version.id || 0) <= 0)) {
+    if (!version || Number(version.id || 0) <= 0) {
       return;
     }
     const key = String(version.id || version.version || versions.length);
@@ -3576,7 +3490,7 @@ function nodeDetailOrderedVersions(node: SpaceCanvasNode): AssetVersion[] {
     versions.push(version);
   };
 
-  appendVersion(node.asset?.version || (node as any).version);
+  appendVersion(node.asset.version);
   const historyVersions = nodeDetailHistoryVersions(node);
   for (const version of historyVersions) {
     appendVersion(version);
@@ -3586,11 +3500,7 @@ function nodeDetailOrderedVersions(node: SpaceCanvasNode): AssetVersion[] {
 }
 
 function nodeDetailHistoryVersions(node: SpaceCanvasNode): AssetVersion[] {
-  const candidates = firstDefined(
-    (node.asset as any)?.versions,
-    (node as any).asset?.versions,
-    (node as any).versions,
-  );
+  const candidates = node.asset?.versions;
   if (!Array.isArray(candidates)) {
     return [];
   }
@@ -3612,7 +3522,6 @@ function nodeDetailVersionItem(
     asset: node.asset
       ? { ...node.asset, version, version_id: version.id || node.asset.version_id }
       : node.asset,
-    version,
   };
   return {
     id: `version-${Number(version.id || 0) || Number(version.version || 0) || "latest"}`,
@@ -3669,11 +3578,15 @@ function isEnergonProtocolDetailOutput(value: any) {
 function nodeDetailUpdatedAt(node: SpaceCanvasNode) {
   const raw = firstDefined(
     node.asset?.version?.created_at,
-    (node as any).version?.created_at,
     node.asset?.created_at,
-    (node as any).created_at,
   );
   return formatNodeDetailTime(raw);
+}
+
+function nodeDetailAssetUpdatedAt(asset: ProjectAsset) {
+  return formatNodeDetailTime(
+    firstDefined(asset.version?.created_at, asset.created_at),
+  );
 }
 
 function formatNodeDetailTime(value: unknown) {
@@ -4117,75 +4030,6 @@ function applyNodeResultOverrides(
   };
 }
 
-function currentNodeFeedbackRecords(node?: SpaceCanvasNode | null) {
-  const records = Array.isArray((node as any)?.feedbackRequests)
-    ? ((node as any).feedbackRequests as NodeFeedbackRecord[])
-    : [];
-  return records.filter((record) => record && record.id);
-}
-
-function createNodeFeedbackRecord(
-  node: SpaceCanvasNode,
-  prompt: FlowFeedbackPrompt,
-): NodeFeedbackRecord {
-  const approvalId = Number(prompt.approval?.id || 0);
-  return {
-    id: `${node.id}:${approvalId || Date.now()}:${Math.random()
-      .toString(36)
-      .slice(2, 7)}`,
-    nodeId: node.id,
-    title: prompt.title || node.title || "补充信息",
-    description: prompt.description || "",
-    prompt,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function submitNodeFeedbackRecord(
-  records: NodeFeedbackRecord[],
-  recordId: string,
-  values: Record<string, unknown>,
-) {
-  return records.map((record) =>
-    record.id === recordId
-      ? {
-          ...record,
-          values,
-          prompt: {
-            ...record.prompt,
-            values,
-          },
-          status: "submitted" as const,
-          submittedAt: new Date().toISOString(),
-        }
-      : record,
-  );
-}
-
-function isReadonlyFeedbackRecord(
-  current: { node: SpaceCanvasNode; recordId: string } | null,
-  nodes: SpaceCanvasNode[],
-  pending: { nodeId: string; recordId: string } | null,
-) {
-  if (!current) {
-    return false;
-  }
-  const node =
-    nodes.find((item) => item.id === current.node.id) || current.node;
-  const record = currentNodeFeedbackRecords(node).find(
-    (item) => item.id === current.recordId,
-  );
-  if (!record) {
-    return false;
-  }
-  return !(
-    record.status === "pending" &&
-    pending?.nodeId === current.node.id &&
-    pending.recordId === current.recordId
-  );
-}
-
 function buildGeneratedNodeResultPatch(
   node: SpaceCanvasNode,
   result: any,
@@ -4193,7 +4037,6 @@ function buildGeneratedNodeResultPatch(
 ): Partial<SpaceCanvasNode> {
   const rawOutput = firstDefined(
     result?.output,
-    result?.version?.content,
     result?.asset?.version?.content,
     result?.data?.output,
     result?.data?.content,
@@ -4201,13 +4044,19 @@ function buildGeneratedNodeResultPatch(
     result?.data,
   );
   const output = firstDisplayOutput(rawOutput) || extractDisplayOutput(rawOutput);
+  const resultKind = firstText(
+    String(result?.asset?.kind || ""),
+    String(result?.kind || ""),
+    nodePreviewKind(node, output),
+  );
   const preview = generatedPreviewFromValue(
     output,
-    String(node.power?.kind || node.kind || ""),
+    resultKind,
   );
+  const outputText = safeDocumentText(output);
   const summary =
-    safeDocumentText(output) ||
     preview.text ||
+    (!looksLikeURL(outputText) ? outputText : "") ||
     preview.imageUrl ||
     preview.videoUrl ||
     preview.audioUrl ||
@@ -4216,11 +4065,8 @@ function buildGeneratedNodeResultPatch(
 
   return {
     description: summary,
-    status: "已生成",
-    hasResult: true,
-    generatedOutput: output,
-    generatedPreview: preview,
-    result,
+    resultRef: buildNodeResultRef(result),
+    resultOutput: output,
     asset: result?.asset || node.asset,
     kind: result?.asset?.kind || node.power?.kind || node.kind,
   };
@@ -4235,7 +4081,6 @@ function buildAssetVersionNodePatch(
     node,
     {
       asset,
-      version: asset.version,
       output: content,
     },
     documentPreview(content),
@@ -4243,329 +4088,7 @@ function buildAssetVersionNodePatch(
   return {
     ...patch,
     asset,
-    version: asset.version,
   };
-}
-
-function buildNodeDetailContentPatch(
-  node: SpaceCanvasNode,
-  content: unknown,
-  savedAtIso: string,
-): Partial<SpaceCanvasNode> {
-  const version = updateCurrentNodeVersionContent(
-    node.asset?.version || (node as any).version,
-    content,
-    savedAtIso,
-  );
-  const asset = node.asset
-    ? {
-        ...node.asset,
-        version: version || node.asset.version,
-        versions: replaceCurrentAssetVersion(node.asset.versions, version),
-      }
-    : node.asset;
-  const patch = buildGeneratedNodeResultPatch(
-    node,
-    {
-      ...(node as any).result,
-      ...(asset ? { asset } : {}),
-      ...(version ? { version } : {}),
-      output: content,
-    },
-    documentPreview(content),
-  );
-  return {
-    ...patch,
-    ...(asset ? { asset } : {}),
-    ...(version ? { version } : {}),
-  };
-}
-
-function buildNodeCurrentVersionPatch(
-  node: SpaceCanvasNode,
-  version: AssetVersion,
-): Partial<SpaceCanvasNode> {
-  const content = version.content;
-  const asset = node.asset
-    ? {
-        ...node.asset,
-        version,
-        version_id: version.id || node.asset.version_id,
-        versions: replaceCurrentAssetVersion(node.asset.versions, version),
-      }
-    : node.asset;
-  const patch = buildGeneratedNodeResultPatch(
-    node,
-    {
-      ...(asset ? { asset } : {}),
-      version,
-      output: content,
-    },
-    documentPreview(content),
-  );
-  return {
-    ...patch,
-    ...(asset ? { asset } : {}),
-    version,
-  };
-}
-
-function updateCurrentNodeVersionContent(
-  version: AssetVersion | undefined,
-  content: unknown,
-  savedAtIso: string,
-): AssetVersion | undefined {
-  if (!version) {
-    return undefined;
-  }
-  return {
-    ...version,
-    content,
-    created_at: savedAtIso,
-  };
-}
-
-function replaceCurrentAssetVersion(
-  versions: AssetVersion[] | undefined,
-  currentVersion: AssetVersion | undefined,
-) {
-  if (!versions?.length || !currentVersion) {
-    return versions;
-  }
-  const currentKey = assetVersionKey(currentVersion);
-  return versions.map((version) =>
-    assetVersionKey(version) === currentKey ? currentVersion : version,
-  );
-}
-
-function assetVersionKey(version: AssetVersion) {
-  return String(version.id || version.version || "");
-}
-
-async function waitForFlowCompletion(
-  projectId: number,
-  run: { runId?: number; requestId?: string },
-): Promise<FlowRunSnapshot> {
-  let lastSnapshot: FlowRunSnapshot | null = null;
-  for (let index = 0; index < 60; index += 1) {
-    const status = await fetchSpaceRunStatus({
-      projectId,
-      runId: run.runId || 0,
-      requestId: run.requestId || "",
-    });
-    const snapshot = normalizeFlowRunSnapshot(status);
-    lastSnapshot = snapshot;
-    if (
-      snapshot.status === "success" ||
-      snapshot.status === "fail" ||
-      snapshot.status === "canceled" ||
-      isFlowWaitingSnapshot(snapshot)
-    ) {
-      return snapshot;
-    }
-    await delay(900);
-  }
-  return (
-    lastSnapshot || {
-      runId: Number(run.runId || 0),
-      requestId: String(run.requestId || ""),
-      status: "running",
-      output: null,
-      error: "流程仍在运行，请稍后刷新查看结果",
-      approvals: [],
-      raw: {},
-    }
-  );
-}
-
-function normalizeFlowRunSnapshot(value: any): FlowRunSnapshot {
-  const run = value?.run || value?.data?.run || value || {};
-  const approvals = Array.isArray(value?.approvals)
-    ? value.approvals
-    : Array.isArray(value?.data?.approvals)
-      ? value.data.approvals
-      : [];
-  return {
-    runId: Number(run?.id || value?.run_id || 0),
-    requestId: String(run?.request_id || value?.request_id || ""),
-    status: String(run?.status || value?.status || "running"),
-    output: firstDefined(run?.output, value?.output, value?.data?.output),
-    error: String(run?.error || value?.error || ""),
-    approvals: approvals.map(normalizeFlowApproval).filter(Boolean),
-    raw: value,
-  };
-}
-
-function normalizeFlowApproval(value: any): FlowApproval {
-  const content = value?.content && typeof value.content === "object"
-    ? value.content
-    : {};
-  return {
-    id: Number(value?.id || value?.approval_id || 0),
-    title: String(value?.title || ""),
-    status: String(value?.status || ""),
-    decision: String(value?.decision || ""),
-    content,
-  };
-}
-
-function flowFeedbackFromSnapshot(
-  snapshot: FlowRunSnapshot,
-): FlowFeedbackPrompt | null {
-  const approval = snapshot.approvals.find(isPendingFlowApproval);
-  if (!approval?.id) {
-    return null;
-  }
-  const interaction = flowApprovalInteraction(approval);
-  const fields = flowFeedbackFields(interaction);
-  return {
-    approval,
-    title: firstText(interaction.title, approval.title, "补充信息"),
-    description: firstText(interaction.description, "补充信息后继续执行流程。"),
-    fields,
-    values: flowFeedbackInitialValues(interaction, fields),
-  };
-}
-
-function isPendingFlowApproval(approval: FlowApproval) {
-  return approval.status === "pending" || approval.decision === "pending";
-}
-
-function isFlowWaitingSnapshot(snapshot: FlowRunSnapshot) {
-  return (
-    snapshot.status === "waiting" ||
-    snapshot.approvals.some(isPendingFlowApproval)
-  );
-}
-
-function flowApprovalInteraction(approval: FlowApproval) {
-  const content = approval.content || {};
-  const interaction = content.interaction;
-  return interaction && typeof interaction === "object" ? interaction : content;
-}
-
-function flowFeedbackFields(interaction: Record<string, any>): PowerParam[] {
-  const fields = Array.isArray(interaction.fields)
-    ? interaction.fields
-    : Array.isArray(interaction.params)
-      ? interaction.params
-      : [];
-  return fields
-    .map((field, index) => normalizeFeedbackField(field, index))
-    .filter((field): field is PowerParam => Boolean(field.key));
-}
-
-function normalizeFeedbackField(value: any, index: number): PowerParam {
-  const options = Array.isArray(value?.options) ? value.options : [];
-  return {
-    id: Number(value?.id || index + 1),
-    name: String(value?.name || value?.label || value?.title || value?.key || ""),
-    key: String(value?.key || value?.name || `field_${index + 1}`),
-    type: String(value?.type || "input"),
-    value_type: value?.value_type || value?.valueType || "string",
-    default_value: String(value?.default_value || value?.defaultValue || ""),
-    required: Boolean(value?.required),
-    options: options.map((option: any, optionIndex: number) => ({
-      id: Number(option?.id || optionIndex + 1),
-      name: String(option?.name || option?.label || option?.value || ""),
-      value: String(option?.value || option?.id || option?.label || option?.name || ""),
-      sort: Number(option?.sort || optionIndex + 1),
-    })),
-  };
-}
-
-function flowFeedbackInitialValues(
-  interaction: Record<string, any>,
-  fields: PowerParam[],
-) {
-  const values = defaultPowerParamValues(fields);
-  const source =
-    interaction.values && typeof interaction.values === "object"
-      ? interaction.values
-      : {};
-  return {
-    ...values,
-    ...source,
-  };
-}
-
-function agentFeedbackFromResult(
-  result: any,
-  title: string,
-): FlowFeedbackPrompt | null {
-  const interaction = agentInteractionFromResult(result);
-  if (!interaction) {
-    return null;
-  }
-  const fields = flowFeedbackFields(interaction);
-  return {
-    approval: {
-      id: 0,
-      title,
-      status: "pending",
-      decision: "pending",
-      content: { kind: "agent_interaction", interaction },
-    },
-    title: firstText(interaction.title, title, "补充信息"),
-    description: firstText(interaction.description, "补充信息后继续执行智能体。"),
-    fields,
-    values: flowFeedbackInitialValues(interaction, fields),
-  };
-}
-
-function agentInteractionFromResult(result: any): Record<string, any> | null {
-  const output = firstMap(
-    result?.output,
-    result?.data?.output,
-    result?.content,
-    result,
-  );
-  if (!output) {
-    return null;
-  }
-  if (!String(output.event || "").toLowerCase().includes("interaction")) {
-    const topLevelInteraction = firstMap(result?.interaction);
-    return topLevelInteraction && firstText(topLevelInteraction.type)
-      ? topLevelInteraction
-      : null;
-  }
-  const interaction = firstMap(output.interaction, output.content?.interaction);
-  return interaction && firstText(interaction.type) ? interaction : null;
-}
-
-function firstMap(...values: any[]): Record<string, any> | null {
-  for (const value of values) {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      return value as Record<string, any>;
-    }
-  }
-  return null;
-}
-
-function canvasAgentMemoryKey(input: {
-  projectId: number;
-  assetCateId?: number;
-  nodeId: string;
-  agentId: number;
-}) {
-  return [
-    input.projectId || 0,
-    input.assetCateId || 0,
-    input.nodeId || "",
-    input.agentId || 0,
-  ].join(":");
-}
-
-function readCanvasAgentMemory(key: string) {
-  return canvasAgentMemoryStore.get(key) || [];
-}
-
-function appendCanvasAgentMemory(key: string, entries: AgentMemoryEntry[]) {
-  if (!key || entries.length === 0) {
-    return;
-  }
-  const current = readCanvasAgentMemory(key);
-  canvasAgentMemoryStore.set(key, [...current, ...entries].slice(-12));
 }
 
 function normalizeComposerDraft(value: unknown): ComposerDraft {
@@ -4590,6 +4113,22 @@ function readNodeComposerDraft(node: SpaceCanvasNode): ComposerDraft {
   return normalizeComposerDraft((node as any).composerDraft);
 }
 
+function mergeBackendSingleNodeDraft(node: SpaceCanvasNode): SpaceCanvasNode {
+  const draft = normalizeComposerDraft((node as any).composerDraft);
+  if (node.type !== "power" && node.type !== "agent") {
+    return node;
+  }
+  return {
+    ...node,
+    composerDraft: {
+      ...(node as any).composerDraft,
+      prompt: draft.prompt,
+      paramValues: draft.paramValues,
+      selectedTargetId: draft.selectedTargetId,
+    },
+  };
+}
+
 function mergeSavedComposerParamValues(
   params: PowerParam[],
   draft: ComposerDraft,
@@ -4612,28 +4151,6 @@ function numericDraftValue(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function agentMemoryEntry(
-  role: AgentMemoryEntry["role"],
-  text: string,
-  data?: unknown,
-): AgentMemoryEntry {
-  return {
-    role,
-    text,
-    data,
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function agentOutputMemoryText(result: unknown) {
-  const preview = extractDisplayOutput(result);
-  return firstText(
-    preview.text,
-    safeDocumentText(result),
-    safeJSONString(result),
-  );
-}
-
 function safeJSONString(value: unknown) {
   try {
     return JSON.stringify(value);
@@ -4647,86 +4164,425 @@ type CanvasStartRunInput = {
   assetCate: AssetCate;
   space: SpaceBootstrap;
   startNode: SpaceCanvasNode;
+  singleNode?: boolean;
   nodes: SpaceCanvasNode[];
   edges: SpaceCanvasEdge[];
+  viewport: SpaceCanvasState["viewport"];
+  runInput?: Record<string, unknown>;
   onNodeResult: NodeResultSetter;
   onAssetCreated: (asset: ProjectAsset) => void;
-  setRunningNode: RunningNodeSetter;
+  setRunningNode?: RunningNodeSetter;
   requestFlowFeedback?: FlowFeedbackRequester;
+  canvasRun?: CanvasRunRef | null;
 };
 
 async function runCanvasFromStartNode(input: CanvasStartRunInput) {
-  const graph = buildCanvasExecutionGraph(input.nodes, input.edges);
-  const firstTargets = graph.outgoing.get(input.startNode.id) || [];
-  if (firstTargets.length === 0) {
-    throw new Error("开始节点没有连接后续节点");
+  const requestId = createCanvasRunRequestId(input.startNode.id);
+  const appliedNodeResults = new Set<string>();
+  let hasAppliedNodeResult = false;
+  let rawCanvasRun = await runSpaceCanvas({
+    projectId: input.projectId,
+    assetCateId: Number(input.assetCate.id || 0),
+    startNodeId: input.startNode.id,
+    requestId,
+    singleNode: input.singleNode,
+    canvas: {
+      assetCateId: Number(input.assetCate.id || 0),
+      nodes: input.nodes,
+      edges: input.edges,
+      viewport: input.viewport || {},
+    },
+    runInput: {
+      ...(input.runInput || {}),
+      start_node_id: input.startNode.id,
+    },
+  });
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const canvasRun = await waitForCanvasRun(
+      input,
+      rawCanvasRun,
+      (results) => {
+        const applied = applyBackendCanvasRunResults(
+          input,
+          results,
+          appliedNodeResults,
+        );
+        markBackendCanvasNodeResultsDone(input, results);
+        hasAppliedNodeResult = hasAppliedNodeResult || applied > 0;
+      },
+      () => hasAppliedNodeResult,
+    );
+    input.canvasRun = canvasRun;
+    if (
+      input.singleNode &&
+      hasAppliedNodeResult &&
+      (canvasRun.status === "running" || canvasRun.status === "pending")
+    ) {
+      toast.info("节点结果已返回，后台运行仍在收尾");
+      return;
+    }
+    const executed = Number(canvasRun.executed || 0);
+    if (!input.singleNode) {
+      input.onNodeResult(
+        input.startNode.id,
+        buildFunctionRunPatch(
+          canvasRun,
+          canvasRunSummaryText(canvasRun, executed),
+        ),
+      );
+    }
+    if (canvasRun.status !== "waiting") {
+      finishBackendCanvasRunningNodes(input, canvasRun);
+      return;
+    }
+    rawCanvasRun = await resumeBackendCanvasRun(input, canvasRun);
   }
-  let executed = 0;
-  for (const targetId of firstTargets) {
-    executed += await runCanvasExecutionPath(input, graph, targetId, new Set());
+  throw new Error("画布运行多次等待反馈，请稍后继续");
+}
+
+async function waitForCanvasRun(
+  input: CanvasStartRunInput,
+  rawCanvasRun: unknown,
+  applyNodeResults: (results: CanvasNodeResultRef[]) => void,
+  hasAppliedNodeResult: () => boolean,
+): Promise<CanvasRunRef> {
+  let canvasRun = normalizeCanvasRunRef(rawCanvasRun);
+  for (let index = 0; index < 90; index += 1) {
+    applyNodeResults(canvasRun.node_results || []);
+    if (canvasRun.status !== "running" && canvasRun.status !== "pending") {
+      return canvasRun;
+    }
+    if (!canvasRun.run_id && !canvasRun.request_id) {
+      return canvasRun;
+    }
+    await delay(900);
+    const status = await fetchSpaceRunStatus({
+      projectId: input.projectId,
+      runId: Number(canvasRun.run_id || 0),
+      requestId: String(canvasRun.request_id || ""),
+    });
+    canvasRun = normalizeCanvasRunRef(status);
   }
-  input.onNodeResult(
-    input.startNode.id,
-    buildFunctionStatusPatch(`已启动 ${executed} 个连接节点`),
+  applyNodeResults(canvasRun.node_results || []);
+  if (input.singleNode && hasAppliedNodeResult()) {
+    finishBackendCanvasRunningNodes(input, canvasRun);
+    return canvasRun;
+  }
+  throw new Error("画布仍在运行，请稍后刷新查看结果");
+}
+
+function markBackendCanvasNodeResultsDone(
+  input: CanvasStartRunInput,
+  results: CanvasNodeResultRef[],
+) {
+  if (!input.setRunningNode) {
+    return;
+  }
+  const doneResults = results.filter((result) =>
+    canvasNodeRunFinishedStatus(result.status),
+  );
+  if (doneResults.length === 0) {
+    return;
+  }
+  input.setRunningNode((current) => {
+    let changed = false;
+    const next = { ...current };
+    for (const result of doneResults) {
+      const nodeId = result.node_key;
+      const running = next[nodeId];
+      if (!running) {
+        continue;
+      }
+      next[nodeId] = {
+        ...running,
+        progress: 100,
+        status: result.status === "success" ? "success" : "error",
+      };
+      changed = true;
+    }
+    return changed ? next : current;
+  });
+  window.setTimeout(() => {
+    input.setRunningNode?.((current) => {
+      let changed = false;
+      let next = current;
+      for (const result of doneResults) {
+        const nodeId = result.node_key;
+        const running = next[nodeId];
+        if (!running || running.status === "running") {
+          continue;
+        }
+        if (next === current) {
+          next = { ...current };
+        }
+        delete next[nodeId];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, 650);
+}
+
+function finishBackendCanvasRunningNodes(
+  input: CanvasStartRunInput,
+  canvasRun: CanvasRunRef,
+) {
+  if (
+    !input.setRunningNode ||
+    canvasRun.status === "running" ||
+    canvasRun.status === "pending" ||
+    canvasRun.status === "waiting"
+  ) {
+    return;
+  }
+  const finishedStatus =
+    canvasRun.status === "success" || canvasRun.status === "canceled"
+      ? "success"
+      : "error";
+  const nodeIds = backendCanvasRunNodeIds(input, canvasRun);
+  input.setRunningNode((current) => {
+    let changed = false;
+    const next = { ...current };
+    for (const nodeId of nodeIds) {
+      const running = next[nodeId];
+      if (!running) {
+        continue;
+      }
+      next[nodeId] = {
+        ...running,
+        progress: finishedStatus === "success" ? 100 : Math.max(running.progress, 92),
+        status: finishedStatus,
+      };
+      changed = true;
+    }
+    return changed ? next : current;
+  });
+  window.setTimeout(() => {
+    input.setRunningNode?.((current) => {
+      let changed = false;
+      let next = current;
+      for (const nodeId of nodeIds) {
+        const running = next[nodeId];
+        if (!running || running.status === "running") {
+          continue;
+        }
+        if (next === current) {
+          next = { ...current };
+        }
+        delete next[nodeId];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, finishedStatus === "success" ? 650 : 1200);
+}
+
+function backendCanvasRunNodeIds(
+  input: CanvasStartRunInput,
+  canvasRun: CanvasRunRef,
+) {
+  const result = new Set<string>();
+  result.add(input.startNode.id);
+  for (const nodeRun of canvasRun.node_runs || []) {
+    if (nodeRun.node_key) {
+      result.add(nodeRun.node_key);
+    }
+  }
+  for (const nodeResult of canvasRun.node_results || []) {
+    if (nodeResult.node_key) {
+      result.add(nodeResult.node_key);
+    }
+  }
+  if (canvasRun.execution_plan?.nodes) {
+    for (const node of canvasRun.execution_plan.nodes) {
+      result.add(node.id);
+    }
+  }
+  return [...result];
+}
+
+function canvasNodeRunFinishedStatus(status?: string) {
+  return status === "success" || status === "fail" || status === "canceled";
+}
+
+function createCanvasRunRequestId(startNodeId: string) {
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `canvas-${randomPart}-${startNodeId}`.slice(0, 64);
+}
+
+function createCanvasSaveRequestId(
+  purpose: string,
+  nodeId: string,
+  content: unknown,
+) {
+  const contentKey =
+    typeof content === "string" ? content : safeJSONString(content);
+  const bucket = Math.floor(Date.now() / 5000);
+  return `${purpose}-${nodeId}-${bucket}-${simpleStringHash(contentKey)}`.slice(
+    0,
+    96,
   );
 }
 
-async function runCanvasExecutionPath(
-  input: CanvasStartRunInput,
-  graph: CanvasExecutionGraph,
-  nodeId: string,
-  visited: Set<string>,
-): Promise<number> {
-  if (visited.has(nodeId)) {
-    return 0;
+function simpleStringHash(value: string) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(index);
   }
-  visited.add(nodeId);
-  const node = graph.nodes.get(nodeId);
-  if (!node) {
-    return 0;
-  }
-  const result = await runCanvasExecutionNode(input, graph, node);
-  const shouldStop =
-    node.type === "function" &&
-    (node.functionOption?.key === "save" ||
-      node.functionOption?.key === "display");
-  if (shouldStop) {
-    return result.executed;
-  }
-  let executed = result.executed;
-  for (const targetId of graph.outgoing.get(node.id) || []) {
-    executed += await runCanvasExecutionPath(
-      input,
-      graph,
-      targetId,
-      new Set(visited),
-    );
-  }
-  return executed;
+  return (hash >>> 0).toString(36);
 }
 
-type CanvasExecutionGraph = {
-  nodes: Map<string, SpaceCanvasNode>;
-  edges: Array<{ source: string; target: string }>;
-  outgoing: Map<string, string[]>;
-};
+async function resumeBackendCanvasRun(
+  input: CanvasStartRunInput,
+  canvasRun: CanvasRunRef,
+) {
+  const pending = canvasRun.pending_node;
+  if (!pending?.node_key) {
+    throw new Error("画布运行等待反馈，但缺少等待节点");
+  }
+  const node = input.nodes.find((item) => item.id === pending.node_key);
+  if (!node) {
+    throw new Error("画布运行等待节点不存在");
+  }
+  const prompt = backendCanvasFeedbackPrompt(pending, node);
+  if (!prompt || !input.requestFlowFeedback) {
+    throw new Error(`${node.title} 需要补充信息，请单独处理后继续`);
+  }
+  const values = await input.requestFlowFeedback({ node, prompt });
+  return resumeSpaceCanvas({
+    projectId: input.projectId,
+    runId: Number(canvasRun.run_id || 0),
+    requestId: String(canvasRun.request_id || ""),
+    nodeKey: pending.node_key,
+    approvalId: Number(prompt.approval.id || 0),
+    feedback: values,
+  });
+}
 
-function buildCanvasExecutionGraph(
-  nodes: SpaceCanvasNode[],
-  edges: SpaceCanvasEdge[],
-): CanvasExecutionGraph {
-  const outgoing = new Map<string, string[]>();
-  for (const edge of edges) {
-    if (!edge.from || !edge.to) {
+function backendCanvasFeedbackPrompt(
+  pending: CanvasNodeResultRef,
+  node: SpaceCanvasNode,
+): FlowFeedbackPrompt | null {
+  if (pending.node_type === "flow") {
+    const snapshot = normalizeFlowRunSnapshot(pending.output || pending.result);
+    return flowFeedbackFromSnapshot(snapshot);
+  }
+  return agentFeedbackFromResult(
+    backendCanvasNodeResultPayload(pending),
+    node.title,
+  );
+}
+
+function applyBackendCanvasRunResults(
+  input: CanvasStartRunInput,
+  results: CanvasNodeResultRef[],
+  appliedNodeResults?: Set<string>,
+) {
+  let applied = 0;
+  const nodesById = new Map(input.nodes.map((node) => [node.id, node]));
+  for (const result of results) {
+    const node = nodesById.get(result.node_key);
+    if (!node || result.status !== "success") {
       continue;
     }
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) || []), edge.to]);
+    const resultKey = canvasNodeResultApplyKey(result);
+    if (resultKey && appliedNodeResults?.has(resultKey)) {
+      continue;
+    }
+    const patch = buildBackendCanvasNodePatch(input, node, result);
+    input.onNodeResult(node.id, patch);
+    if (resultKey) {
+      appliedNodeResults?.add(resultKey);
+    }
+    applied += 1;
+    const patchedNode = {
+      ...node,
+      ...patch,
+    };
+    nodesById.set(node.id, patchedNode);
+    input.nodes = input.nodes.map((item) =>
+      item.id === node.id ? patchedNode : item,
+    );
+    if (patch.asset) {
+      input.onAssetCreated(patch.asset);
+    }
   }
-  return {
-    nodes: new Map(nodes.map((node) => [node.id, node])),
-    edges: edges.map((edge) => ({ source: edge.from, target: edge.to })),
-    outgoing,
+  return applied;
+}
+
+function canvasNodeResultApplyKey(result: CanvasNodeResultRef) {
+  return [
+    result.node_key,
+    result.node_run_id || "",
+    result.status || "",
+    Number(
+      result.version?.id ||
+        result.asset?.version?.id ||
+        (result.result as any)?.version?.id ||
+        0,
+    ),
+    Number(
+      result.asset?.id ||
+        (result.result as any)?.asset?.id ||
+        0,
+    ),
+  ].join(":");
+}
+
+function buildBackendCanvasNodePatch(
+  input: CanvasStartRunInput,
+  node: SpaceCanvasNode,
+  result: CanvasNodeResultRef,
+) {
+  const normalizedResult = backendCanvasNodeResultPayload(result);
+  const asset = runResultAsset({
+    result: normalizedResult,
+    previousAsset: node.asset,
+    previousAssets: input.space.assets,
+  });
+  if (asset) {
+    return buildGeneratedNodeResultPatch(
+      node,
+      withRunResultAsset(normalizedResult, asset),
+      "后端执行结果",
+    );
+  }
+  return buildGeneratedNodeResultPatch(
+    node,
+    normalizedResult,
+    "后端执行结果",
+  );
+}
+
+function backendCanvasNodeResultPayload(result: CanvasNodeResultRef) {
+  const payload: Record<string, unknown> = {
+    ...(result.result && typeof result.result === "object" ? result.result : {}),
+    run_id: (result.result as any)?.run_id,
+    request_id: (result.result as any)?.request_id,
+    node_run_id: result.node_run_id || (result.result as any)?.node_run_id,
+    status: result.status || (result.result as any)?.status,
+    output: result.output ?? (result.result as any)?.output,
+    asset: result.asset || (result.result as any)?.asset,
+    version:
+      result.version ||
+      (result.result as any)?.version ||
+      result.asset?.version,
+    agent_run_id: result.agent_run_id || (result.result as any)?.agent_run_id,
   };
+  return payload;
+}
+
+function canvasRunSummaryText(canvasRun: CanvasRunRef, executed: number) {
+  if (canvasRun.status === "waiting") {
+    return `已执行 ${executed} 个连接节点，等待补充信息`;
+  }
+  if (canvasRun.status === "fail") {
+    return `画布运行失败，已执行 ${executed} 个连接节点`;
+  }
+  return `已执行 ${executed} 个连接节点`;
 }
 
 function canvasExecutionNodeIds(
@@ -4734,449 +4590,85 @@ function canvasExecutionNodeIds(
   nodes: SpaceCanvasNode[],
   edges: SpaceCanvasEdge[],
 ) {
-  const graph = buildCanvasExecutionGraph(nodes, edges);
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (!edge.from || !edge.to) {
+      continue;
+    }
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) || []), edge.to]);
+  }
   const result = new Set<string>();
   const visit = (nodeId: string) => {
-    for (const targetId of graph.outgoing.get(nodeId) || []) {
+    for (const targetId of outgoing.get(nodeId) || []) {
       if (result.has(targetId)) {
         continue;
       }
       result.add(targetId);
-      visit(targetId);
+      const targetNode = nodeMap.get(targetId);
+      if (!targetNode || !canvasNodeStopsExecution(targetNode)) {
+        visit(targetId);
+      }
     }
   };
   visit(startNodeId);
   return [...result];
 }
 
-async function runCanvasExecutionNode(
-  input: CanvasStartRunInput,
-  graph: CanvasExecutionGraph,
-  node: SpaceCanvasNode,
-) {
-  input.setRunningNode({
-    nodeId: node.id,
-    title: node.title,
-    startedAt: Date.now(),
-    progress: 0,
-    status: "running",
-  });
-  try {
-    const inputContext = buildNodeInputContext(node.id, input.nodes, graph.edges);
-    const result = await executeCanvasNode(input, node, inputContext);
-    if (result?.patch) {
-      input.onNodeResult(node.id, result.patch);
-      const patchedNode = {
-        ...node,
-        ...result.patch,
-      };
-      graph.nodes.set(node.id, patchedNode);
-      input.nodes = input.nodes.map((item) =>
-        item.id === node.id ? patchedNode : item,
-      );
-    }
-    input.setRunningNode((current) =>
-      current?.nodeId === node.id
-        ? { ...current, progress: 100, status: "success" }
-        : current,
-    );
-    window.setTimeout(() => {
-      input.setRunningNode((current) =>
-        current?.nodeId === node.id ? null : current,
-      );
-    }, 450);
-    return { executed: result?.count || 1 };
-  } catch (err) {
-    input.setRunningNode((current) =>
-      current?.nodeId === node.id
-        ? { ...current, progress: 92, status: "error" }
-        : current,
-    );
-    window.setTimeout(() => {
-      input.setRunningNode((current) =>
-        current?.nodeId === node.id ? null : current,
-      );
-    }, 900);
-    throw err;
-  }
-}
-
-async function executeCanvasNode(
-  input: CanvasStartRunInput,
-  node: SpaceCanvasNode,
-  inputContext: NodeInputContext | null,
-) {
-  if (node.type === "power" && node.power) {
-    const draft = readNodeComposerDraft(node);
-    const prompt = promptWithInputContext(draft.prompt || "", inputContext);
-    const result = await runSpacePower({
-      projectId: input.projectId,
-      flowId: node.flow?.id || 0,
-      nodeKey: node.id,
-      nodeName: node.title,
-      kind: node.power.kind,
-      powerId: node.power.id,
-      powerKey: node.power.key,
-      sourceTargetId: draft.selectedTargetId || 0,
-      prompt,
-      params: withNodeInputContext(draft.paramValues || {}, inputContext),
-    });
-    return {
-      patch: buildGeneratedNodeResultPatch(node, result, prompt),
-      count: 1,
-    };
-  }
-  if (node.type === "agent" && node.role) {
-    const agentId = Number(node.role.agent_id || 0);
-    if (agentId <= 0) {
-      throw new Error("当前团队角色未绑定智能体");
-    }
-    const draft = readNodeComposerDraft(node);
-    const files = Array.isArray(draft.paramValues?.files)
-      ? draft.paramValues.files
-      : [];
-    const prompt = promptWithInputContext(draft.prompt || "", inputContext);
-    const memoryKey = canvasAgentMemoryKey({
-      projectId: input.projectId,
-      assetCateId: Number(node.assetCateId || input.assetCate.id || 0),
-      nodeId: node.id,
-      agentId,
-    });
-    const result = await runSpaceAgent({
-      projectId: input.projectId,
-      flowId: node.flow?.id || 0,
-      nodeKey: node.id,
-      nodeName: node.title,
-      agentId,
-      prompt,
-      files,
-      context: inputContext?.sources || [],
-      history: readCanvasAgentMemory(memoryKey),
-    });
-    if (agentFeedbackFromResult(result, node.title)) {
-      throw new Error(`${node.title} 需要补充信息，请单独运行该节点`);
-    }
-    appendCanvasAgentMemory(memoryKey, [
-      agentMemoryEntry("user", prompt),
-      agentMemoryEntry("assistant", agentOutputMemoryText(result), result),
-    ]);
-    return {
-      patch: buildGeneratedNodeResultPatch(node, result, prompt),
-      count: 1,
-    };
-  }
-  if (node.type === "flow" && node.flow) {
-    const prompt = promptWithInputContext("", inputContext);
-    const started = await runSpaceFlow(
-      input.projectId,
-      Number(node.assetCateId || input.assetCate.id || 0),
-      node.flow,
-      prompt,
-      withNodeInputContext({}, inputContext),
-    );
-    const startedSnapshot = await waitForFlowCompletion(input.projectId, {
-      runId: Number(started?.run_id || 0),
-      requestId: String(started?.request_id || ""),
-    });
-    const snapshot = await resolveCanvasFlowFeedback(
-      input,
-      node,
-      startedSnapshot,
-    );
-    if (snapshot.status === "fail" || snapshot.status === "canceled") {
-      throw new Error(snapshot.error || "流程运行失败");
-    }
-    if (snapshot.status !== "success") {
-      throw new Error(snapshot.error || "流程仍在运行，请稍后刷新查看结果");
-    }
-    const asset =
-      latestAssetFromStatus(snapshot, Number(node.assetCateId || 0)) ||
-      (await latestGeneratedAsset(
-        input.projectId,
-        Number(node.assetCateId || input.assetCate.id || 0),
-        snapshot.runId,
-      ));
-    if (asset && asset.id > 0) {
-      const normalizedAsset = mergeProjectAssetVersionHistory(
-        asset,
-        input.space.assets.find((candidate) => candidate.id === asset.id),
-      );
-      input.onAssetCreated(normalizedAsset);
-      return {
-        patch: buildGeneratedNodeResultPatch(
-          node,
-          {
-            output: normalizedAsset.version?.content,
-            asset: normalizedAsset,
-            version: normalizedAsset.version,
-          },
-          prompt,
-        ),
-        count: 1,
-      };
-    }
-    return {
-      patch: buildGeneratedNodeResultPatch(
-        node,
-        { output: snapshot.output },
-        prompt,
-      ),
-      count: 1,
-    };
-  }
-  if (node.type === "function") {
-    return executeCanvasFunctionNode(input, node, inputContext);
-  }
-  return { count: 0 };
-}
-
-async function resolveCanvasFlowFeedback(
-  input: CanvasStartRunInput,
-  node: SpaceCanvasNode,
-  snapshot: FlowRunSnapshot,
-) {
-  let currentSnapshot = snapshot;
-  while (isFlowWaitingSnapshot(currentSnapshot)) {
-    const feedback = flowFeedbackFromSnapshot(currentSnapshot);
-    if (!feedback || !input.requestFlowFeedback) {
-      throw new Error(`${node.title} 需要补充信息，请单独运行该节点`);
-    }
-    if (!feedback.approval.id) {
-      throw new Error(`${node.title} 缺少反馈审批 ID`);
-    }
-    const values = await input.requestFlowFeedback({ node, prompt: feedback });
-    const submitted = await submitSpaceApproval({
-      projectId: input.projectId,
-      approvalId: feedback.approval.id,
-      data: values,
-    });
-    currentSnapshot = await waitForFlowCompletion(input.projectId, {
-      runId: Number(submitted?.run_id || currentSnapshot.runId || 0),
-      requestId: String(
-        submitted?.request_id || currentSnapshot.requestId || "",
-      ),
-    });
-  }
-  return currentSnapshot;
-}
-
-async function executeCanvasFunctionNode(
-  input: CanvasStartRunInput,
-  node: SpaceCanvasNode,
-  inputContext: NodeInputContext | null,
-) {
-  const optionKey = node.functionOption?.key || "";
-  if (optionKey === "display") {
-    const output = inputContextOutput(inputContext);
-    if (output == null) {
-      throw new Error("展示节点没有可展示的上游结果");
-    }
-    return {
-      patch: buildGeneratedNodeResultPatch(
-        node,
-        { output },
-        "展示上游结果",
-      ),
-      count: 1,
-    };
-  }
-  if (optionKey === "save") {
-    const output = inputContextOutput(inputContext);
-    if (output == null) {
-      throw new Error("保存节点没有可保存的上游结果");
-    }
-    const asset = await saveSpaceCanvasAsset({
-      projectId: input.projectId,
-      assetCateId: Number(node.assetCateId || input.assetCate.id || 0),
-      name: functionAssetName(node, inputContext),
-      kind: String(node.kind || input.assetCate.kind || ""),
-      role: "content",
-      content: output,
-    });
-    const normalizedAsset = mergeProjectAssetVersionHistory(
-      asset,
-      input.space.assets.find((candidate) => candidate.id === asset.id),
-    );
-    input.onAssetCreated(normalizedAsset);
-    return {
-      patch: buildGeneratedNodeResultPatch(
-        node,
-        {
-          output: normalizedAsset.version?.content || output,
-          asset: normalizedAsset,
-          version: normalizedAsset.version,
-        },
-        "保存上游结果",
-      ),
-      count: 1,
-    };
-  }
-  if (optionKey === "start") {
-    return { count: 0 };
-  }
-  if (optionKey === "import") {
-    return { count: 0 };
-  }
-  return {
-    patch: buildGeneratedNodeResultPatch(node, { output: "操作已应用" }, "执行"),
-    count: 1,
-  };
-}
-
-function latestAssetFromStatus(
-  snapshot: FlowRunSnapshot,
-  assetCateId: number,
-): ProjectAsset | null {
-  const assets = Array.isArray(snapshot.raw?.assets)
-    ? snapshot.raw.assets
-    : Array.isArray(snapshot.raw?.data?.assets)
-      ? snapshot.raw.data.assets
-      : [];
-  return latestAssetCandidate(assets, assetCateId, snapshot.runId);
-}
-
-async function latestGeneratedAsset(
-  projectId: number,
-  assetCateId: number,
-  runId: number,
-) {
-  if (runId <= 0) {
-    return null;
-  }
-  const assets = await fetchSpaceBootstrapAssets(projectId);
-  return latestAssetCandidate(assets, assetCateId, runId);
-}
-
-function latestAssetCandidate(
-  assets: ProjectAsset[],
-  assetCateId: number,
-  runId: number,
-) {
-  if (runId <= 0) {
-    return null;
-  }
-  const runCandidates = assets.filter((asset) => {
-    if (Number(asset.version?.run_id || 0) !== runId) {
-      return false;
-    }
-    return true;
-  });
-  const candidates = runCandidates.filter((asset) => {
-    if (assetCateId > 0 && Number(asset.asset_cate_id || 0) !== assetCateId) {
-      return false;
-    }
-    return true;
-  });
-  const matched = candidates.length > 0 ? candidates : runCandidates;
+function canvasNodeStopsExecution(node: SpaceCanvasNode) {
   return (
-    matched.sort(
-      (left, right) =>
-        Number(right.version_id || right.id || 0) -
-        Number(left.version_id || left.id || 0),
-    )[0] || null
+    node.type === "function" &&
+    (node.functionOption?.key === "save" ||
+      node.functionOption?.key === "display")
   );
 }
 
-function normalizeRichAssetVersionContent(asset: ProjectAsset): ProjectAsset {
-  const version = normalizeRichAssetVersion(asset.version);
-  const versions = (asset.versions || [])
-    .map(normalizeRichAssetVersion)
-    .filter((item): item is AssetVersion => Boolean(item));
-
-  return {
-    ...asset,
-    version,
-    versions: versions.length ? versions : asset.versions,
-  };
+async function saveCanvasContentResult(input: {
+  projectId: number;
+  assetCateId: number;
+  name: string;
+  kind: string;
+  content: unknown;
+  runRef?: SpaceCanvasNode["resultRef"] | null;
+  nodeKey?: string;
+  requestId?: string;
+  source?: CanvasResultSourceRef | null;
+  previousAsset?: ProjectAsset | null;
+  previousAssets?: ProjectAsset[];
+}) {
+  const assetCateId = requireRealAssetCateId(input.assetCateId);
+  const savedAsset = await saveSpaceCanvasContent({
+    projectId: input.projectId,
+    assetCateId,
+    name: input.name,
+    kind: input.kind,
+    content: input.content,
+    runId: Number(input.runRef?.run_id || 0),
+    nodeRunId: Number(input.runRef?.node_run_id || 0),
+    releaseId: Number(input.runRef?.release_id || 0),
+    nodeKey: input.nodeKey,
+    requestId: input.requestId,
+    source: input.source,
+  });
+  const previousAsset =
+    input.previousAsset ||
+    input.previousAssets?.find((asset) => asset.id === savedAsset.id) ||
+    null;
+  return mergeProjectAssetVersionHistory(savedAsset, previousAsset);
 }
 
-function mergeProjectAssetVersionHistory(
-  nextAsset: ProjectAsset,
-  previousAsset?: ProjectAsset | null,
-): ProjectAsset {
-  const normalizedNextAsset = normalizeRichAssetVersionContent(nextAsset);
-  const normalizedPreviousAsset = previousAsset
-    ? normalizeRichAssetVersionContent(previousAsset)
-    : null;
-  const versions = mergeAssetVersionHistory([
-    markCurrentAssetVersion(normalizedNextAsset.version),
-    ...(normalizedNextAsset.versions || []),
-    normalizedPreviousAsset?.version,
-    ...(normalizedPreviousAsset?.versions || []),
-  ]);
-
-  return {
-    ...normalizedPreviousAsset,
-    ...normalizedNextAsset,
-    version: normalizedNextAsset.version || normalizedPreviousAsset?.version,
-    versions: versions.length ? versions : undefined,
-  };
-}
-
-function normalizeRichAssetVersion(
-  version: AssetVersion | undefined,
-): AssetVersion | undefined {
-  if (!version) {
-    return undefined;
+function requireRealAssetCateId(assetCateId: number) {
+  const id = Number(assetCateId || 0);
+  if (id <= 0) {
+    throw new Error("保存结果需要选择真实资产分类");
   }
-  const richOutput = fixedTiptapRichOutput(version.content);
-  return richOutput
-    ? {
-        ...version,
-        content: richOutput,
-      }
-    : version;
+  return id;
 }
 
-function mergeAssetVersionHistory(
-  candidates: Array<AssetVersion | undefined | null>,
-) {
-  const versions: AssetVersion[] = [];
-  const seen = new Set<string>();
-  let hasCurrentVersion = false;
-  for (const version of candidates) {
-    if (!version || (version.content == null && Number(version.id || 0) <= 0)) {
-      continue;
-    }
-    const key = String(version.id || version.version || versions.length);
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    if (isCurrentAssetVersion(version)) {
-      versions.push(
-        hasCurrentVersion ? clearCurrentAssetVersion(version) : version,
-      );
-      hasCurrentVersion = true;
-    } else {
-      versions.push(version);
-    }
-  }
-  return versions.sort(
-    (left, right) =>
-      Number(isCurrentAssetVersion(right)) -
-        Number(isCurrentAssetVersion(left)) ||
-      Number(right.version || right.id || 0) -
-        Number(left.version || left.id || 0),
-  );
-}
-
-function isCurrentAssetVersion(version: AssetVersion) {
-  return Boolean((version as any).is_current || (version as any).current);
-}
-
-function markCurrentAssetVersion(
-  version: AssetVersion | undefined,
-): AssetVersion | undefined {
-  return version ? ({ ...version, current: true } as AssetVersion) : undefined;
-}
-
-function clearCurrentAssetVersion(version: AssetVersion): AssetVersion {
-  const { current, is_current, ...rest } = version as AssetVersion & {
-    current?: boolean;
-    is_current?: boolean;
-  };
-  return rest;
+function activeCanvasAssets(nodes: SpaceCanvasNode[]) {
+  return nodes
+    .map((node) => node.asset)
+    .filter((asset): asset is ProjectAsset => Boolean(asset?.id));
 }
 
 function delay(ms: number) {
@@ -5186,63 +4678,33 @@ function delay(ms: number) {
 }
 
 function generatedNodePreview(node: SpaceCanvasNode): GeneratedNodePreview {
-  const stored = (node as any).generatedPreview;
-  if (stored && typeof stored === "object") {
-    const storedText = String(stored.text || "");
-    const preview = {
-      text: storedText,
-      imageUrl: String(stored.imageUrl || ""),
-      videoUrl: String(stored.videoUrl || ""),
-      audioUrl: String(stored.audioUrl || ""),
-      fileUrl: String(stored.fileUrl || ""),
-    };
-    const normalizedText = displayTextFromOutput(
-      nodeContextOutput(node),
-      preview.text || node.description,
-    );
-    if (normalizedText) {
-      preview.text = normalizedText;
-    } else if (looksLikeStructuredJSONSnippet(storedText)) {
-      preview.text = "";
-    }
-    if (hasGeneratedPreview(preview)) {
-      return preview;
-    }
-  }
-  if (node.type !== "asset" && stored && typeof stored === "object") {
-    const preview = {
-      text: displayTextFromOutput(nodeContextOutput(node), node.description),
-      imageUrl: "",
-      videoUrl: "",
-      audioUrl: "",
-      fileUrl: "",
-    };
-    return preview;
-  }
-  const output =
-    node.type === "asset"
-      ? nodeContextOutput(node)
-      : firstDefined(
-          (node as any).generatedOutput,
-          (node as any).output,
-          (node as any).result?.output,
-          (node as any).version?.content,
-          (node as any).asset?.version?.content,
-        );
+  const output = nodeContextOutput(node);
   const preview = generatedPreviewFromValue(
     output,
-    String(node.power?.kind || node.kind || ""),
+    nodePreviewKind(node, output),
   );
-  if (
-    !hasGeneratedPreview(preview) &&
-    (node.hasResult === true || node.status === "已生成")
-  ) {
-    preview.text = displayTextFromOutput(
-      nodeContextOutput(node),
-      node.description,
-    );
+  if (!hasGeneratedPreview(preview)) {
+    preview.text = displayTextFromOutput(output, "");
   }
   return preview;
+}
+
+function nodePreviewKind(node: SpaceCanvasNode, output: unknown) {
+  const outputKind = previewKindFromOutput(output);
+  if (node.type === "power") {
+    return firstText(
+      String(node.power?.kind || ""),
+      outputKind,
+      String(node.asset?.kind || ""),
+      String(node.kind || ""),
+    );
+  }
+  return firstText(
+    String(node.asset?.kind || ""),
+    String(node.power?.kind || ""),
+    outputKind,
+    String(node.kind || ""),
+  );
 }
 
 function nodeDetailPreview(node: SpaceCanvasNode): GeneratedNodePreview {
@@ -5255,10 +4717,7 @@ function nodeDetailPreview(node: SpaceCanvasNode): GeneratedNodePreview {
     String(node.kind || node.power?.kind || ""),
   );
   if (!hasGeneratedPreview(assetPreview)) {
-    assetPreview.text = displayTextFromOutput(
-      nodeContextOutput(node),
-      node.description,
-    );
+    assetPreview.text = displayTextFromOutput(nodeContextOutput(node), "");
   }
   return assetPreview;
 }
@@ -5268,28 +4727,13 @@ function nodeRichDocument(node: SpaceCanvasNode) {
 }
 
 function nodeEnergonOutput(node: SpaceCanvasNode) {
-  return firstDisplayOutput(
-    node.asset?.version?.content,
-    (node as any).asset?.version?.content,
-    (node as any).version?.content,
-    (node as any).generatedOutput,
-    (node as any).output,
-    (node as any).result?.output,
-    node.description,
-    (node as any).generatedPreview?.text,
-  );
+  return nodeContextOutput(node);
 }
 
 function fixedTiptapRichDocumentFromNode(node: SpaceCanvasNode) {
   return firstTiptapRichDocument(
     node.asset?.version?.content,
-    (node as any).asset?.version?.content,
-    (node as any).version?.content,
-    (node as any).generatedOutput,
-    (node as any).output,
-    (node as any).result?.output,
-    node.description,
-    (node as any).generatedPreview?.text,
+    node.resultOutput,
   );
 }
 
@@ -5940,12 +5384,6 @@ function nodeDisplayText(node: SpaceCanvasNode) {
 function richDocumentFromNode(node: SpaceCanvasNode) {
   const candidates = [
     nodeContextOutput(node),
-    (node as any).generatedPreview?.text,
-    (node as any).generatedOutput,
-    (node as any).output,
-    (node as any).result?.output,
-    (node as any).version?.content,
-    (node as any).asset?.version?.content,
     node.asset?.version?.content,
     node.description,
   ];
@@ -6040,7 +5478,7 @@ function fillGeneratedPreview(
   if (Array.isArray(value)) {
     for (const item of value) {
       fillGeneratedPreview(preview, item, kind, seen, depth + 1);
-      if (hasGeneratedPreview(preview)) {
+      if (hasPreviewMedia(preview)) {
         return;
       }
     }
@@ -6056,21 +5494,49 @@ function fillGeneratedPreview(
   seen.add(value);
 
   const row = value as Record<string, any>;
-  preview.text ||= displayTextFromOutput(value, "");
-  preview.imageUrl ||= firstMediaText(
+  const mediaUrl = fillGeneratedPreviewMedia(preview, row, kind);
+  const displayText = displayTextFromOutput(value, "");
+  if (displayText && displayText !== mediaUrl && !looksLikeURL(displayText)) {
+    preview.text ||= displayText;
+  }
+  const genericUrl = firstMediaURLText(row.url, row.src, row.href);
+  if (genericUrl && genericUrl !== mediaUrl) {
+    setPreviewString(preview, genericUrl, kind);
+  }
+  preview.imageUrl ||= firstMediaURLText(
     row.image,
-    row.url,
+    row.image_url,
+    row.imageUrl,
     firstArrayValue(row.images),
+    firstArrayValue(row.imageUrls),
   );
-  preview.videoUrl ||= firstMediaText(row.video, firstArrayValue(row.videos));
-  preview.audioUrl ||= firstMediaText(row.audio, firstArrayValue(row.audios));
-  preview.fileUrl ||= firstMediaText(row.file, firstArrayValue(row.files));
+  preview.videoUrl ||= firstMediaURLText(
+    row.video,
+    row.video_url,
+    row.videoUrl,
+    firstArrayValue(row.videos),
+    firstArrayValue(row.videoUrls),
+  );
+  preview.audioUrl ||= firstMediaURLText(
+    row.audio,
+    row.audio_url,
+    row.audioUrl,
+    firstArrayValue(row.audios),
+    firstArrayValue(row.audioUrls),
+  );
+  preview.fileUrl ||= firstMediaURLText(
+    row.file,
+    row.file_url,
+    row.fileUrl,
+    firstArrayValue(row.files),
+    firstArrayValue(row.fileUrls),
+  );
 
-  if (!hasGeneratedPreview(preview)) {
+  if (!hasPreviewMedia(preview)) {
     for (const key of ["output", "result", "content", "body", "data", "rich"]) {
       if (row[key] && typeof row[key] === "object") {
         fillGeneratedPreview(preview, row[key], kind, seen, depth + 1);
-        if (hasGeneratedPreview(preview)) {
+        if (hasPreviewMedia(preview)) {
           return;
         }
       }
@@ -6085,6 +5551,178 @@ function fillGeneratedPreview(
   }
 }
 
+function fillGeneratedPreviewMedia(
+  preview: GeneratedNodePreview,
+  row: Record<string, any>,
+  kind: string,
+) {
+  const mediaKind = firstPreviewMediaKind(
+    kind,
+    row.kind,
+    row.media_kind,
+    row.mediaKind,
+    row.media_type,
+    row.mediaType,
+    row.type,
+    row.name,
+  );
+  if (!mediaKind) {
+    return "";
+  }
+  const mediaUrl = firstMediaURLText(...mediaCandidatesForKind(row, mediaKind));
+  if (!mediaUrl) {
+    return "";
+  }
+  if (mediaKind === "image") preview.imageUrl ||= mediaUrl;
+  if (mediaKind === "video") preview.videoUrl ||= mediaUrl;
+  if (mediaKind === "audio") preview.audioUrl ||= mediaUrl;
+  if (mediaKind === "file") preview.fileUrl ||= mediaUrl;
+  return mediaUrl;
+}
+
+function previewKindFromOutput(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  const row = value as Record<string, any>;
+  return firstPreviewMediaKind(
+    row.kind,
+    row.media_kind,
+    row.mediaKind,
+    row.media_type,
+    row.mediaType,
+    row.type,
+    row.name,
+  );
+}
+
+function firstPreviewMediaKind(...values: any[]) {
+  for (const value of values) {
+    const kind = normalizePreviewMediaKind(String(value || ""));
+    if (kind) {
+      return kind;
+    }
+  }
+  return "";
+}
+
+function normalizePreviewMediaKind(kind: string) {
+  const normalized = kind.trim().toLowerCase();
+  if (
+    normalized === "image" ||
+    normalized === "images" ||
+    normalized === "picture" ||
+    normalized === "pictures" ||
+    normalized === "mediaimage" ||
+    normalized === "editor media image" ||
+    normalized === "editormediaimage" ||
+    normalized.includes("image") ||
+    normalized === "图片" ||
+    normalized === "图像"
+  ) {
+    return "image";
+  }
+  if (
+    normalized === "video" ||
+    normalized === "videos" ||
+    normalized === "mediavideo" ||
+    normalized === "editor media video" ||
+    normalized === "editormediavideo" ||
+    normalized.includes("video") ||
+    normalized === "视频"
+  ) {
+    return "video";
+  }
+  if (
+    normalized === "audio" ||
+    normalized === "audios" ||
+    normalized === "music" ||
+    normalized === "voice" ||
+    normalized === "mediaaudio" ||
+    normalized === "editor media audio" ||
+    normalized === "editormediaaudio" ||
+    normalized.includes("audio") ||
+    normalized === "音频" ||
+    normalized === "音乐" ||
+    normalized === "语音"
+  ) {
+    return "audio";
+  }
+  if (
+    normalized === "file" ||
+    normalized === "files" ||
+    normalized === "attachment" ||
+    normalized === "attachments" ||
+    normalized === "mediafile" ||
+    normalized === "editorfile" ||
+    normalized === "editor media file" ||
+    normalized === "editormediafile" ||
+    normalized === "文件" ||
+    normalized === "附件"
+  ) {
+    return "file";
+  }
+  return "";
+}
+
+function mediaCandidatesForKind(
+  row: Record<string, any>,
+  kind: "image" | "video" | "audio" | "file",
+) {
+  const common = [
+    row.url,
+    row.src,
+    row.href,
+    row.path,
+    row.file_url,
+    row.fileUrl,
+    row.text,
+    row.content,
+    row.value,
+    valueAtPath(row, ["attrs", "src"]),
+    valueAtPath(row, ["attrs", "url"]),
+    valueAtPath(row, ["attrs", "href"]),
+  ];
+  if (kind === "image") {
+    return [
+      row.image,
+      row.image_url,
+      row.imageUrl,
+      firstArrayValue(row.images),
+      firstArrayValue(row.imageUrls),
+      ...common,
+    ];
+  }
+  if (kind === "video") {
+    return [
+      row.video,
+      row.video_url,
+      row.videoUrl,
+      firstArrayValue(row.videos),
+      firstArrayValue(row.videoUrls),
+      ...common,
+    ];
+  }
+  if (kind === "audio") {
+    return [
+      row.audio,
+      row.audio_url,
+      row.audioUrl,
+      firstArrayValue(row.audios),
+      firstArrayValue(row.audioUrls),
+      ...common,
+    ];
+  }
+  return [
+    row.file,
+    row.file_url,
+    row.fileUrl,
+    firstArrayValue(row.files),
+    firstArrayValue(row.fileUrls),
+    ...common,
+  ];
+}
+
 function setPreviewString(
   preview: GeneratedNodePreview,
   value: string,
@@ -6095,8 +5733,15 @@ function setPreviewString(
     return;
   }
   if (looksLikeJSONText(text)) {
-    const parsedText = displayTextFromOutput(parseMaybeJSON(text), "");
-    if (parsedText) {
+    const parsed = parseMaybeJSON(text);
+    if (parsed !== text) {
+      fillGeneratedPreview(preview, parsed, kind);
+      if (hasPreviewMedia(preview)) {
+        return;
+      }
+    }
+    const parsedText = displayTextFromOutput(parsed, "");
+    if (parsedText && !looksLikeURL(parsedText)) {
       preview.text ||= parsedText;
     }
     return;
@@ -6112,7 +5757,7 @@ function setPreviewString(
     return;
   }
   if (looksLikeURL(text)) {
-    const normalizedKind = kind.toLowerCase();
+    const normalizedKind = normalizePreviewMediaKind(kind);
     if (
       normalizedKind === "image" ||
       /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(text)
@@ -6129,7 +5774,6 @@ function setPreviewString(
     }
     if (
       normalizedKind === "audio" ||
-      normalizedKind === "music" ||
       /\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i.test(text)
     ) {
       preview.audioUrl ||= text;
@@ -6162,6 +5806,15 @@ function hasGeneratedPreview(preview: GeneratedNodePreview) {
   );
 }
 
+function hasPreviewMedia(preview: GeneratedNodePreview) {
+  return Boolean(
+    preview.imageUrl ||
+      preview.videoUrl ||
+      preview.audioUrl ||
+      preview.fileUrl,
+  );
+}
+
 function firstDefined(...values: any[]) {
   return values.find((value) => value !== undefined && value !== null);
 }
@@ -6184,11 +5837,23 @@ function firstMediaText(...values: any[]) {
       const text = firstText(
         value.url,
         value.src,
+        value.href,
         value.path,
         value.file,
+        value.file_url,
+        value.fileUrl,
         value.image,
+        value.image_url,
+        value.imageUrl,
         value.video,
+        value.video_url,
+        value.videoUrl,
         value.audio,
+        value.audio_url,
+        value.audioUrl,
+        valueAtPath(value, ["attrs", "src"]),
+        valueAtPath(value, ["attrs", "url"]),
+        valueAtPath(value, ["attrs", "href"]),
       );
       if (text) {
         return text;
@@ -6196,6 +5861,11 @@ function firstMediaText(...values: any[]) {
     }
   }
   return "";
+}
+
+function firstMediaURLText(...values: any[]) {
+  const text = firstMediaText(...values);
+  return looksLikeURL(text) ? text : "";
 }
 
 function firstArrayValue(value: any) {
@@ -6275,11 +5945,12 @@ function buildNodeInputContext(
     .filter((edge) => edge.target === nodeId)
     .map((edge) => nodeMap.get(edge.source))
     .filter((node): node is SpaceCanvasNode => Boolean(node))
+    .filter(nodeHasResultContent)
     .map((node) => {
       const output = nodeContextOutput(node);
       const preview = generatedPreviewFromValue(
         output,
-        String(node.power?.kind || node.kind || ""),
+        nodePreviewKind(node, output),
       );
       if (!hasGeneratedPreview(preview)) {
         preview.text = displayTextFromOutput(output, node.description || node.title);
@@ -6290,6 +5961,7 @@ function buildNodeInputContext(
         type: node.type,
         output,
         preview,
+        resultRef: node.resultRef,
       };
     });
   if (sources.length === 0) {
@@ -6314,27 +5986,27 @@ function nodeInputContextLine(source: NodeInputContext["sources"][number]) {
 }
 
 function nodeContextOutput(node: SpaceCanvasNode) {
-  const value =
-    node.type === "asset"
-      ? firstDefined(
-          node.asset?.version?.content,
-          (node as any).asset?.version?.content,
-          (node as any).version?.content,
-          (node as any).generatedOutput,
-          (node as any).output,
-          (node as any).result?.output,
-          node.description,
-        )
-      : firstDefined(
-          (node as any).generatedOutput,
-          (node as any).output,
-          (node as any).result?.output,
-          (node as any).version?.content,
-          (node as any).asset?.version?.content,
-          node.asset?.version?.content,
-          node.description,
-        );
-  return firstDisplayOutput(value) || extractDisplayOutput(value);
+  return firstMeaningfulNodeOutput(node.asset?.version?.content, node.resultOutput);
+}
+
+function firstMeaningfulNodeOutput(...values: any[]) {
+  let fallback: any;
+  for (const value of values) {
+    if (value == null) {
+      continue;
+    }
+    if (fallback === undefined) {
+      fallback = value;
+    }
+    const output = firstDisplayOutput(value) || extractDisplayOutput(value);
+    if (hasDisplayOutput(output) || hasContextOutput(output)) {
+      return output;
+    }
+  }
+  if (fallback !== undefined) {
+    return firstDisplayOutput(fallback) || extractDisplayOutput(fallback);
+  }
+  return undefined;
 }
 
 function extractDisplayOutput(value: any): any {
@@ -6725,106 +6397,6 @@ function composerKindFromPreview(
   return String(fallback || "file").toLowerCase();
 }
 
-async function uploadSpaceFiles(
-  projectId: number,
-  files: File[],
-  ruleId: number,
-): Promise<UploadPreview[]> {
-  const previews: UploadPreview[] = [];
-  for (const file of files) {
-    const hash = await computeSpaceUploadHash(file);
-    const init = await initSpaceUpload({
-      projectId,
-      ruleId,
-      name: file.name,
-      size: file.size,
-      mime: file.type,
-      hash,
-      kind: uploadKindFromFile(file),
-    });
-    if (String(init.transport || "relay").toLowerCase() === "direct") {
-      if (!uploadFileDirect) {
-        throw new Error("当前导入入口缺少前端直传能力");
-      }
-      await uploadFileDirect(file, init.direct);
-    } else {
-      const chunkSize = Math.max(1, Number(init.chunk_size || file.size || 1));
-      const chunkTotal = Math.max(
-        1,
-        Number(init.chunk_total || Math.ceil(file.size / chunkSize)),
-      );
-      for (let index = 0; index < chunkTotal; index += 1) {
-        const start = index * chunkSize;
-        const end = Math.min(file.size, start + chunkSize);
-        await uploadSpacePart({
-          projectId,
-          sessionId: Number(init.session_id || 0),
-          partNumber: index + 1,
-          file: file.slice(start, end),
-        });
-      }
-    }
-    const completed = await completeSpaceUpload({
-      projectId,
-      sessionId: Number(init.session_id || 0),
-    });
-    previews.push(uploadPreviewFromPayload(completed, file));
-  }
-  return previews;
-}
-
-async function computeSpaceUploadHash(file: File) {
-  const hash = digestUploadFile ? await digestUploadFile(file) : "";
-  if (!hash) {
-    throw new Error("文件标识生成失败，请重新选择文件");
-  }
-  return hash;
-}
-
-function uploadKindFromFile(file: File) {
-  const mime = String(file.type || "").toLowerCase();
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
-  if (mime.startsWith("audio/")) return "audio";
-  return "file";
-}
-
-function uploadPreviewFromPayload(payload: any, file: File): UploadPreview {
-  const url = String(
-    payload?.url || payload?.open_url || payload?.download || "",
-  );
-  const kind = String(payload?.kind || uploadKindFromFile(file));
-  return {
-    name: String(payload?.name || file.name),
-    alias: String(payload?.name || file.name),
-    kind,
-    source: "upload",
-    type: String(payload?.mime || file.type || kind),
-    url,
-    text: String(payload?.name || file.name),
-    output: payload,
-  };
-}
-
-function uploadAssetContent(preview: UploadPreview) {
-  const kind = String(preview.kind || "").toLowerCase();
-  const output = preview.output || {};
-  if (kind === "image") {
-    return { image: preview.url, images: [output] };
-  }
-  if (kind === "video") {
-    return { video: preview.url, videos: [output] };
-  }
-  if (kind === "audio") {
-    return { audio: preview.url, audios: [output] };
-  }
-  return {
-    file: preview.url,
-    files: [output],
-    text: preview.text || preview.name || preview.url,
-  };
-}
-
 function stringifyContextValue(value: unknown) {
   if (value == null) {
     return "";
@@ -6837,6 +6409,11 @@ function stringifyContextValue(value: unknown) {
   } catch {
     return String(value);
   }
+}
+
+function hasContextOutput(value: unknown) {
+  const text = stringifyContextValue(value).trim();
+  return Boolean(text && text !== "{}" && text !== "[]" && text !== "null");
 }
 
 function nodeMenuViewForType(
@@ -6974,16 +6551,6 @@ function replaceAssetNode(
 }
 
 function assetNodeResultOverride(node: SpaceCanvasNode): Partial<SpaceCanvasNode> {
-  const output =
-    firstDisplayOutput(node.asset?.version?.content) ||
-    extractDisplayOutput(node.asset?.version?.content);
-  const preview = generatedPreviewFromValue(
-    output,
-    String(node.kind || ""),
-  );
-  if (!hasGeneratedPreview(preview)) {
-    preview.text = node.description;
-  }
   return {
     title: node.title,
     subtitle: node.subtitle,
@@ -6992,10 +6559,6 @@ function assetNodeResultOverride(node: SpaceCanvasNode): Partial<SpaceCanvasNode
     kind: node.kind,
     cardinality: node.cardinality,
     asset: node.asset,
-    generatedOutput: output,
-    generatedPreview: preview,
-    hasResult: true,
-    status: "已生成",
   };
 }
 
@@ -7028,6 +6591,83 @@ function normalizeCanvasForState(
   };
 }
 
+function hydrateCanvasMapAssets(
+  canvases: Record<string, SpaceCanvasState>,
+  assets: ProjectAsset[],
+) {
+  return Object.fromEntries(
+    Object.entries(canvases).map(([key, canvas]) => [
+      key,
+      hydrateCanvasAssets(canvas, assets),
+    ]),
+  );
+}
+
+function hydrateCanvasAssets(
+  canvas: SpaceCanvasState,
+  assets: ProjectAsset[],
+): SpaceCanvasState {
+  if (!assets.length) {
+    return canvas;
+  }
+  const byID = new Map(assets.map((asset) => [asset.id, asset]));
+  return {
+    ...canvas,
+    nodes: canvas.nodes.map((node) => hydrateCanvasNodeAsset(node, byID)),
+  };
+}
+
+function hydrateCanvasNodeAsset(
+  node: SpaceCanvasNode,
+  assetsByID: Map<number, ProjectAsset>,
+): SpaceCanvasNode {
+  const assetID = canvasNodeReferencedAssetID(node);
+  if (assetID <= 0) {
+    return node;
+  }
+  const asset = assetsByID.get(assetID);
+  if (!asset) {
+    return node;
+  }
+  return {
+    ...node,
+    ...buildAssetVersionNodePatch(node, asset),
+    asset,
+  };
+}
+
+function canvasNodeReferencedAssetID(node: SpaceCanvasNode) {
+  return Number(node.resultRef?.asset_id || node.asset?.id || 0);
+}
+
+function hydrateMissingCanvasAssetDetails(input: {
+  projectId: number;
+  nodes: SpaceCanvasNode[];
+  requested: Set<number>;
+  fetchAsset: (assetId: number) => Promise<ProjectAsset>;
+  onAsset: (asset: ProjectAsset) => void;
+}) {
+  const missingAssetIDs = new Set<number>();
+  for (const node of input.nodes) {
+    const assetID = canvasNodeReferencedAssetID(node);
+    if (assetID <= 0 || input.requested.has(assetID)) {
+      continue;
+    }
+    if (node.asset?.version?.content != null) {
+      continue;
+    }
+    missingAssetIDs.add(assetID);
+  }
+  for (const assetID of missingAssetIDs) {
+    input.requested.add(assetID);
+    void input.fetchAsset(assetID)
+      .then(input.onAsset)
+      .catch(() => {
+        input.requested.delete(assetID);
+      });
+  }
+}
+
 function isSameCanvasState(left: SpaceCanvasState, right: SpaceCanvasState) {
   return stableStringifyCanvas(left) === stableStringifyCanvas(right);
 }
@@ -7041,31 +6681,7 @@ function serializeCanvasMap(canvases: Record<string, SpaceCanvasState>) {
 }
 
 function stableStringifyCanvas(canvas: SpaceCanvasState) {
-  return JSON.stringify({
-    assetCateId: canvas.assetCateId,
-    nodes: canvas.nodes,
-    edges: canvas.edges,
-    viewport: canvas.viewport || {},
-  });
-}
-
-function persistentCanvasState(canvas: SpaceCanvasState): SpaceCanvasState {
-  return {
-    ...canvas,
-    nodes: canvas.nodes.map((node) => {
-      const { feedbackRequests: _feedbackRequests, ...rest } = node as any;
-      return rest as SpaceCanvasNode;
-    }),
-  };
-}
-
-function persistentCanvasMap(canvases: Record<string, SpaceCanvasState>) {
-  return Object.fromEntries(
-    Object.entries(canvases).map(([key, canvas]) => [
-      key,
-      persistentCanvasState(canvas),
-    ]),
-  );
+  return JSON.stringify(persistedCanvasState(canvas));
 }
 
 function resolveProximityConnection(
@@ -7201,6 +6817,7 @@ function highlightedCanvasPathEdges(
   for (const edge of edges) {
     outgoing.set(edge.from, [...(outgoing.get(edge.from) || []), edge]);
   }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const highlighted = new Set<string>();
   const visitedNodes = new Set<string>([selectedNodeId]);
   const queue = [...(outgoing.get(selectedNodeId) || [])];
@@ -7214,6 +6831,10 @@ function highlightedCanvasPathEdges(
       continue;
     }
     visitedNodes.add(edge.to);
+    const targetNode = nodeById.get(edge.to);
+    if (targetNode && canvasNodeStopsExecution(targetNode)) {
+      continue;
+    }
     queue.push(...(outgoing.get(edge.to) || []));
   }
   return highlighted;
@@ -7270,7 +6891,7 @@ function isResultFunctionNode(node: SpaceCanvasNode) {
     return false;
   }
   const key = node.functionOption?.key || "";
-  return key === "import" || key === "save" || key === "display";
+  return key === "import" || key === "save";
 }
 
 function shouldRenderFunctionResultCard(node: SpaceCanvasNode) {
@@ -7280,11 +6901,21 @@ function shouldRenderFunctionResultCard(node: SpaceCanvasNode) {
 function buildFunctionStatusPatch(description: string): Partial<SpaceCanvasNode> {
   return {
     description,
-    status: "已执行",
-    hasResult: false,
-    generatedOutput: undefined,
-    generatedPreview: undefined,
-    result: undefined,
+  };
+}
+
+function buildFunctionRunPatch(
+  result: any,
+  description: string,
+): Partial<SpaceCanvasNode> {
+  return {
+    ...buildFunctionStatusPatch(description),
+    resultRef: buildNodeResultRef({
+      ...result,
+      asset: undefined,
+      version: undefined,
+      role: undefined,
+    }),
   };
 }
 
@@ -7362,11 +6993,11 @@ function NodeSelectionOverlays({
   const onClearFeedbackRecords = (node as any).onClearFeedbackRecords as
     | ((nodeIds: string[]) => void)
     | undefined;
-  const requestFlowFeedback = (node as any).requestFlowFeedback as
-    | FlowFeedbackRequester
-    | undefined;
   const requestConfirm = (node as any).requestConfirm as
     | ConfirmRequester
+    | undefined;
+  const onRunBackendNode = (node as any).onRunBackendNode as
+    | BackendNodeRunner
     | undefined;
   return (
     <>
@@ -7382,8 +7013,8 @@ function NodeSelectionOverlays({
         onAssetCreated={onAssetCreated}
         onRunStartNode={onRunStartNode}
         onClearFeedbackRecords={onClearFeedbackRecords}
-        requestFlowFeedback={requestFlowFeedback}
         requestConfirm={requestConfirm}
+        onRunBackendNode={onRunBackendNode}
       />
     </>
   );
@@ -7495,6 +7126,15 @@ function FunctionResultCard({
         <div className="ws-node-function-result-media">
           <video src={preview.videoUrl} muted playsInline preload="metadata" />
         </div>
+      ) : preview.audioUrl ? (
+        <div className="ws-node-function-result-media is-audio">
+          <audio src={preview.audioUrl} controls preload="metadata" />
+        </div>
+      ) : preview.fileUrl ? (
+        <div className="ws-node-function-result-file">
+          <FileText size={16} />
+          <span>{mediaPreviewCaption(preview) || "文件内容"}</span>
+        </div>
       ) : rich ? (
         <RichDocumentView
           value={rich}
@@ -7548,31 +7188,46 @@ function NodeFeedbackBeacon({
   );
 }
 
+function nodeHasResultRef(node: SpaceCanvasNode) {
+  const ref = node.resultRef;
+  return Boolean(
+    ref?.run_id ||
+      ref?.node_run_id ||
+      ref?.asset_id ||
+      ref?.version_id ||
+      ref?.request_id,
+  );
+}
+
 function nodeHasResultContent(node: SpaceCanvasNode) {
-  if (isStartFunctionNode(node)) {
+  if (!nodeCanHaveExecutionResult(node)) {
     return false;
   }
-  if (node.hasResult === true || node.status === "已生成") {
-    return true;
+  if (
+    !nodeHasResultRef(node) &&
+    node.asset?.version?.content == null &&
+    node.resultOutput == null
+  ) {
+    return false;
   }
-  const output = firstDefined(
-    (node as any).generatedOutput,
-    (node as any).output,
-    (node as any).result?.output,
-    (node as any).version?.content,
-    (node as any).asset?.version?.content,
-    node.asset?.version?.content,
-  );
+  const output = nodeContextOutput(node);
   if (output == null) {
     return false;
   }
   const preview = generatedPreviewFromValue(
     output,
-    String(node.kind || node.power?.kind || ""),
+    nodePreviewKind(node, output),
   );
   return (
-    hasGeneratedPreview(preview) || stringifyContextValue(output).trim() !== ""
+    hasGeneratedPreview(preview) || hasContextOutput(output)
   );
+}
+
+function nodeCanHaveExecutionResult(node: SpaceCanvasNode) {
+  if (node.type !== "function") {
+    return true;
+  }
+  return isResultFunctionNode(node);
 }
 
 function NodeTopToolbar() {
@@ -7636,17 +7291,6 @@ function NodeTopToolbar() {
       </button>
     </div>
   );
-}
-
-function defaultPowerParamValues(params: PowerParam[]) {
-  const values: Record<string, unknown> = {};
-  for (const param of params) {
-    if (!param.key || param.type === "description") {
-      continue;
-    }
-    values[param.key] = defaultPowerParamValue(param);
-  }
-  return values;
 }
 
 function mergePowerParamValues(
@@ -7714,48 +7358,6 @@ function valueAsParamList(value: unknown) {
   return value == null ? [] : [String(value)];
 }
 
-function powerRunParams(
-  values: Record<string, unknown>,
-  promptParam: PowerParam | null,
-  prompt: string,
-) {
-  if (!promptParam?.key) {
-    return values;
-  }
-  return {
-    ...values,
-    [promptParam.key]: prompt,
-  };
-}
-
-function withNodeInputContext(
-  values: Record<string, unknown>,
-  inputContext: NodeInputContext | null,
-) {
-  if (!inputContext?.sources.length) {
-    return values;
-  }
-  const nextValues: Record<string, unknown> = {
-    ...values,
-    input_context: inputContext.sources,
-    upstream_context: inputContext.text,
-  };
-  if (nextValues.context == null) {
-    nextValues.context = inputContext.text;
-  }
-  return nextValues;
-}
-
-function promptWithInputContext(
-  prompt: string,
-  inputContext: NodeInputContext | null,
-) {
-  if (!inputContext?.text) {
-    return prompt;
-  }
-  return `${prompt || "继续处理上游内容"}\n\n上游上下文:\n${inputContext.text}`;
-}
-
 function latestInputContextSource(inputContext: NodeInputContext | null) {
   const sources = inputContext?.sources || [];
   return sources.length > 0 ? sources[sources.length - 1] : null;
@@ -7770,6 +7372,13 @@ function inputContextOutput(inputContext: NodeInputContext | null) {
     return { text: inputContext.text };
   }
   return null;
+}
+
+function canvasResultSourceFromContext(
+  inputContext: NodeInputContext | null,
+): CanvasResultSourceRef | null {
+  const source = latestInputContextSource(inputContext);
+  return canvasResultSourceFromNode(source);
 }
 
 function functionAssetName(
@@ -7791,8 +7400,8 @@ function NodeBottomSettings({
   onAssetCreated,
   onRunStartNode,
   onClearFeedbackRecords,
-  requestFlowFeedback,
   requestConfirm,
+  onRunBackendNode,
 }: {
   node: SpaceCanvasNode;
   projectId: number;
@@ -7804,8 +7413,8 @@ function NodeBottomSettings({
   onAssetCreated?: (asset: ProjectAsset) => void;
   onRunStartNode?: NodeStartRunner;
   onClearFeedbackRecords?: (nodeIds: string[]) => void;
-  requestFlowFeedback?: FlowFeedbackRequester;
   requestConfirm?: ConfirmRequester;
+  onRunBackendNode?: BackendNodeRunner;
 }) {
   const [prompt, setPrompt] = useState("");
   const [running, setRunning] = useState(false);
@@ -7813,11 +7422,6 @@ function NodeBottomSettings({
   const [powerFormLoading, setPowerFormLoading] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<number>(0);
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
-  const [agentFeedbackPrompt, setAgentFeedbackPrompt] =
-    useState<FlowFeedbackPrompt | null>(null);
-  const [pendingAgentRun, setPendingAgentRun] = useState<{
-    prompt: string;
-  } | null>(null);
   const initialDraftRef = useRef<ComposerDraft>(readNodeComposerDraft(node));
   const savedDraft = initialDraftRef.current;
   const inputContext = ((node as any).inputContext ||
@@ -7825,7 +7429,7 @@ function NodeBottomSettings({
 
   const nodeRunning =
     running ||
-    (runningNode?.nodeId === node.id && runningNode.status === "running");
+    runningNode?.status === "running";
   const selectedNodeType = node.type;
   const selectedNodeId = node.id;
   const selectedFlowId = node.flow?.id || 0;
@@ -8019,222 +7623,8 @@ function NodeBottomSettings({
     return uploadSpaceFiles(
       projectId,
       files,
-      param.upload_rule_id || SPACE_UPLOAD_RULE_ID,
+      param.upload_rule_id,
     );
-  }
-
-  async function runFlowNode(extraInput?: Record<string, unknown>) {
-    if (!node.flow) {
-      return "waiting" as const;
-    }
-    const runPrompt = promptWithInputContext(prompt, inputContext);
-    const flowInput = withNodeInputContext(extraInput || {}, inputContext);
-    const started = await runSpaceFlow(
-      projectId,
-      Number(node.assetCateId || 0),
-      node.flow,
-      runPrompt,
-      flowInput,
-    );
-    const runId = Number(started?.run_id || 0);
-    const requestId = String(started?.request_id || "");
-    const finalSnapshot = await waitForFlowCompletion(projectId, {
-      runId,
-      requestId,
-    });
-    const resolvedSnapshot = await resolveDirectFlowFeedback(finalSnapshot);
-    if (
-      resolvedSnapshot.status === "fail" ||
-      resolvedSnapshot.status === "canceled"
-    ) {
-      throw new Error(resolvedSnapshot.error || "流程运行失败");
-    }
-    if (resolvedSnapshot.status !== "success") {
-      throw new Error(resolvedSnapshot.error || "流程仍在运行，请稍后刷新查看结果");
-    }
-    const displayResult = await flowDisplayResult(resolvedSnapshot);
-    onNodeResult(
-      node.id,
-      buildGeneratedNodeResultPatch(node, displayResult, runPrompt),
-    );
-    toast.success("流程执行完成");
-    return "success" as const;
-  }
-
-  async function resolveDirectFlowFeedback(snapshot: FlowRunSnapshot) {
-    let currentSnapshot = snapshot;
-    while (isFlowWaitingSnapshot(currentSnapshot)) {
-      const feedback = flowFeedbackFromSnapshot(currentSnapshot);
-      if (!feedback || !requestFlowFeedback) {
-        toast.message("流程等待用户处理");
-        return currentSnapshot;
-      }
-      if (!feedback.approval.id) {
-        throw new Error(`${node.title} 缺少反馈审批 ID`);
-      }
-      toast.message("需要补充信息后继续");
-      const values = await requestFlowFeedback({ node, prompt: feedback });
-      const submitted = await submitSpaceApproval({
-        projectId,
-        approvalId: feedback.approval.id,
-        data: values,
-      });
-      currentSnapshot = await waitForFlowCompletion(projectId, {
-        runId: Number(submitted?.run_id || currentSnapshot.runId || 0),
-        requestId: String(
-          submitted?.request_id || currentSnapshot.requestId || "",
-        ),
-      });
-    }
-    return currentSnapshot;
-  }
-
-  async function flowDisplayResult(snapshot: FlowRunSnapshot) {
-    const asset =
-      latestAssetFromStatus(snapshot, Number(node.assetCateId || 0)) ||
-      (await latestGeneratedAsset(
-        projectId,
-        Number(node.assetCateId || 0),
-        snapshot.runId,
-      ));
-    if (asset && asset.id > 0) {
-      const normalizedAsset = mergeProjectAssetVersionHistory(asset, node.asset);
-      onAssetCreated?.(normalizedAsset);
-      if (normalizedAsset.version?.content != null) {
-        return {
-          output: normalizedAsset.version.content,
-          asset: normalizedAsset,
-          version: normalizedAsset.version,
-          run_id: snapshot.runId,
-          request_id: snapshot.requestId,
-          status: snapshot.status,
-        };
-      }
-    }
-    return {
-      output: snapshot.output,
-      run_id: snapshot.runId,
-      request_id: snapshot.requestId,
-      status: snapshot.status,
-    };
-  }
-
-  async function runAgentNode(
-    runPrompt: string,
-    feedback?: Record<string, unknown>,
-  ) {
-    if (node.type !== "agent" || !node.role) {
-      return "waiting" as const;
-    }
-    const agentId = Number(node.role.agent_id || 0);
-    if (agentId <= 0) {
-      throw new Error("当前团队角色未绑定智能体");
-    }
-    const files = Array.isArray(paramValues.files) ? paramValues.files : [];
-    const memoryKey = canvasAgentMemoryKey({
-      projectId,
-      assetCateId: Number(node.assetCateId || 0),
-      nodeId: node.id,
-      agentId,
-    });
-    const result = await runSpaceAgent({
-      projectId,
-      flowId: node.flow?.id || 0,
-      nodeKey: node.id,
-      nodeName: node.title,
-      agentId,
-      prompt: runPrompt,
-      files,
-      context: inputContext?.sources || [],
-      history: readCanvasAgentMemory(memoryKey),
-      feedback,
-    });
-    const feedbackPrompt = agentFeedbackFromResult(result, node.title);
-    if (feedbackPrompt) {
-      setPendingAgentRun({ prompt: runPrompt });
-      setAgentFeedbackPrompt(feedbackPrompt);
-      appendCanvasAgentMemory(memoryKey, [
-        agentMemoryEntry("user", runPrompt),
-        ...(feedback
-          ? [agentMemoryEntry("feedback", "用户补充信息", feedback)]
-          : []),
-        agentMemoryEntry(
-          "assistant",
-          firstText(feedbackPrompt.description, "需要补充信息"),
-          result,
-        ),
-      ]);
-      toast.message("需要补充信息后继续");
-      return "waiting" as const;
-    }
-    onNodeResult(
-      node.id,
-      buildGeneratedNodeResultPatch(node, result, runPrompt),
-    );
-    setPendingAgentRun(null);
-    appendCanvasAgentMemory(memoryKey, [
-      agentMemoryEntry("user", runPrompt),
-      ...(feedback
-        ? [agentMemoryEntry("feedback", "用户补充信息", feedback)]
-        : []),
-      agentMemoryEntry("assistant", agentOutputMemoryText(result), result),
-    ]);
-    toast.success("智能体任务执行成功");
-    return "success" as const;
-  }
-
-  async function submitAgentFeedback(values: Record<string, unknown>) {
-    const runPrompt =
-      pendingAgentRun?.prompt || promptWithInputContext(prompt, inputContext);
-    setRunning(true);
-    setRunningNode({
-      nodeId: node.id,
-      title: node.title,
-      startedAt: Date.now(),
-      progress: 0,
-      status: "running",
-    });
-    let outcome: RunningNodeState["status"] = "error";
-    try {
-      setAgentFeedbackPrompt(null);
-      const result = await runAgentNode(runPrompt, values);
-      if (result === "success") {
-        outcome = "success";
-      } else {
-        outcome = "success";
-      }
-    } catch (err) {
-      setRunningNode((current) =>
-        current?.nodeId === node.id
-          ? {
-              ...current,
-              status: "error",
-              progress: Math.max(current.progress, 92),
-            }
-          : current,
-      );
-      toast.error(err instanceof Error ? err.message : "提交反馈失败");
-    } finally {
-      setRunning(false);
-      setRunningNode((current) => {
-        if (current?.nodeId !== node.id) {
-          return current;
-        }
-        return {
-          ...current,
-          status: outcome,
-          progress: outcome === "success" ? 100 : Math.max(current.progress, 92),
-        };
-      });
-      window.setTimeout(
-        () => {
-          setRunningNode((current) =>
-            current?.nodeId === node.id ? null : current,
-          );
-        },
-        outcome === "success" ? 650 : 1200,
-      );
-    }
   }
 
   async function selectPowerSource(targetId: number) {
@@ -8305,51 +7695,63 @@ function NodeBottomSettings({
   const runNodeNow = async () => {
     onClearFeedbackRecords?.([node.id]);
     setRunning(true);
-    setRunningNode({
-      nodeId: node.id,
-      title: node.title,
-      startedAt: Date.now(),
-      progress: 0,
-      status: "running",
-    });
+    setRunningNode((current) => ({
+      ...current,
+      [node.id]: {
+        nodeId: node.id,
+        title: node.title,
+        startedAt: Date.now(),
+        progress: 0,
+        status: "running",
+      },
+    }));
     let completed = false;
     let outcome: RunningNodeState["status"] = "error";
     try {
       if (node.type === "power" && node.power) {
-        const runPrompt = promptWithInputContext(powerPrompt, inputContext);
-        const result = await runSpacePower({
-          projectId,
-          flowId: node.flow?.id || 0,
-          nodeKey: node.id,
-          nodeName: node.title,
-          kind: node.power.kind,
-          powerId: node.power.id,
-          powerKey: node.power.key,
-          sourceTargetId: selectedTargetId,
-          prompt: runPrompt,
-          params: withNodeInputContext(
-            powerRunParams(paramValues, promptParam, runPrompt),
-            inputContext,
-          ),
+        if (!onRunBackendNode) {
+          throw new Error("当前节点缺少后端运行入口");
+        }
+        saveComposerDraft({
+          prompt: powerPrompt,
+          paramValues,
+          selectedTargetId,
         });
-        onNodeResult(
-          node.id,
-          buildGeneratedNodeResultPatch(node, result, runPrompt),
-        );
+        await onRunBackendNode({
+          ...node,
+          composerDraft: {
+            prompt: powerPrompt,
+            paramValues,
+            selectedTargetId,
+          },
+        });
         toast.success("能力节点执行成功");
         completed = true;
       } else if (node.type === "agent" && node.role) {
-        const runPrompt = promptWithInputContext(prompt, inputContext);
-        const agentOutcome = await runAgentNode(runPrompt);
-        if (agentOutcome === "success") {
-          completed = true;
+        if (!onRunBackendNode) {
+          throw new Error("当前节点缺少后端运行入口");
         }
+        saveComposerDraft({
+          prompt,
+          paramValues,
+          selectedTargetId: 0,
+        });
+        await onRunBackendNode({
+          ...node,
+          composerDraft: {
+            prompt,
+            paramValues,
+            selectedTargetId: 0,
+          },
+        });
+        completed = true;
         outcome = "success";
       } else if (node.type === "flow" && node.flow) {
-        const flowOutcome = await runFlowNode();
-        if (flowOutcome === "success") {
-          completed = true;
+        if (!onRunBackendNode) {
+          throw new Error("当前节点缺少后端运行入口");
         }
+        await onRunBackendNode(node);
+        completed = true;
         outcome = "success";
       } else if (node.type === "function") {
         const optionKey = node.functionOption?.key || "";
@@ -8372,13 +7774,16 @@ function NodeBottomSettings({
           if (upstreamOutput == null) {
             throw new Error("保存节点没有可保存的上游结果");
           }
-          const asset = await saveSpaceCanvasAsset({
+          const asset = await saveCanvasContentResult({
             projectId,
             assetCateId: Number(node.assetCateId || 0),
             name: functionAssetName(node, inputContext),
-            kind: String(node.kind || ""),
-            role: "content",
+            kind: resultAssetKind(node),
             content: upstreamOutput,
+            nodeKey: node.id,
+            requestId: createCanvasSaveRequestId("save", node.id, upstreamOutput),
+            source: canvasResultSourceFromContext(inputContext),
+            previousAsset: node.asset,
           });
           onAssetCreated?.(asset);
           onNodeResult(
@@ -8388,7 +7793,6 @@ function NodeBottomSettings({
               {
                 output: asset.version?.content || upstreamOutput,
                 asset,
-                version: asset.version,
               },
               "保存上游结果",
             ),
@@ -8429,33 +7833,41 @@ function NodeBottomSettings({
       }
     } catch (err) {
       outcome = "error";
-      setRunningNode((current) =>
-        current?.nodeId === node.id
-          ? {
-              ...current,
-              status: "error",
-              progress: Math.max(current.progress, 92),
-            }
-          : current,
-      );
-      toast.error(err instanceof Error ? err.message : "执行出错");
-    } finally {
-      setRunning(false);
       setRunningNode((current) => {
-        if (current?.nodeId !== node.id) {
+        const currentNode = current[node.id];
+        if (!currentNode) {
           return current;
         }
         return {
           ...current,
-          status: outcome,
-          progress: outcome === "success" ? 100 : Math.max(current.progress, 92),
+          [node.id]: {
+            ...currentNode,
+            status: "error",
+            progress: Math.max(currentNode.progress, 92),
+          },
+        };
+      });
+      toast.error(err instanceof Error ? err.message : "执行出错");
+    } finally {
+      setRunning(false);
+      setRunningNode((current) => {
+        const currentNode = current[node.id];
+        if (!currentNode) {
+          return current;
+        }
+        return {
+          ...current,
+          [node.id]: {
+            ...currentNode,
+            status: outcome,
+            progress:
+              outcome === "success" ? 100 : Math.max(currentNode.progress, 92),
+          },
         };
       });
       window.setTimeout(
         () => {
-          setRunningNode((current) =>
-            current?.nodeId === node.id ? null : current,
-          );
+          setRunningNode((current) => omitRunningNode(current, node.id));
         },
         outcome === "success" ? 650 : 1200,
       );
@@ -8484,12 +7896,16 @@ function NodeBottomSettings({
     }
     const timer = window.setInterval(() => {
       setRunningNode((current) => {
-        if (current?.nodeId !== node.id || current.status !== "running") {
+        const currentNode = current[node.id];
+        if (!currentNode || currentNode.status !== "running") {
           return current;
         }
         return {
           ...current,
-          progress: Math.min(94, current.progress + 7),
+          [node.id]: {
+            ...currentNode,
+            progress: Math.min(94, currentNode.progress + 7),
+          },
         };
       });
     }, 1000);
@@ -8557,40 +7973,25 @@ function NodeBottomSettings({
 
   if (node.type === "flow" && node.flow) {
     return (
-      <>
-        <div
-          className="ws-node-bottom-settings is-flow-run-only nodrag"
-          onClick={(event) => event.stopPropagation()}
-          style={flowRunOverlayStyle}
+      <div
+        className="ws-node-bottom-settings is-flow-run-only nodrag"
+        onClick={(event) => event.stopPropagation()}
+        style={flowRunOverlayStyle}
+      >
+        <button
+          type="button"
+          className="ws-node-flow-run"
+          disabled={nodeRunning}
+          onClick={handleRun}
         >
-          <button
-            type="button"
-            className="ws-node-flow-run"
-            disabled={nodeRunning}
-            onClick={handleRun}
-          >
-            {nodeRunning ? (
-              <Loader2 size={15} className="ws-spin" />
-            ) : (
-              <Play size={15} fill="currentColor" />
-            )}
-            <span>{nodeRunning ? "运行中" : "执行"}</span>
-          </button>
-        </div>
-        {agentFeedbackPrompt ? (
-          <FlowFeedbackDialog
-            prompt={agentFeedbackPrompt}
-            running={nodeRunning}
-            onClose={() => {
-              if (!nodeRunning) {
-                setAgentFeedbackPrompt(null);
-                setPendingAgentRun(null);
-              }
-            }}
-            onSubmit={(values) => void submitAgentFeedback(values)}
-          />
-        ) : null}
-      </>
+          {nodeRunning ? (
+            <Loader2 size={15} className="ws-spin" />
+          ) : (
+            <Play size={15} fill="currentColor" />
+          )}
+          <span>{nodeRunning ? "运行中" : "执行"}</span>
+        </button>
+      </div>
     );
   }
 
@@ -9051,8 +8452,8 @@ function NodeSettingButton({
 function SpaceNodeView({ data, selected }: NodeProps<any>) {
   const node = data as SpaceCanvasNode;
   const runningNode = (data as any).runningNode as RunningNodeState | null;
-  const canvasRunningNode = (data as any)
-    .canvasRunningNode as RunningNodeState | null;
+  const canvasRunningNodes = ((data as any).canvasRunningNodes ||
+    {}) as RunningNodeMap;
   const onShowNodeDetail = (data as any).onShowNodeDetail as
     | ((node: SpaceCanvasNode) => void)
     | undefined;
@@ -9214,7 +8615,7 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
       | undefined;
     const isCurrentNodeRunning = runningNode?.status === "running";
     const isStartLocked =
-      isStartFunction && canvasRunningNode?.status === "running";
+      isStartFunction && hasRunningCanvasNode(canvasRunningNodes);
     const nodeRunning = isCurrentNodeRunning || isStartLocked;
     const renderResultCard = shouldRenderFunctionResultCard(node);
     const inputHandleStyle: CSSProperties = renderResultCard
@@ -9439,6 +8840,15 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
               value={rich}
               className="ws-node-text-rich-preview"
             />
+          ) : preview.audioUrl ? (
+            <div className="ws-node-text-media is-audio">
+              <audio src={preview.audioUrl} controls preload="metadata" />
+            </div>
+          ) : preview.fileUrl ? (
+            <div className="ws-node-text-file">
+              <FileText size={16} />
+              <span>{mediaPreviewCaption(preview) || "文件内容"}</span>
+            </div>
           ) : EnergonContentView && hasDisplayOutput(displayOutput) ? (
             <div className="ws-node-text-energon-preview">
               <EnergonContentView output={displayOutput} emptyText="暂无内容" />
@@ -9475,15 +8885,24 @@ function SpaceNodeView({ data, selected }: NodeProps<any>) {
     const showRunFrame =
       runningNode?.status === "running" || runningNode?.status === "success";
     const preview = generatedNodePreview(node);
-    const hasPowerContent =
-      node.hasResult === true ||
-      node.status === "已生成" ||
-      hasGeneratedPreview(preview);
-    const hasPowerMedia = Boolean(preview.imageUrl || preview.videoUrl);
+    const hasPowerContent = nodeHasResultContent(node);
+    const hasPowerMedia = Boolean(
+      preview.imageUrl ||
+        preview.videoUrl ||
+        preview.audioUrl ||
+        preview.fileUrl,
+    );
+    const className = [
+      "ws-node-power-wrap",
+      selected ? "is-selected" : "",
+      showRunFrame ? "is-running" : "",
+      hasPowerContent ? "has-content" : "",
+      hasPowerMedia ? "has-media" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     return (
-      <div
-        className={`ws-node-power-wrap ${selected ? "is-selected" : ""} ${showRunFrame ? "is-running" : ""} ${hasPowerContent ? "has-content" : ""} ${hasPowerMedia ? "has-media" : ""}`}
-      >
+      <div className={className}>
         <div className="ws-node-floating-label">
           <PowerIcon
             power={node.power}
@@ -9597,12 +9016,13 @@ function PowerNodeGeneratedContent({
   fallback: string;
   onMediaSize?: (width: number, height: number) => void;
 }) {
+  const caption = mediaPreviewCaption(preview);
   if (preview.imageUrl) {
     return (
       <div className="ws-node-power-media">
         <img
           src={preview.imageUrl}
-          alt={preview.text || "生成图片"}
+          alt={caption || "生成图片"}
           onLoad={(event) =>
             onMediaSize?.(
               event.currentTarget.naturalWidth,
@@ -9610,7 +9030,7 @@ function PowerNodeGeneratedContent({
             )
           }
         />
-        {preview.text ? <p>{preview.text}</p> : null}
+        {caption ? <p>{caption}</p> : null}
       </div>
     );
   }
@@ -9629,15 +9049,15 @@ function PowerNodeGeneratedContent({
             )
           }
         />
-        {preview.text ? <p>{preview.text}</p> : null}
+        {caption ? <p>{caption}</p> : null}
       </div>
     );
   }
   if (preview.audioUrl) {
     return (
-      <div className="ws-node-power-file">
-        <Music size={16} />
-        <span>{preview.text || preview.audioUrl}</span>
+      <div className="ws-node-power-media is-audio">
+        <audio src={preview.audioUrl} controls preload="metadata" />
+        {caption ? <p>{caption}</p> : null}
       </div>
     );
   }
@@ -9645,11 +9065,19 @@ function PowerNodeGeneratedContent({
     return (
       <div className="ws-node-power-file">
         <FileText size={16} />
-        <span>{preview.text || preview.fileUrl}</span>
+        <span>{caption || "文件内容"}</span>
       </div>
     );
   }
   return <p className="ws-node-power-desc">{preview.text || fallback}</p>;
+}
+
+function mediaPreviewCaption(preview: GeneratedNodePreview) {
+  const text = String(preview.text || "").trim();
+  if (!text || looksLikeURL(text)) {
+    return "";
+  }
+  return text;
 }
 
 function generatedMediaNodeSize(
@@ -9861,10 +9289,5 @@ function readProjectId() {
     return 0;
   }
   const params = new URLSearchParams(window.location.search);
-  return Number(
-    params.get("project_id") ||
-      params.get("projectId") ||
-      params.get("id") ||
-      0,
-  );
+  return Number(params.get("project_id") || params.get("id") || 0);
 }

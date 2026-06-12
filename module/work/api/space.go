@@ -8,7 +8,6 @@ import (
 	"github.com/shemic/dever/util"
 
 	workservice "my/module/work/service"
-	teamservice "my/package/bot/service/team"
 	uploadservice "my/package/front/service/upload"
 )
 
@@ -18,24 +17,12 @@ var spaceSvc = workservice.NewSpaceService()
 
 func (Space) GetBootstrap(c *server.Context) error {
 	projectID := util.ToUint64(c.Input("project_id"))
-	if projectID == 0 {
-		projectID = util.ToUint64(c.Input("projectId"))
-	}
-	if projectID == 0 {
-		projectID = util.ToUint64(c.Input("id"))
-	}
 	data, err := spaceSvc.Bootstrap(c.Context(), projectID)
 	return workJSON(c, data, err)
 }
 
 func (Space) GetPowers(c *server.Context) error {
 	projectID := util.ToUint64(c.Input("project_id"))
-	if projectID == 0 {
-		projectID = util.ToUint64(c.Input("projectId"))
-	}
-	if projectID == 0 {
-		projectID = util.ToUint64(c.Input("id"))
-	}
 	data, err := spaceSvc.PowerCatalog(c.Context(), projectID)
 	return workJSON(c, data, err)
 }
@@ -43,11 +30,11 @@ func (Space) GetPowers(c *server.Context) error {
 func (Space) GetCanvasPowerForm(c *server.Context) error {
 	data, err := spaceSvc.CanvasPowerForm(
 		c.Context(),
-		queryUint64(c, "project_id", "projectId", "id"),
-		queryUint64(c, "flow_id", "flowId"),
-		queryUint64(c, "power_id", "powerId"),
-		queryText(c, "power_key", "powerKey", "power"),
-		queryUint64(c, "target_id", "targetId", "source_target_id", "sourceTargetId"),
+		queryUint64(c, "project_id"),
+		queryUint64(c, "flow_id"),
+		queryUint64(c, "power_id"),
+		queryText(c, "power_key"),
+		queryUint64(c, "target_id"),
 	)
 	return workJSON(c, data, err)
 }
@@ -59,70 +46,93 @@ func (Space) PostChat(c *server.Context) error {
 	}
 	data, err := spaceSvc.Chat(
 		c.Context(),
-		bodyUint64(body, "project_id", "projectId", "id"),
-		bodyText(body, "message", "prompt", "content"),
-		bodyUint64(body, "asset_cate_id", "assetCateId"),
+		bodyUint64(body, "project_id"),
+		bodyText(body, "message"),
+		bodyUint64(body, "asset_cate_id"),
 	)
 	return workJSON(c, data, err)
 }
 
-func (Space) PostRunCanvasPower(c *server.Context) error {
+func (Space) PostRunCanvas(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {
 		return c.Error(err)
 	}
-	projectID := bodyUint64(body, "project_id", "projectId", "id")
-	data, err := spaceSvc.RunCanvasPower(c.Context(), projectID, teamservice.CanvasPowerRunRequest{
-		FlowID:         bodyUint64(body, "flow_id", "flowId"),
-		NodeKey:        bodyText(body, "node_key", "nodeKey"),
-		NodeName:       bodyText(body, "node_name", "nodeName", "name"),
-		Kind:           bodyText(body, "kind"),
-		PowerID:        bodyUint64(body, "power_id", "powerId"),
-		PowerKey:       bodyText(body, "power_key", "powerKey", "power"),
-		SourceTargetID: bodyUint64(body, "source_target_id", "sourceTargetId", "power_target_id", "powerTargetId"),
-		Input:          bodyMap(body, "input"),
-		Params:         bodyMap(body, "params"),
-	})
-	return workJSON(c, data, err)
-}
-
-func (Space) PostRunCanvasAgent(c *server.Context) error {
-	body, err := bindBody(c)
-	if err != nil {
-		return c.Error(err)
-	}
-	projectID := bodyUint64(body, "project_id", "projectId", "id")
-	data, err := spaceSvc.RunCanvasAgent(c.Context(), projectID, workservice.CanvasAgentRunRequest{
-		FlowID:   bodyUint64(body, "flow_id", "flowId"),
-		NodeKey:  bodyText(body, "node_key", "nodeKey"),
-		NodeName: bodyText(body, "node_name", "nodeName", "name"),
-		AgentID:  bodyUint64(body, "agent_id", "agentId"),
-		Input:    bodyMap(body, "input"),
-		History:  bodyList(body, "history"),
-	})
-	return workJSON(c, data, err)
-}
-
-func (Space) PostRunFlow(c *server.Context) error {
-	body, err := bindBody(c)
-	if err != nil {
-		return c.Error(err)
-	}
-	data, err := spaceSvc.RunFlow(
+	data, err := spaceSvc.RunCanvas(
 		c.Context(),
-		bodyUint64(body, "project_id", "projectId"),
-		bodyUint64(body, "flow_id", "flowId", "id"),
-		bodyMap(body, "input"),
+		bodyUint64(body, "project_id"),
+		workservice.RunCanvasRequest{
+			AssetCateID: bodyUint64(body, "asset_cate_id"),
+			StartNodeID: bodyText(body, "start_node_id"),
+			RequestID:   bodyText(body, "request_id"),
+			SingleNode:  bodyBool(body, "single_node"),
+			Canvas:      bodyMap(body, "canvas"),
+			Input:       bodyMap(body, "input"),
+		},
 	)
 	return workJSON(c, data, err)
+}
+
+func (Space) PostRunCanvasResume(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.ResumeCanvasRun(
+		c.Context(),
+		bodyUint64(body, "project_id"),
+		workservice.ResumeCanvasRunRequest{
+			RunID:      bodyUint64(body, "run_id"),
+			RequestID:  bodyText(body, "request_id"),
+			NodeKey:    bodyText(body, "node_key"),
+			ApprovalID: bodyUint64(body, "approval_id"),
+			Decision:   bodyText(body, "decision"),
+			Comment:    bodyText(body, "comment"),
+			Feedback:   bodyMap(body, "feedback"),
+		},
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) GetRunCanvasResults(c *server.Context) error {
+	data, err := spaceSvc.CanvasResults(
+		c.Context(),
+		queryUint64(c, "project_id"),
+		workservice.CanvasResultQuery{
+			AssetCateID: queryUint64(c, "asset_cate_id"),
+			RunID:       queryUint64(c, "run_id"),
+			NodeRunID:   queryUint64(c, "node_run_id"),
+			AssetID:     queryUint64(c, "asset_id"),
+			Purpose:     workservice.CanvasResultPurpose(queryText(c, "purpose")),
+		},
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) GetAsset(c *server.Context) error {
+	data, err := spaceSvc.AssetDetail(
+		c.Context(),
+		queryUint64(c, "project_id"),
+		queryUint64(c, "asset_id"),
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) PostRunCanvasRecover(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	count := spaceSvc.RecoverRunningCanvasRuns(c.Context(), bodyUint64(body, "project_id"))
+	return workJSON(c, map[string]any{"count": count}, nil)
 }
 
 func (Space) GetRunStatus(c *server.Context) error {
 	data, err := spaceSvc.RunStatus(
 		c.Context(),
-		queryUint64(c, "project_id", "projectId", "id"),
-		queryUint64(c, "run_id", "runId"),
-		queryText(c, "request_id", "requestId"),
+		queryUint64(c, "project_id"),
+		queryUint64(c, "run_id"),
+		queryText(c, "request_id"),
 	)
 	return workJSON(c, data, err)
 }
@@ -134,8 +144,8 @@ func (Space) PostApproval(c *server.Context) error {
 	}
 	data, err := spaceSvc.SubmitApproval(
 		c.Context(),
-		bodyUint64(body, "project_id", "projectId", "id"),
-		bodyUint64(body, "approval_id", "approvalId"),
+		bodyUint64(body, "project_id"),
+		bodyUint64(body, "approval_id"),
 		bodyText(body, "decision"),
 		bodyText(body, "comment"),
 		bodyMap(body, "data"),
@@ -150,40 +160,66 @@ func (Space) PostCanvas(c *server.Context) error {
 	}
 	data, err := spaceSvc.SaveCanvas(
 		c.Context(),
-		bodyUint64(body, "project_id", "projectId", "id"),
-		bodyUint64(body, "asset_cate_id", "assetCateId"),
+		bodyUint64(body, "project_id"),
+		bodyUint64(body, "asset_cate_id"),
+		bodyText(body, "base_revision"),
 		bodyMap(body, "canvas"),
 	)
 	return workJSON(c, data, err)
 }
 
-func (Space) PostAssetVersion(c *server.Context) error {
+func (Space) PostAssetVersionSave(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {
 		return c.Error(err)
 	}
-	data, err := spaceSvc.SaveAssetVersion(
+	data, err := spaceSvc.SaveAssetEditVersion(
 		c.Context(),
-		bodyUint64(body, "project_id", "projectId", "id"),
-		bodyUint64(body, "asset_id", "assetId"),
+		bodyUint64(body, "project_id"),
+		bodyUint64(body, "asset_id"),
+		bodyUint64(body, "version_id"),
 		body["content"],
+		bodyText(body, "request_id"),
 	)
 	return workJSON(c, data, err)
 }
 
-func (Space) PostAsset(c *server.Context) error {
+func (Space) PostAssetVersionUse(c *server.Context) error {
 	body, err := bindBody(c)
 	if err != nil {
 		return c.Error(err)
 	}
-	data, err := spaceSvc.SaveCanvasAsset(
+	data, err := spaceSvc.UseAssetVersion(
 		c.Context(),
-		bodyUint64(body, "project_id", "projectId", "id"),
-		bodyUint64(body, "asset_cate_id", "assetCateId"),
-		bodyText(body, "name"),
-		bodyText(body, "kind"),
-		bodyText(body, "role", "asset_role", "assetRole"),
-		body["content"],
+		bodyUint64(body, "project_id"),
+		bodyUint64(body, "asset_id"),
+		bodyUint64(body, "version_id"),
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) PostMaterial(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.SaveCanvasMaterial(
+		c.Context(),
+		bodyUint64(body, "project_id"),
+		canvasResultRequestFromBody(body),
+	)
+	return workJSON(c, data, err)
+}
+
+func (Space) PostContent(c *server.Context) error {
+	body, err := bindBody(c)
+	if err != nil {
+		return c.Error(err)
+	}
+	data, err := spaceSvc.SaveCanvasContent(
+		c.Context(),
+		bodyUint64(body, "project_id"),
+		canvasResultRequestFromBody(body),
 	)
 	return workJSON(c, data, err)
 }
@@ -193,7 +229,7 @@ func (Space) PostUploadInit(c *server.Context) error {
 	if err != nil {
 		return c.Error(err)
 	}
-	projectID := bodyUint64(body, "project_id", "projectId", "id")
+	projectID := bodyUint64(body, "project_id")
 	if err := spaceSvc.PrepareUploadInit(c.Context(), projectID, body); err != nil {
 		return workJSON(c, nil, err)
 	}
@@ -201,8 +237,8 @@ func (Space) PostUploadInit(c *server.Context) error {
 }
 
 func (Space) PostUploadPart(c *server.Context) error {
-	projectID := queryUint64(c, "project_id", "projectId", "id")
-	sessionID := queryUint64(c, "session_id", "sessionId")
+	projectID := queryUint64(c, "project_id")
+	sessionID := queryUint64(c, "session_id")
 	if err := spaceSvc.RequireUploadSession(c.Context(), projectID, sessionID); err != nil {
 		return workJSON(c, nil, err)
 	}
@@ -214,8 +250,8 @@ func (Space) PostUploadComplete(c *server.Context) error {
 	if err != nil {
 		return c.Error(err)
 	}
-	projectID := bodyUint64(body, "project_id", "projectId", "id")
-	sessionID := bodyUint64(body, "session_id", "sessionId")
+	projectID := bodyUint64(body, "project_id")
+	sessionID := bodyUint64(body, "session_id")
 	if err := spaceSvc.RequireUploadSession(c.Context(), projectID, sessionID); err != nil {
 		return workJSON(c, nil, err)
 	}
@@ -243,27 +279,36 @@ func bodyMap(body map[string]any, key string) map[string]any {
 	return map[string]any{}
 }
 
-func bodyList(body map[string]any, key string) []any {
-	if value, ok := body[key].([]any); ok && value != nil {
-		return value
+func canvasResultRequestFromBody(body map[string]any) workservice.SaveCanvasResultRequest {
+	return workservice.SaveCanvasResultRequest{
+		AssetCateID: bodyUint64(body, "asset_cate_id"),
+		Name:        bodyText(body, "name"),
+		Kind:        bodyText(body, "kind"),
+		Content:     body["content"],
+		RunID:       bodyUint64(body, "run_id"),
+		NodeRunID:   bodyUint64(body, "node_run_id"),
+		ReleaseID:   bodyUint64(body, "release_id"),
+		NodeKey:     bodyText(body, "node_key"),
+		SourceKey:   bodyText(body, "source_key"),
+		RequestID:   bodyText(body, "request_id"),
+		Source: workservice.CanvasResultSource{
+			RunID:     bodyUint64(body, "source_run_id"),
+			NodeRunID: bodyUint64(body, "source_node_run_id"),
+			AssetID:   bodyUint64(body, "source_asset_id"),
+			VersionID: bodyUint64(body, "source_version_id"),
+			ReleaseID: bodyUint64(body, "source_release_id"),
+			RequestID: bodyText(body, "source_request_id"),
+			NodeKey:   bodyText(body, "source_node_key"),
+			NodeType:  bodyText(body, "source_node_type"),
+			Status:    bodyText(body, "source_status"),
+		},
 	}
-	return []any{}
 }
 
-func queryUint64(c *server.Context, keys ...string) uint64 {
-	for _, key := range keys {
-		if number := util.ToUint64(c.Input(key)); number > 0 {
-			return number
-		}
-	}
-	return 0
+func queryUint64(c *server.Context, key string) uint64 {
+	return util.ToUint64(c.Input(key))
 }
 
-func queryText(c *server.Context, keys ...string) string {
-	for _, key := range keys {
-		if text := bodyText(map[string]any{key: c.Input(key)}, key); text != "" {
-			return text
-		}
-	}
-	return ""
+func queryText(c *server.Context, key string) string {
+	return bodyText(map[string]any{key: c.Input(key)}, key)
 }

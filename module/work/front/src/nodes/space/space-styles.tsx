@@ -123,6 +123,156 @@ export function WorkSpaceStyles() {
         filter: drop-shadow(0 16px 34px rgba(16, 185, 129, 0.12));
       }
 
+      .ws-canvas-wrap .react-flow {
+        direction: ltr;
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+      }
+
+      .ws-canvas-wrap .react-flow__container {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .ws-canvas-wrap .react-flow__viewport {
+        transform-origin: 0 0;
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      .ws-canvas-wrap .react-flow__renderer {
+        z-index: 4;
+      }
+
+      .ws-canvas-wrap .react-flow__pane {
+        z-index: 1;
+        touch-action: none;
+      }
+
+      .ws-canvas-wrap .react-flow__pane.draggable {
+        cursor: grab;
+      }
+
+      .ws-canvas-wrap .react-flow__pane.dragging {
+        cursor: grabbing;
+      }
+
+      .ws-canvas-wrap .react-flow__nodes {
+        pointer-events: none;
+        transform-origin: 0 0;
+        z-index: 2;
+      }
+
+      .ws-canvas-wrap .react-flow__node {
+        position: absolute;
+        transform-origin: 0 0;
+        box-sizing: border-box;
+        cursor: default;
+        user-select: none;
+        pointer-events: all;
+      }
+
+      .ws-canvas-wrap .react-flow__edges {
+        position: absolute;
+      }
+
+      .ws-canvas-wrap .react-flow__edges svg {
+        position: absolute;
+        overflow: visible;
+        pointer-events: none;
+      }
+
+      .ws-canvas-wrap .react-flow__edge {
+        pointer-events: visibleStroke;
+      }
+
+      .ws-canvas-wrap .react-flow__edge-path,
+      .ws-canvas-wrap .react-flow__connection-path {
+        fill: none;
+      }
+
+      .ws-canvas-wrap .react-flow__edge.animated path {
+        stroke-dasharray: 5;
+        animation: ws-dashdraw 0.5s linear infinite;
+      }
+
+      .ws-canvas-wrap .react-flow__handle {
+        position: absolute;
+        pointer-events: none;
+      }
+
+      .ws-canvas-wrap .react-flow__handle.connectingfrom,
+      .ws-canvas-wrap .react-flow__handle.connectionindicator {
+        pointer-events: all;
+      }
+
+      .ws-canvas-wrap .react-flow__handle-bottom {
+        top: auto;
+        left: 50%;
+        bottom: 0;
+        transform: translate(-50%, 50%);
+      }
+
+      .ws-canvas-wrap .react-flow__handle-top {
+        top: 0;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      .ws-canvas-wrap .react-flow__handle-left {
+        top: 50%;
+        left: 0;
+        transform: translate(-50%, -50%);
+      }
+
+      .ws-canvas-wrap .react-flow__handle-right {
+        top: 50%;
+        right: 0;
+        transform: translate(50%, -50%);
+      }
+
+      .ws-canvas-wrap .react-flow__panel {
+        position: absolute;
+        z-index: 5;
+        margin: 15px;
+      }
+
+      .ws-canvas-wrap .react-flow__panel.top {
+        top: 0;
+      }
+
+      .ws-canvas-wrap .react-flow__panel.bottom {
+        bottom: 0;
+      }
+
+      .ws-canvas-wrap .react-flow__panel.left {
+        left: 0;
+      }
+
+      .ws-canvas-wrap .react-flow__panel.right {
+        right: 0;
+      }
+
+      .ws-canvas-wrap .react-flow__edgelabel-renderer,
+      .ws-canvas-wrap .react-flow__viewport-portal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .ws-canvas-wrap .react-flow__minimap-svg {
+        display: block;
+      }
+
       .ws-edge-delete {
         position: absolute;
         z-index: 9;
@@ -169,17 +319,6 @@ export function WorkSpaceStyles() {
 	          radial-gradient(circle, rgba(15,23,42,0.16) 1px, transparent 1px),
 	          linear-gradient(120deg, rgba(16,185,129,0.06), rgba(37,99,235,0.05), rgba(225,29,72,0.035));
 	      }
-
-      .ws-canvas-wrap .react-flow {
-        position: relative;
-        z-index: 1;
-        background: transparent;
-      }
-
-      .ws-canvas-wrap .react-flow__viewport,
-      .ws-canvas-wrap .react-flow__nodes {
-        z-index: 2;
-      }
 
       .ws-canvas-wrap .react-flow__node {
         border: 0;
@@ -3296,6 +3435,33 @@ export function WorkSpaceStyles() {
         height: 100%;
         object-fit: cover;
       }
+      .ws-node-function-result-media.is-audio {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+      }
+      .ws-node-function-result-media.is-audio audio {
+        width: 100%;
+      }
+      .ws-node-function-result-file {
+        display: flex;
+        height: 100%;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.04);
+        color: var(--ws-muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .ws-node-function-result-file span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .ws-page:not(.is-light) .ws-node-function-pill {
         border-color: rgba(251, 113, 133, 0.28);
         background: rgba(15, 23, 42, 0.9);
@@ -3491,6 +3657,29 @@ export function WorkSpaceStyles() {
         min-height: 140px;
         padding: 16px;
       }
+      .ws-node-text-media.is-audio,
+      .ws-node-text-file {
+        display: flex;
+        height: 100%;
+        min-height: 92px;
+        align-items: center;
+        justify-content: center;
+      }
+      .ws-node-text-media.is-audio audio {
+        width: 100%;
+      }
+      .ws-node-text-file {
+        gap: 8px;
+        color: var(--ws-muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .ws-node-text-file span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .ws-node-power-card {
         animation: ws-soft-pulse 2.2s ease-in-out infinite;
       }
@@ -3661,6 +3850,21 @@ export function WorkSpaceStyles() {
         border-radius: 14px;
         object-fit: cover;
         background: transparent;
+      }
+      .ws-node-power-media.is-audio {
+        justify-content: center;
+        gap: 8px;
+        padding: 10px;
+      }
+      .ws-node-power-media.is-audio audio {
+        width: 100%;
+        height: 34px;
+      }
+      .ws-node-power-media.is-audio p {
+        position: static;
+        background: transparent;
+        color: var(--ws-text);
+        padding: 0;
       }
       .ws-node-power-media p {
         position: absolute;

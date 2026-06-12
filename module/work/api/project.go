@@ -24,8 +24,8 @@ func (Project) PostCreate(c *server.Context) error {
 	data, err := projectSvc.Create(
 		c.Context(),
 		bodyText(body, "name"),
-		bodyUint64(body, "team_id", "teamId"),
-		bodyUint64(body, "release_id", "releaseId"),
+		bodyUint64(body, "team_id"),
+		bodyUint64(body, "release_id"),
 	)
 	return workJSON(c, data, err)
 }
@@ -35,11 +35,6 @@ func (Project) GetTeamList(c *server.Context) error {
 	return workJSON(c, data, err)
 }
 
-func bodyUint64(body map[string]any, keys ...string) uint64 {
-	for _, key := range keys {
-		if number := util.ToUint64(body[key]); number > 0 {
-			return number
-		}
-	}
-	return 0
+func bodyUint64(body map[string]any, key string) uint64 {
+	return util.ToUint64(body[key])
 }

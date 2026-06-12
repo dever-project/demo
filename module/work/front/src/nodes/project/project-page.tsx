@@ -307,7 +307,12 @@ function ProjectCard({
     <button
       type="button"
       className="hb-project-card"
-      onClick={() => navigate({ to: "/work/space", search: { id: String(project.id) } })}
+      onClick={() =>
+        navigate({
+          to: "/work/space",
+          search: { project_id: String(project.id) },
+        })
+      }
     >
       <div
         className="hb-project-cover"
