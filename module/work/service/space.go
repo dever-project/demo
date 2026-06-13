@@ -37,6 +37,7 @@ type CanvasAgentRunRequest struct {
 	RequestID   string
 	NodeRunID   uint64
 	ReleaseID   uint64
+	OnStream    func(payload map[string]any)
 }
 
 type CanvasPowerRunRequest struct {
@@ -545,6 +546,7 @@ func (s SpaceService) RunCanvasAgent(ctx context.Context, projectID uint64, req 
 		Input:     input,
 		History:   history,
 		Options:   map[string]any{"full_runtime": true},
+		OnStream:  req.OnStream,
 		OnRunCreated: func(runID uint64, requestID string) {
 			internalRunID = runID
 			internalRequestID = strings.TrimSpace(requestID)

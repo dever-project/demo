@@ -205,6 +205,12 @@ func (s SpaceService) RunCanvas(ctx context.Context, projectID uint64, req RunCa
 	if !req.SingleNode {
 		if err := s.markCanvasStartNodeRun(ctx, exec, startNode); err != nil {
 			failCanvasRunCreation(ctx, runID, err)
+			s.writeCanvasRunResult(ctx, exec, map[string]any{
+				"run_id":     runID,
+				"request_id": requestID,
+				"status":     teammodel.RunStatusFail,
+				"error":      err.Error(),
+			}, err.Error(), 2)
 			return nil, err
 		}
 	}
@@ -213,6 +219,12 @@ func (s SpaceService) RunCanvas(ctx context.Context, projectID uint64, req RunCa
 	if result := s.dispatchCanvasRunWithResult(exec); result == canvasRunDispatchFailed {
 		err := fmt.Errorf("画布运行调度失败")
 		failCanvasRunCreation(ctx, runID, err)
+		s.writeCanvasRunResult(ctx, exec, map[string]any{
+			"run_id":     runID,
+			"request_id": requestID,
+			"status":     teammodel.RunStatusFail,
+			"error":      err.Error(),
+		}, err.Error(), 2)
 		return nil, err
 	}
 	return payload, nil

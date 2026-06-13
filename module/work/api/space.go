@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/shemic/dever/server"
 	"github.com/shemic/dever/util"
 
 	workservice "my/module/work/service"
+	frontstream "my/package/front/service/stream"
 	uploadservice "my/package/front/service/upload"
 )
 
@@ -135,6 +138,22 @@ func (Space) GetRunStatus(c *server.Context) error {
 		queryText(c, "request_id"),
 	)
 	return workJSON(c, data, err)
+}
+
+func (Space) GetStream(c *server.Context) error {
+	params := frontstream.ReadParamsFromServerContext(c)
+	projectID := queryUint64(c, "project_id")
+	reader := func(ctx context.Context, requestID string, lastID string, count int64, block time.Duration) ([]frontstream.Entry, error) {
+		return spaceSvc.ReadCanvasStream(ctx, projectID, requestID, lastID, count, block)
+	}
+	if frontstream.WantsSSE(c) {
+		return frontstream.ServeSSE(c, reader, params)
+	}
+	entries, err := reader(c.Context(), params.RequestID, params.LastID, params.Count, params.Block)
+	if err != nil {
+		return c.JSONPayload(200, frontstream.ResponsePayload(params.RequestID, "result", map[string]any{}, err.Error(), 2))
+	}
+	return c.JSONPayload(200, frontstream.NextPayload(params.RequestID, params.LastID, entries))
 }
 
 func (Space) PostApproval(c *server.Context) error {

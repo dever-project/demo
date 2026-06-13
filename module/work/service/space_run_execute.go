@@ -106,13 +106,21 @@ func (s SpaceService) dispatchCanvasRunWithResult(exec canvasRunExecution) canva
 			releaseCanvasRunLock(context.Background(), exec.runID)
 			releaseCanvasRunDispatch(exec.runID)
 			if recovered := recover(); recovered != nil {
+				output := canvasRunOutput(exec.startNodeID, 0, nil, canvasNodeExecutionResult{})
 				s.finishCanvasRunRecord(context.Background(), exec.projectID, FinishCanvasRunRequest{
 					RunID:     exec.runID,
 					RequestID: exec.requestID,
 					Status:    teammodel.RunStatusFail,
-					Output:    canvasRunOutput(exec.startNodeID, 0, nil, canvasNodeExecutionResult{}),
+					Output:    output,
 					Error:     fmt.Sprintf("画布运行异常: %v", recovered),
 				})
+				s.writeCanvasRunResult(context.Background(), exec, map[string]any{
+					"run_id":     exec.runID,
+					"request_id": exec.requestID,
+					"status":     teammodel.RunStatusFail,
+					"output":     output,
+					"error":      fmt.Sprintf("画布运行异常: %v", recovered),
+				}, fmt.Sprintf("画布运行异常: %v", recovered), 2)
 			}
 		}()
 		if !isCanvasRunStillRunnable(ctx, exec.runID) {
@@ -459,6 +467,12 @@ func (s SpaceService) ResumeCanvasRun(ctx context.Context, projectID uint64, req
 	if result := s.dispatchCanvasRunWithResult(exec); result == canvasRunDispatchFailed {
 		err := fmt.Errorf("画布运行调度失败")
 		s.failRunnableCanvasRun(project.ID, run, err)
+		s.writeCanvasRunResult(ctx, exec, map[string]any{
+			"run_id":     run.ID,
+			"request_id": run.RequestID,
+			"status":     teammodel.RunStatusFail,
+			"error":      err.Error(),
+		}, err.Error(), 2)
 		return nil, err
 	}
 	return payload, nil
@@ -476,6 +490,11 @@ func (s SpaceService) executeCanvasRun(ctx context.Context, exec canvasRunExecut
 		nodeRunPayloads,
 		exec.plan,
 	)
+	s.writeCanvasRunEvent(ctx, exec, "run_started", map[string]any{
+		"status":         teammodel.RunStatusRunning,
+		"node_runs":      nodeRunPayloads,
+		"execution_plan": payload["execution_plan"],
+	})
 	executed, results, waiting, err := s.runCanvasExecutionPlan(ctx, exec)
 	if waiting != nil {
 		output := canvasRunOutput(exec.startNodeID, executed, results, waiting.result)
@@ -485,6 +504,13 @@ func (s SpaceService) executeCanvasRun(ctx context.Context, exec canvasRunExecut
 		payload["node_results"] = canvasNodeResultsPayload(results)
 		payload["pending_node"] = canvasNodeResultPayload(waiting.result)
 		payload["output"] = output
+		s.writeCanvasRunEvent(ctx, exec, "waiting", map[string]any{
+			"status":       teammodel.RunStatusWaiting,
+			"executed":     executed,
+			"output":       output,
+			"pending_node": payload["pending_node"],
+		})
+		s.writeCanvasRunResult(ctx, exec, payload, "", 1)
 		return payload, nil
 	}
 	if err != nil {
@@ -508,6 +534,13 @@ func (s SpaceService) executeCanvasRun(ctx context.Context, exec canvasRunExecut
 		payload["node_results"] = canvasNodeResultsPayload(results)
 		payload["output"] = output
 		payload["error"] = err.Error()
+		s.writeCanvasRunEvent(ctx, exec, "run_finished", map[string]any{
+			"status":   teammodel.RunStatusFail,
+			"executed": executed,
+			"output":   output,
+			"error":    err.Error(),
+		})
+		s.writeCanvasRunResult(ctx, exec, payload, err.Error(), 2)
 		return payload, err
 	}
 	output := canvasRunOutput(exec.startNodeID, executed, results, canvasNodeExecutionResult{})
@@ -521,6 +554,12 @@ func (s SpaceService) executeCanvasRun(ctx context.Context, exec canvasRunExecut
 	payload["executed"] = executed
 	payload["node_results"] = canvasNodeResultsPayload(results)
 	payload["output"] = output
+	s.writeCanvasRunEvent(ctx, exec, "run_finished", map[string]any{
+		"status":   teammodel.RunStatusSuccess,
+		"executed": executed,
+		"output":   output,
+	})
+	s.writeCanvasRunResult(ctx, exec, payload, "", 1)
 	return payload, nil
 }
 
@@ -754,6 +793,7 @@ func (s SpaceService) executeCanvasPowerNode(
 	result, err := s.RunCanvasPower(ctx, exec.projectID, CanvasPowerRunRequest{
 		CanvasPowerRunRequest: teamservice.CanvasPowerRunRequest{
 			FlowID:         node.FlowID,
+			RequestID:      strings.TrimSpace(firstText(executionInput["external_request_id"])),
 			AssetCateID:    firstUint64(node.AssetCateID, exec.assetCateID),
 			NodeKey:        node.ID,
 			NodeName:       canvasRunNodeTitle(node),
@@ -765,6 +805,9 @@ func (s SpaceService) executeCanvasPowerNode(
 				"prompt": executionInput["prompt"],
 			},
 			Params: spaceMapValue(executionInput["params"]),
+			OnStream: func(payload map[string]any) {
+				s.forwardCanvasChildStream(context.Background(), exec, node, payload)
+			},
 		},
 		RunID:     exec.runID,
 		NodeRunID: nodeRunID,
@@ -807,6 +850,9 @@ func (s SpaceService) executeCanvasAgentNode(
 		RequestID:   firstText(executionInput["external_request_id"]),
 		NodeRunID:   nodeRunID,
 		ReleaseID:   exec.releaseID,
+		OnStream: func(payload map[string]any) {
+			s.forwardCanvasChildStream(context.Background(), exec, node, payload)
+		},
 	})
 	if err != nil {
 		return canvasNodeExecutionResult{}, err
@@ -865,6 +911,8 @@ func (s SpaceService) executeCanvasFlowNode(
 			return canvasNodeExecutionResult{}, err
 		}
 	}
+	stopChildStream := s.streamCanvasTeamChild(ctx, exec, node, firstText(started["request_id"], externalRequestID))
+	defer stopChildStream()
 	snapshot, err := s.waitCanvasFlowCompletion(ctx, exec.projectID, started)
 	if err != nil {
 		return canvasNodeExecutionResult{}, err
@@ -1041,7 +1089,11 @@ func (s SpaceService) markCanvasNodeRun(
 		Error:      errorText,
 		AgentRunID: agentRunID,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	s.writeCanvasNodeRunEvent(ctx, exec, node, status, output, errorText, agentRunID)
+	return nil
 }
 
 func (s SpaceService) markCanvasStartNodeRun(ctx context.Context, exec canvasRunExecution, node canvasRunNode) error {

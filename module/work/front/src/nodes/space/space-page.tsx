@@ -121,6 +121,10 @@ import {
   type CanvasRunRef,
 } from "./space-runner";
 import {
+  watchSpaceCanvasStream,
+  type SpaceStreamFrame,
+} from "./space-stream";
+import {
   FEEDBACK_REPLACED_MESSAGE,
   agentFeedbackFromResult,
   createNodeFeedbackRecord,
@@ -4182,10 +4186,13 @@ type CanvasStartRunInput = {
   canvasRun?: CanvasRunRef | null;
 };
 
+const canvasRunStreamTimeoutMs = 5 * 60 * 1000;
+
 async function runCanvasFromStartNode(input: CanvasStartRunInput) {
   const requestId = createCanvasRunRequestId(input.startNode.id);
   const appliedNodeResults = new Set<string>();
   let hasAppliedNodeResult = false;
+  let streamLastId = "0-0";
   let rawCanvasRun = await runSpaceCanvas({
     projectId: input.projectId,
     assetCateId: Number(input.assetCate.id || 0),
@@ -4207,6 +4214,7 @@ async function runCanvasFromStartNode(input: CanvasStartRunInput) {
     const canvasRun = await waitForCanvasRun(
       input,
       rawCanvasRun,
+      streamLastId,
       (results) => {
         const applied = applyBackendCanvasRunResults(
           input,
@@ -4217,6 +4225,9 @@ async function runCanvasFromStartNode(input: CanvasStartRunInput) {
         hasAppliedNodeResult = hasAppliedNodeResult || applied > 0;
       },
       () => hasAppliedNodeResult,
+      (lastId) => {
+        streamLastId = lastId;
+      },
     );
     input.canvasRun = canvasRun;
     if (
@@ -4249,32 +4260,258 @@ async function runCanvasFromStartNode(input: CanvasStartRunInput) {
 async function waitForCanvasRun(
   input: CanvasStartRunInput,
   rawCanvasRun: unknown,
+  streamLastId: string,
   applyNodeResults: (results: CanvasNodeResultRef[]) => void,
   hasAppliedNodeResult: () => boolean,
+  onStreamLastId: (lastId: string) => void,
 ): Promise<CanvasRunRef> {
   let canvasRun = normalizeCanvasRunRef(rawCanvasRun);
-  for (let index = 0; index < 90; index += 1) {
+  applyNodeResults(canvasRun.node_results || []);
+  if (canvasRun.status !== "running" && canvasRun.status !== "pending") {
+    return canvasRun;
+  }
+  if (!canvasRun.run_id && !canvasRun.request_id) {
+    return canvasRun;
+  }
+  const requestId = String(canvasRun.request_id || "");
+  const controller = new AbortController();
+  let streamTimedOut = false;
+  const streamTimer = window.setTimeout(() => {
+    streamTimedOut = true;
+    controller.abort();
+  }, canvasRunStreamTimeoutMs);
+  try {
+    const streamedRun = await waitForCanvasRunStream(
+      input,
+      requestId,
+      streamLastId,
+      (frame) => {
+        if (frame.stream_id) {
+          onStreamLastId(frame.stream_id);
+        }
+        const nextRun = canvasRunFromStreamFrame(frame);
+        if (!nextRun) {
+          applyCanvasStreamNodeFrame(input, frame);
+          return;
+        }
+        canvasRun = mergeCanvasRunRef(canvasRun, nextRun);
+        applyNodeResults(canvasRun.node_results || []);
+      },
+      controller.signal,
+    );
+    if (streamedRun) {
+      canvasRun = mergeCanvasRunRef(canvasRun, streamedRun);
+    }
+    applyNodeResults(canvasRun.node_results || []);
+    return canvasRun;
+  } catch (error) {
+    if (input.singleNode && hasAppliedNodeResult()) {
+      finishBackendCanvasRunningNodes(input, canvasRun);
+      return canvasRun;
+    }
+    const status = await fetchSpaceRunStatus({
+      projectId: input.projectId,
+      runId: Number(canvasRun.run_id || 0),
+      requestId,
+    });
+    canvasRun = normalizeCanvasRunRef(status);
     applyNodeResults(canvasRun.node_results || []);
     if (canvasRun.status !== "running" && canvasRun.status !== "pending") {
       return canvasRun;
     }
-    if (!canvasRun.run_id && !canvasRun.request_id) {
-      return canvasRun;
-    }
-    await delay(900);
-    const status = await fetchSpaceRunStatus({
-      projectId: input.projectId,
-      runId: Number(canvasRun.run_id || 0),
-      requestId: String(canvasRun.request_id || ""),
+    throw error instanceof Error && !streamTimedOut
+      ? error
+      : new Error("画布仍在运行，请稍后刷新查看结果");
+  } finally {
+    window.clearTimeout(streamTimer);
+    controller.abort();
+  }
+  throw new Error("画布流异常结束");
+}
+
+async function waitForCanvasRunStream(
+  input: CanvasStartRunInput,
+  requestId: string,
+  lastId: string,
+  onFrame: (frame: SpaceStreamFrame) => void,
+  signal: AbortSignal,
+): Promise<CanvasRunRef | null> {
+  let finalRun: CanvasRunRef | null = null;
+  await watchSpaceCanvasStream({
+    projectId: input.projectId,
+    requestId,
+    lastId,
+    signal,
+    onFrame: (frame) => {
+      onFrame(frame);
+      if (String(frame.type || "").toLowerCase() !== "result") {
+        return;
+      }
+      if (isErrorStreamFrame(frame)) {
+        throw new Error(frame.msg || "画布流返回失败");
+      }
+      finalRun = normalizeCanvasRunRef(frame.output || {});
+    },
+  });
+  if (!finalRun) {
+    throw new Error("画布流未返回最终结果");
+  }
+  return finalRun;
+}
+
+function isErrorStreamFrame(frame: SpaceStreamFrame) {
+  return Number(frame.status || 0) === 2;
+}
+
+function canvasRunFromStreamFrame(frame: SpaceStreamFrame): CanvasRunRef | null {
+  if (String(frame.type || "").toLowerCase() === "result") {
+    return normalizeCanvasRunRef(frame.output || {});
+  }
+  const output = frame.output || {};
+  if (String(output.scope || "") === "canvas_child") {
+    return null;
+  }
+  const event = String(output.event || "");
+  if (event !== "node_finished" && event !== "waiting") {
+    return null;
+  }
+  const nodeResult = canvasNodeResultFromStreamOutput(output, {
+    requireDisplayableResult: event !== "waiting",
+  });
+  if (!nodeResult) {
+    return null;
+  }
+  return {
+    request_id: String(frame.request_id || output.parent_request_id || ""),
+    run_id: Number(output.parent_run_id || output.run_id || 0),
+    flow_run_id: Number(output.parent_flow_run_id || output.flow_run_id || 0),
+    release_id: Number(output.release_id || 0),
+    status: event === "waiting" ? "waiting" : "running",
+    node_results: [nodeResult],
+    pending_node: event === "waiting" ? nodeResult : null,
+  };
+}
+
+function canvasNodeResultFromStreamOutput(
+  output: Record<string, unknown>,
+  options: { requireDisplayableResult?: boolean } = {},
+): CanvasNodeResultRef | null {
+  const nodeKey = String(output.node_key || output.node_id || "");
+  if (!nodeKey) {
+    return null;
+  }
+  const resultOutput = output.output;
+  const result =
+    resultOutput && typeof resultOutput === "object"
+      ? (resultOutput as Record<string, unknown>)
+      : {};
+  if (
+    options.requireDisplayableResult &&
+    !shouldApplyCanvasStreamResult(output, result)
+  ) {
+    return null;
+  }
+  return {
+    node_key: nodeKey,
+    node_type: String(output.node_type || ""),
+    node_run_id: Number(output.node_run_id || 0),
+    status: String(output.status || ""),
+    output: (result as any).output ?? resultOutput,
+    asset: (result as any).asset,
+    version: (result as any).version,
+    result,
+    persists_result: Boolean(output.persists_result),
+    agent_run_id: Number(output.agent_run_id || (result as any).agent_run_id || 0),
+  };
+}
+
+function shouldApplyCanvasStreamResult(
+  eventOutput: Record<string, unknown>,
+  result: Record<string, unknown>,
+) {
+  if (Boolean(eventOutput.persists_result)) {
+    return true;
+  }
+  const nodeType = String(eventOutput.node_type || "");
+  if (nodeType !== "function") {
+    return true;
+  }
+  return Boolean(
+    result.asset ||
+      result.version ||
+      (result as any).asset?.version ||
+      (result as any).data?.asset ||
+      (result as any).data?.version,
+  );
+}
+
+function applyCanvasStreamNodeFrame(
+  input: CanvasStartRunInput,
+  frame: SpaceStreamFrame,
+) {
+  if (!input.setRunningNode) {
+    return;
+  }
+  const output = frame.output || {};
+  const event = String(output.event || "");
+  const nodeId = String(output.node_key || output.node_id || "");
+  if (!nodeId) {
+    return;
+  }
+  if (event === "node_started") {
+    input.setRunningNode((current) => ({
+      ...current,
+      [nodeId]: {
+        nodeId,
+        title: String(output.node_name || output.node_key || nodeId),
+        startedAt: Date.now(),
+        status: "running",
+        progress: Math.max(current[nodeId]?.progress || 0, 18),
+      },
+    }));
+    return;
+  }
+  if (event === "node_output") {
+    input.setRunningNode((current) => {
+      const running = current[nodeId];
+      if (!running || running.status !== "running") {
+        return current;
+      }
+      return {
+        ...current,
+        [nodeId]: {
+          ...running,
+          progress: Math.max(running.progress, 72),
+        },
+      };
     });
-    canvasRun = normalizeCanvasRunRef(status);
   }
-  applyNodeResults(canvasRun.node_results || []);
-  if (input.singleNode && hasAppliedNodeResult()) {
-    finishBackendCanvasRunningNodes(input, canvasRun);
-    return canvasRun;
+}
+
+function mergeCanvasRunRef(
+  current: CanvasRunRef,
+  next: CanvasRunRef,
+): CanvasRunRef {
+  const nodeResults = [...(current.node_results || [])];
+  for (const result of next.node_results || []) {
+    const key = canvasNodeResultApplyKey(result);
+    const index = nodeResults.findIndex(
+      (item) => canvasNodeResultApplyKey(item) === key,
+    );
+    if (index >= 0) {
+      nodeResults[index] = result;
+    } else {
+      nodeResults.push(result);
+    }
   }
-  throw new Error("画布仍在运行，请稍后刷新查看结果");
+  return {
+    ...current,
+    ...next,
+    node_runs: next.node_runs?.length ? next.node_runs : current.node_runs,
+    execution_plan: next.execution_plan || current.execution_plan,
+    node_results: nodeResults,
+    pending_node: next.pending_node || current.pending_node,
+  };
 }
 
 function markBackendCanvasNodeResultsDone(
@@ -4549,18 +4786,38 @@ function buildBackendCanvasNodePatch(
     previousAsset: node.asset,
     previousAssets: input.space.assets,
   });
+  const withFeedbackRecords = (patch: Partial<SpaceCanvasNode>) =>
+    mergeNodeFeedbackRecordsIntoPatch(node, patch);
   if (asset) {
-    return buildGeneratedNodeResultPatch(
-      node,
-      withRunResultAsset(normalizedResult, asset),
-      "后端执行结果",
+    return withFeedbackRecords(
+      buildGeneratedNodeResultPatch(
+        node,
+        withRunResultAsset(normalizedResult, asset),
+        "后端执行结果",
+      ),
     );
   }
-  return buildGeneratedNodeResultPatch(
-    node,
-    normalizedResult,
-    "后端执行结果",
+  return withFeedbackRecords(
+    buildGeneratedNodeResultPatch(
+      node,
+      normalizedResult,
+      "后端执行结果",
+    ),
   );
+}
+
+function mergeNodeFeedbackRecordsIntoPatch(
+  node: SpaceCanvasNode,
+  patch: Partial<SpaceCanvasNode>,
+) {
+  const records = currentNodeFeedbackRecords(node);
+  if (records.length === 0 || Array.isArray((patch as any).feedbackRequests)) {
+    return patch;
+  }
+  return {
+    ...patch,
+    feedbackRequests: records,
+  };
 }
 
 function backendCanvasNodeResultPayload(result: CanvasNodeResultRef) {
@@ -4675,12 +4932,6 @@ function activeCanvasAssets(nodes: SpaceCanvasNode[]) {
   return nodes
     .map((node) => node.asset)
     .filter((asset): asset is ProjectAsset => Boolean(asset?.id));
-}
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
 }
 
 function generatedNodePreview(node: SpaceCanvasNode): GeneratedNodePreview {
@@ -6892,16 +7143,16 @@ function isStartFunctionNode(node: SpaceCanvasNode) {
   return node.functionOption?.key === "start" || node.title === "开始";
 }
 
-function isResultFunctionNode(node: SpaceCanvasNode) {
+function isVisibleResultFunctionNode(node: SpaceCanvasNode) {
   if (node.type !== "function") {
     return false;
   }
   const key = node.functionOption?.key || "";
-  return key === "import" || key === "save";
+  return key === "import" || key === "save" || key === "display";
 }
 
 function shouldRenderFunctionResultCard(node: SpaceCanvasNode) {
-  return isResultFunctionNode(node) && nodeHasResultContent(node);
+  return isVisibleResultFunctionNode(node) && nodeHasResultContent(node);
 }
 
 function buildFunctionStatusPatch(description: string): Partial<SpaceCanvasNode> {
@@ -7233,7 +7484,7 @@ function nodeCanHaveExecutionResult(node: SpaceCanvasNode) {
   if (node.type !== "function") {
     return true;
   }
-  return isResultFunctionNode(node);
+  return isVisibleResultFunctionNode(node);
 }
 
 function NodeTopToolbar() {
