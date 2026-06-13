@@ -196,6 +196,20 @@ export function WorkSpaceStyles() {
         fill: none;
       }
 
+      .ws-canvas-wrap .react-flow__connection {
+        z-index: 3;
+        pointer-events: none;
+      }
+
+      .ws-canvas-wrap .react-flow__connection-path {
+        stroke: var(--ws-green);
+        stroke-width: 2.5px;
+        stroke-linecap: round;
+        stroke-dasharray: 8 6;
+        filter: drop-shadow(0 0 8px rgba(35, 240, 165, 0.45));
+        animation: ws-dashdraw 0.6s linear infinite;
+      }
+
       .ws-canvas-wrap .react-flow__edge.animated path {
         stroke-dasharray: 5;
         animation: ws-dashdraw 0.5s linear infinite;
@@ -203,7 +217,7 @@ export function WorkSpaceStyles() {
 
       .ws-canvas-wrap .react-flow__handle {
         position: absolute;
-        pointer-events: none;
+        pointer-events: all;
       }
 
       .ws-canvas-wrap .react-flow__handle.connectingfrom,

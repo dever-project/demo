@@ -2839,6 +2839,12 @@ function CanvasWorkbench({
         onConnectStart={handleConnectStart}
         onConnectEnd={handleConnectEnd}
         isValidConnection={checkValidConnection}
+        connectionLineStyle={{
+          stroke: "var(--ws-green)",
+          strokeWidth: 2.5,
+          strokeLinecap: "round",
+          strokeDasharray: "8 6",
+        }}
         onEdgeClick={handleEdgeClick}
         onNodeClick={(_, node: Node) => {
           if (!interactive) {
