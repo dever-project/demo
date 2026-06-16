@@ -3,6 +3,7 @@
 
 # Local docs and generated documentation.
 /doc/
+/docs/
 
 # Runtime data: keep only the placeholder.
 /data/*

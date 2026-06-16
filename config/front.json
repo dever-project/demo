@@ -1,8 +1,5 @@
 {
   "public": [
-    "/upload/*",
-    "/bot/energon/request",
-    "/bot/energon/demo",
     "/site/info",
     "/qiniu/callback"
   ],
@@ -35,76 +32,14 @@
       },
       "public": [
         "auth/login"
-      ],
-      "auth": [
-        {
-          "key": "tongyong",
-          "name": "通用",
-          "icon": "layout-dashboard",
-          "type": 1,
-          "sort": 1
-        },
-        {
-          "key": "config",
-          "name": "平台配置",
-          "icon": "settings",
-          "type": 1,
-          "sort": 100,
-          "children": [
-            {
-              "key": "bot",
-              "name": "AI核心",
-              "icon": "bot",
-              "type": 1,
-              "sort": 1,
-              "children": [
-                {
-                  "key": "bot-energon",
-                  "name": "能源",
-                  "icon": "cpu",
-                  "type": 1,
-                  "sort": 1
-                },
-                {
-                  "key": "bot-agent",
-                  "name": "智能体",
-                  "icon": "bot",
-                  "type": 1,
-                  "sort": 2
-                },
-                {
-                  "key": "bot-team",
-                  "name": "团队",
-                  "icon": "users-round",
-                  "type": 1,
-                  "sort": 3
-                },
-                {
-                  "key": "bot-body",
-                  "name": "载体",
-                  "icon": "blocks",
-                  "type": 1,
-                  "sort": 4
-                }
-              ]
-            },
-            {
-              "key": "system-settings",
-              "name": "系统设置",
-              "icon": "settings",
-              "type": 1,
-              "sort": 2
-            }
-          ]
-        }
       ]
     },
-    "work": {
+    "body": {
       "name": "工作台",
       "subtitle": "AI 工作台",
       "description": "Dever Work 前台",
-      "api": "work",
-      "page": "work",
+      "api": "bot",
+      "page": "body",
       "assets": {
         "logo": "assets/images/logo.svg",
         "favicon": "assets/images/favicon.svg"
@@ -123,13 +58,12 @@
       },
       "access": {
         "mode": "login",
-        "authProvider": "work"
+        "authProvider": "user"
       },
+      "entry": "bot/work",
       "public": [
-        "auth/login",
-        "auth/register"
-      ],
-      "auth": []
+        "login"
+      ]
     }
   }
 }
