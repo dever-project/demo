@@ -1,69 +1,12 @@
 {
-  "public": [
-    "/site/info",
-    "/qiniu/callback"
-  ],
   "sites": {
     "admin": {
-      "name": "管理后台",
-      "subtitle": "平台配置",
-      "description": "Dever 管理后台",
-      "api": "front",
-      "page": "admin",
-      "assets": {
-        "logo": "assets/images/logo.svg",
-        "favicon": "assets/images/favicon.svg"
-      },
-      "setting": {
-        "appearance": {
-          "theme": "light",
-          "sidebar": "floating",
-          "layout": "compact",
-          "direction": "ltr"
-        },
-        "runtime": {
-          "skin": "default",
-          "routerMode": "history"
-        }
-      },
-      "access": {
-        "mode": "rbac",
-        "authProvider": "front"
-      },
-      "public": [
-        "auth/login"
-      ]
+      "logo": "config/assets/admin/images/logo.svg",
+      "favicon": "config/assets/admin/images/favicon.svg"
     },
-    "body": {
-      "name": "工作台",
-      "subtitle": "AI 工作台",
-      "description": "Dever Work 前台",
-      "api": "bot",
-      "page": "body",
-      "assets": {
-        "logo": "assets/images/logo.svg",
-        "favicon": "assets/images/favicon.svg"
-      },
-      "setting": {
-        "appearance": {
-          "theme": "light",
-          "sidebar": "floating",
-          "layout": "compact",
-          "direction": "ltr"
-        },
-        "runtime": {
-          "skin": "default",
-          "routerMode": "history"
-        }
-      },
-      "access": {
-        "mode": "login",
-        "authProvider": "user"
-      },
-      "entry": "bot/work",
-      "public": [
-        "login"
-      ]
+    "work": {
+      "logo": "config/assets/work/images/logo.svg",
+      "favicon": "config/assets/work/images/favicon.svg"
     }
   }
 }

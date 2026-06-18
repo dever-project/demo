@@ -57,7 +57,7 @@
   "frontSite": {
     "enabled": true,
     "path": "/admin",
-    "dir": "package/front/html"
+    "dir": "package/front/front/html"
   },
   "auth": {
     "jwtSecret": "shemic2026",

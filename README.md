@@ -87,9 +87,9 @@ go run github.com/shemic/dever/cmd/dever@main init --skip-tidy
 
 - `config/setting.jsonc`
   - 服务、日志、数据库、Redis、鉴权
-  - `frontSite`：后端托管前端静态文件，默认访问路径 `/_admin`，目录 `package/front/html`
+  - `frontSite`：后端托管前端静态文件，默认访问路径 `/_admin`，目录 `package/front/front/html`
 - `config/front.json`
-  - 后台菜单分组
+  - 项目级站点展示配置覆盖，只允许 `sites.<site>.name/subtitle/description/url/logo/favicon`
 
 ### 业务模块
 
