@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
+	frontsite "github.com/dever-package/front/service/site"
 	"my/data"
 	_ "my/data/load"
-	frontsite "my/package/front/service/site"
 
 	dever "github.com/shemic/dever/cmd"
 	"github.com/shemic/dever/server"

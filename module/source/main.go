@@ -1,3 +1,3 @@
 package source
 
-// dever:import my/package/source
+// dever:import github.com/dever-package/source

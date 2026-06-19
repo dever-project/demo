@@ -1,3 +1,3 @@
 package user
 
-// dever:import my/package/user
+// dever:import github.com/dever-package/user

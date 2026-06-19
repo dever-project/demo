@@ -3,6 +3,11 @@ module my
 go 1.25.3
 
 require (
+	github.com/dever-package/bot v0.1.0
+	github.com/dever-package/crm v0.1.0
+	github.com/dever-package/front v0.1.0
+	github.com/dever-package/source v0.1.0
+	github.com/dever-package/user v0.1.0
 	github.com/dop251/goja v0.0.0-20260603143327-1f200ca63355
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -86,3 +91,13 @@ require (
 )
 
 replace github.com/shemic/dever => ./dever
+
+replace github.com/dever-package/front => ./package/front
+
+replace github.com/dever-package/bot => ./package/bot
+
+replace github.com/dever-package/source => ./package/source
+
+replace github.com/dever-package/user => ./package/user
+
+replace github.com/dever-package/crm => ./package/crm

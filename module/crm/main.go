@@ -1,3 +1,3 @@
 package crm
 
-// dever:import my/package/crm
+// dever:import github.com/dever-package/crm
