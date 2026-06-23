@@ -15,7 +15,7 @@ require (
 	github.com/qiniu/go-sdk/v7 v7.25.6
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/robfig/cron v1.2.0
-	github.com/shemic/dever v0.1.2
+	github.com/shemic/dever v0.1.6-0.20260623012511-434463580729
 	github.com/swaggo/swag v1.16.6
 	github.com/xuri/excelize/v2 v2.8.1
 	go.temporal.io/sdk v1.39.0

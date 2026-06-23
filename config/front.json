@@ -1,6 +1,9 @@
 {
   "sites": {
     "admin": {
+      "name": "管理后台",
+      "subtitle": "平台配置",
+      "description": "Dever 管理后台",
       "logo": "config/assets/admin/images/logo.svg",
       "favicon": "config/assets/admin/images/favicon.svg"
     },
