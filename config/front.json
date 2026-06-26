@@ -9,8 +9,11 @@
       "url": ["https://admin.dever.com"]
     },
     "work": {
-      "logo": "config/assets/work/images/logo.svg",
-      "favicon": "config/assets/work/images/favicon.svg"
+      "name": "神创工作台",
+      "subtitle": "AI 工作台",
+      "description": "神创 Work 前台",
+      "logo": "bot/assets/body/images/logo.svg",
+      "favicon": "bot/assets/body/images/favicon.svg"
     }
   }
 }
