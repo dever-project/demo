@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将当前 `/data/project/shemic/backend` 的真实文件状态冻结为可独立运行的 `/data/project/shemic/demo`，固定使用 HTTP `8081`、PostgreSQL `shemic_demo` 和 Redis DB 1。
+**Goal:** 将当前 `/data/project/shemic/backend` 的真实文件状态冻结为可独立运行的 `/data/project/shemic/demo`，固定使用 HTTP `8091`、PostgreSQL `shemic_demo` 和 Redis DB 1。
 
 **Architecture:** Demo 是当前工作树的文件级发布快照，不通过 Git HEAD 重建，也不与后续 Backend 开发同步。Demo 与开发环境共用 PostgreSQL、Redis 容器，但使用独立数据库和 Redis 逻辑库；使用快照内固定的 Dever CLI，以独立 daemon 名称运行 `dever run --skip-init`，避免启动时改写冻结的生成文件。
 
@@ -23,7 +23,7 @@
 - 固定 CLI：`/data/project/shemic/.demo-staging/tree/bin/dever`
 - 创建 PostgreSQL 数据库：`shemic_demo`
 - 使用 Redis DB 1；不清理、不改写开发环境 Redis DB 0
-- 停止 `ai-adminer` 容器以释放 `8081`；不停止 `ai-pgsql`、`server-redis`
+- 保持 `ai-adminer` 在 `8081` 运行；不停止 `ai-adminer`、`ai-pgsql`、`server-redis`
 - 创建 Demo daemon 状态：`/data/project/shemic/demo/tmp/dever/daemon/demo.*`
 
 数据库表前缀必须继续保持 `shemic`，因为克隆库内的物理表仍为 `shemic_*`。只有 Redis prefix 改为 `shemic_demo`。
@@ -66,7 +66,7 @@ test "$(docker inspect -f '{{.State.Running}}' ai-adminer)" = true
 docker port ai-adminer 8080/tcp
 ```
 
-Expected: 三个容器均为运行状态；Adminer 映射为 `127.0.0.1:8081`。这里只确认冲突，不在本步骤停止容器。
+Expected: 三个容器均为运行状态；Adminer 映射为 `127.0.0.1:8081`，实施全程保持运行。
 
 - [ ] **Step 3: 确认 Backend 当前没有写入进程，插件端口可用**
 
@@ -74,11 +74,12 @@ Run:
 
 ```bash
 test -z "$(ss -ltnH '( sport = :8085 )')"
-test -z "$(ss -ltnH '( sport = :18081 )')"
+test -z "$(ss -ltnH '( sport = :8091 )')"
+test -z "$(ss -ltnH '( sport = :18091 )')"
 /usr/local/bin/dever daemon status --project-root=/data/project/shemic/backend --name=default || true
 ```
 
-Expected: `8085`、`18081` 均无监听，Backend daemon 显示未运行。若 `8085` 在实施前出现监听，立即暂停，不主动终止未知进程；先确认该进程是否允许短暂停止，再重新开始快照。
+Expected: `8085`、`8091`、`18091` 均无监听，Backend daemon 显示未运行。若 `8085` 在实施前出现监听，立即暂停，不主动终止未知进程；先确认该进程是否允许短暂停止，再重新开始快照。
 
 - [ ] **Step 4: 确认源数据库存在且目标数据库不存在**
 
@@ -357,7 +358,7 @@ Apply this exact diff in `/data/project/shemic/.demo-staging/tree/config/setting
 
 ```diff
 -    "port": 8085,
-+    "port": 8081,
++    "port": 8091,
 @@
 -    "create": true,
 -    "delete": true,
@@ -386,7 +387,7 @@ Create `/data/project/shemic/.demo-staging/tree/DEMO.md` with exactly:
 
 ## 隔离边界
 
-- HTTP：`0.0.0.0:8081`
+- HTTP：`0.0.0.0:8091`
 - PostgreSQL：`shemic_demo`
 - PostgreSQL 表前缀：`shemic`
 - Redis：DB 1，配置 prefix `shemic_demo`
@@ -403,7 +404,7 @@ Create `/data/project/shemic/.demo-staging/tree/DEMO.md` with exactly:
 /data/project/shemic/demo/bin/dever daemon stop --project-root=/data/project/shemic/demo --name=demo
 ```
 
-Adminer 与 Demo 共用宿主机 `8081`。Demo 运行期间 `ai-adminer` 必须保持停止；停止 Demo 后可执行 `docker start ai-adminer` 恢复 Adminer。
+Adminer 继续使用宿主机 `8081`，Demo 使用 `8091`；两者可以同时运行，不得为启动 Demo 停止 `ai-adminer`。
 
 `.snapshot/heads/` 记录快照时各仓库 HEAD；快照包含当时未提交和未跟踪的真实文件，Git 元数据、旧日志、旧 pid、依赖缓存未复制。
 ```
@@ -415,7 +416,7 @@ Expected: 文档不包含数据库或 Redis 密码。
 Run:
 
 ```bash
-rg -n '"port": 8081|"create": false|"delete": false|"dbname": "shemic_demo"|"db": 1|"prefix": "shemic_demo"' \
+rg -n '"port": 8091|"create": false|"delete": false|"dbname": "shemic_demo"|"db": 1|"prefix": "shemic_demo"' \
   /data/project/shemic/.demo-staging/tree/config/setting.jsonc
 rg -n '"prefix": "shemic"' \
   /data/project/shemic/.demo-staging/tree/config/setting.jsonc
@@ -423,12 +424,12 @@ rg -n '"prefix": "shemic"' \
 
 Expected: 六个 Demo 配置项各出现一次；数据库表前缀 `shemic` 仍出现一次。
 
-### Task 5: 原子发布目录、释放 8081 并启动 Demo
+### Task 5: 原子发布目录并在 8091 启动 Demo
 
 **State:**
 
 - Move: `/data/project/shemic/.demo-staging/tree` → `/data/project/shemic/demo`
-- Stop: Docker container `ai-adminer`
+- Keep running: Docker container `ai-adminer`
 - Start: Dever daemon `demo`
 
 - [ ] **Step 1: 原子发布完整目录**
@@ -444,17 +445,17 @@ test -f /data/project/shemic/demo/config/setting.jsonc
 
 Expected: `demo` 第一次出现时已经是完整快照，不存在半复制的最终目录。
 
-- [ ] **Step 2: 停止 Adminer 并确认两个 Demo 端口可用**
+- [ ] **Step 2: 确认 Adminer 继续运行且两个 Demo 端口可用**
 
 Run:
 
 ```bash
-docker stop ai-adminer
-test -z "$(ss -ltnH '( sport = :8081 )')"
-test -z "$(ss -ltnH '( sport = :18081 )')"
+test "$(docker inspect -f '{{.State.Running}}' ai-adminer)" = true
+test -z "$(ss -ltnH '( sport = :8091 )')"
+test -z "$(ss -ltnH '( sport = :18091 )')"
 ```
 
-Expected: 只停止 `ai-adminer`；`ai-pgsql` 和 `server-redis` 仍运行；`8081`、`18081` 均空闲。
+Expected: `ai-adminer` 继续监听 `8081`；`8091`、`18091` 均空闲。
 
 - [ ] **Step 3: 用冻结 CLI 和显式 Stream Redis URL 启动独立 daemon**
 
@@ -481,27 +482,26 @@ DEMO_REDIS_URL=redis://127.0.0.1:6379/1
 
 Expected: daemon 返回已启动。`--skip-init` 避免启动时重写快照内 `data/router.go`、`data/load/*`、`data/table/*`。首次运行可能启动插件开发服务并准备 Vite 运行依赖，但不得执行 `npm run build`、`dever build` 或测试命令。
 
-- [ ] **Step 4: 等待 HTTP 监听；失败时恢复 Adminer**
+- [ ] **Step 4: 等待 HTTP 监听；失败时只停止 Demo**
 
 Run:
 
 ```bash
 for attempt in $(seq 1 45); do
-  if ss -ltnH '( sport = :8081 )' | rg -q .; then
+  if ss -ltnH '( sport = :8091 )' | rg -q .; then
     break
   fi
   sleep 1
 done
 
-if ! ss -ltnH '( sport = :8081 )' | rg -q .; then
+if ! ss -ltnH '( sport = :8091 )' | rg -q .; then
   /data/project/shemic/demo/bin/dever daemon stop \
     --project-root=/data/project/shemic/demo --name=demo || true
-  docker start ai-adminer
   exit 1
 fi
 ```
 
-Expected: 45 秒内监听 `8081`。若失败，只停止 Demo daemon 并恢复 Adminer，不修改开发 Backend 或源数据库。
+Expected: 45 秒内监听 `8091`。若失败，只停止 Demo daemon，不停止 Adminer，也不修改开发 Backend 或源数据库。
 
 ### Task 6: 运行态核验与人工验收交接
 
@@ -520,11 +520,11 @@ Run:
 ```bash
 /data/project/shemic/demo/bin/dever daemon status \
   --project-root=/data/project/shemic/demo --name=demo
-ss -ltnp '( sport = :8081 or sport = :18081 )'
-curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/admin/
+ss -ltnp '( sport = :8091 or sport = :18091 )'
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8091/admin/
 ```
 
-Expected: daemon 为运行状态；`8081` 由 Demo 监听；HTTP 返回非 `000` 状态码。`18081` 是否监听取决于当前插件开发服务是否需要独立端口。
+Expected: daemon 为运行状态；`8091` 由 Demo 监听；HTTP 返回非 `000` 状态码。`18091` 是否监听取决于当前插件开发服务是否需要独立端口；Adminer 继续监听 `8081`。
 
 - [ ] **Step 2: 确认应用连接 Demo 数据库且 Cron 仍停用**
 
@@ -594,4 +594,5 @@ Expected: 最终只保留 `/data/project/shemic/demo` 和 `shemic_demo`；Redis 
 - 不修改、删除、清空 PostgreSQL `shemic`。
 - 不执行 Redis DB 0 的 `FLUSHDB` 或 key 清理。
 - 不自动覆盖已有 `/data/project/shemic/demo` 或 `shemic_demo`。
+- 不停止或重建 `ai-adminer` 容器。
 - 不在 Demo 启动失败时删除开发 Backend 的文件或停止未知进程。

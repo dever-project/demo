@@ -11,7 +11,7 @@
 ## 目标
 
 - 将当前工作目录的真实状态快照到 `/data/project/shemic/demo`。
-- Demo 固定监听 `8081`；开发 Backend 继续使用当前 `8085`。
+- Demo 固定监听 `8091`；开发 Backend 继续使用当前 `8085`，Adminer 继续使用当前 `8081`。
 - 将当前 PostgreSQL 数据一致性复制到独立数据库 `shemic_demo`。
 - Demo 使用独立 Redis DB，并隔离 Agent、Team Stream。
 - Demo 不执行自动建表、结构更新或缺失表删除。
@@ -29,7 +29,7 @@
 
 ```text
 /data/project/shemic/demo
-  HTTP        0.0.0.0:8081
+  HTTP        0.0.0.0:8091
   PostgreSQL  shemic_demo
   Redis       DB 1 / demo namespace
   Data        demo/data
@@ -93,7 +93,7 @@ Demo 使用 Dever daemon 的独立名称 `demo` 运行，工作目录固定为 `
 ## 实施顺序
 
 1. 记录当前 Backend 和嵌套仓库状态。
-2. 确认 `8081`、Demo 数据库名和 Redis DB 未被占用。
+2. 确认 `8091`、插件端口 `18091`、Demo 数据库名和 Redis DB 未被占用。
 3. 停止或短暂冻结当前写入，复制 PostgreSQL 一致性快照。
 4. 复制当前 Backend 工作目录到 `demo`。
 5. 修改 Demo 的 HTTP、数据库、Redis和日志配置。
@@ -113,7 +113,7 @@ Demo 使用 Dever daemon 的独立名称 `demo` 运行，工作目录固定为 `
 ## 验收标准
 
 - Demo 目录完整存在且不依赖开发目录中的相对文件。
-- Demo 监听 `8081`，开发 Backend 仍配置为 `8085`。
+- Demo 监听 `8091`，开发 Backend 仍配置为 `8085`，Adminer 仍监听 `8081`。
 - Demo 连接 `shemic_demo`，且自动迁移与缺失表删除关闭。
 - Demo Stream 使用独立 Redis DB/前缀。
 - Demo 与开发环境拥有独立日志、上传和 daemon 状态。
