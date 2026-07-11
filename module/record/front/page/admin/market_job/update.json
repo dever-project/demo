@@ -1,0 +1,248 @@
+{
+  "page": {
+    "name": "行情采集任务",
+    "parent": "record/market_asset/list",
+    "type": 2,
+    "auth": [
+      {
+        "key": "record/market_job/create",
+        "name": "行情采集任务新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "record/market_job/update",
+        "name": "行情采集任务编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-input",
+        "placeholder": "例如：行情采集",
+        "value": "form.name",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "任务名称不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-number",
+        "name": "采集间隔",
+        "value": "form.interval_minutes",
+        "mode": "form",
+        "info": "单位分钟，范围 1-59。",
+        "validate": [
+          {
+            "type": "required",
+            "message": "采集间隔不能为空。"
+          },
+          {
+            "type": "min",
+            "min": 1,
+            "message": "采集间隔不能小于 1 分钟。"
+          },
+          {
+            "type": "max",
+            "max": 59,
+            "message": "采集间隔不能大于 59 分钟。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[180px]"
+        }
+      },
+      {
+        "type": "form-radio",
+        "name": "采集范围",
+        "value": "form.scope",
+        "mode": "form",
+        "option": "option.scope",
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-number",
+        "name": "市值榜数量",
+        "value": "form.market_limit",
+        "mode": "form",
+        "info": "市值榜使用 CoinLore，单次最多 100 条。",
+        "validate": [
+          {
+            "type": "min",
+            "min": 1,
+            "message": "市值榜数量不能小于 1 条。"
+          },
+          {
+            "type": "max",
+            "max": 100,
+            "message": "市值榜数量不能大于 100 条。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[180px]",
+          "hiddenWhen": [
+            {
+              "path": "form.scope",
+              "operator": "equals",
+              "value": "defi"
+            }
+          ]
+        }
+      },
+      {
+        "type": "form-number",
+        "name": "DeFi 数量",
+        "value": "form.defi_limit",
+        "mode": "form",
+        "info": "单次最多 250 条。",
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[180px]",
+          "hiddenWhen": [
+            {
+              "path": "form.scope",
+              "operator": "equals",
+              "value": "market_cap"
+            }
+          ]
+        }
+      },
+      {
+        "type": "form-input",
+        "name": "DeFi 分类",
+        "value": "form.defi_category_id",
+        "mode": "form",
+        "info": "默认使用 CoinGecko 的 DeFi 分类 ID；接口分类变化时可在这里调整。",
+        "meta": {
+          "formLayout": "horizontal",
+          "hiddenWhen": [
+            {
+              "path": "form.scope",
+              "operator": "equals",
+              "value": "market_cap"
+            }
+          ]
+        }
+      },
+      {
+        "type": "form-radio",
+        "name": "状态",
+        "value": "form.status",
+        "mode": "form",
+        "option": "option.status",
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-number",
+        "name": "超时时间",
+        "value": "form.timeout_seconds",
+        "mode": "form",
+        "info": "单位秒，范围 30-86400。",
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[180px]"
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "model": "front.NewCronModel",
+      "id": "",
+      "name": "行情采集",
+      "interval_minutes": 15,
+      "scope": "all",
+      "market_limit": 100,
+      "defi_limit": 100,
+      "defi_category_id": "decentralized-finance-defi",
+      "coinlore_base_url": "https://api.coinlore.net/api",
+      "coingecko_base_url": "https://api.coingecko.com/api/v3",
+      "vs_currency": "usd",
+      "status": 1,
+      "timeout_seconds": 120
+    },
+    "option": {
+      "scope": [
+        {
+          "id": "all",
+          "value": "市值 + DeFi"
+        },
+        {
+          "id": "market_cap",
+          "value": "只采市值"
+        },
+        {
+          "id": "defi",
+          "value": "只采 DeFi"
+        }
+      ],
+      "status": [
+        {
+          "id": 1,
+          "value": "启用"
+        },
+        {
+          "id": 0,
+          "value": "停用"
+        }
+      ]
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form",
+      "model": "front.NewCronModel",
+      "before": {
+        "service": "record.RecordCronService.BeforeSaveMarketJob"
+      },
+      "data": {
+        "id": "$form.id",
+        "name": "$form.name",
+        "status": "$form.status",
+        "schedule_mode": "$form.schedule_mode",
+        "schedule_config": "$form.schedule_config",
+        "spec": "$form.spec",
+        "timezone": "$form.timezone",
+        "kind": "$form.kind",
+        "use": "$form.use",
+        "payload_json": "$form.payload_json",
+        "params": "$form.params",
+        "timeout_seconds": "$form.timeout_seconds"
+      }
+    }
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "page": {
+    "name": "账户分类编辑",
+    "parent": "record/category/list",
+    "sort": 10,
+    "auth": [
+      {
+        "key": "record/category/create",
+        "name": "账户分类新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "record/category/update",
+        "name": "账户分类编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-input",
+        "placeholder": "例如：银行卡",
+        "value": "form.name",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "分类名称不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-upload",
+        "name": "分类图标",
+        "placeholder": "请上传分类图标",
+        "value": "form.icon",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "uploadType": "pic",
+          "kind": "image",
+          "saveMode": "url",
+          "ruleId": 1,
+          "bizKey": "record.category.icon",
+          "bizName": "账户分类图标",
+          "maxCount": 1
+        }
+      },
+      {
+        "type": "form-number",
+        "placeholder": "例如：100",
+        "value": "form.sort",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[160px]"
+        }
+      },
+      {
+        "type": "form-radio",
+        "value": "form.status",
+        "mode": "form",
+        "option": "option.status",
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "name": "",
+      "icon": "",
+      "status": 1,
+      "sort": 100
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form"
+    }
+  }
+}

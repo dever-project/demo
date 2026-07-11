@@ -1,0 +1,281 @@
+{
+  "page": {
+    "name": "账户记录",
+    "icon": "receipt-text",
+    "parent": "record/account/list",
+    "type": 2,
+    "sort": 2
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4",
+        "children": {
+          "header-actions": {
+            "type": "row",
+            "className": "ms-auto shrink-0 flex-nowrap items-center gap-2"
+          }
+        }
+      },
+      "page-main": {
+        "type": "main",
+        "className": "flex flex-1 flex-col gap-5 sm:gap-6",
+        "children": {
+          "toolbar-row": {
+            "type": "row",
+            "className": "flex-wrap items-center gap-2.5"
+          },
+          "table-row": {
+            "type": "container",
+            "className": "overflow-hidden rounded-md border bg-background"
+          },
+          "feedback-shell": {
+            "type": "container"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-title",
+        "value": "page",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "header-actions": [
+      {
+        "type": "show-button",
+        "name": "录入记录",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "icon": "plus"
+        },
+        "action": {
+          "click": {
+            "type": "modal",
+            "key": "dialog.create",
+            "value": true
+          }
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "返回上一页",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "back": true,
+          "fallback": "/record/account/list"
+        }
+      }
+    ],
+    "toolbar-row": [
+      {
+        "type": "form-input",
+        "placeholder": "筛选账户名称或备注...",
+        "value": "search.keyword",
+        "mode": "search"
+      },
+      {
+        "type": "form-select",
+        "placeholder": "账户",
+        "value": "search.account_id",
+        "mode": "search",
+        "option": {
+          "model": "record.NewAccountModel",
+          "order": "sort asc,id desc"
+        },
+        "meta": {
+          "controlClassName": "w-[180px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "分类",
+        "value": "search.category_id",
+        "mode": "search",
+        "option": {
+          "model": "record.NewCategoryModel",
+          "order": "sort asc,id asc"
+        },
+        "meta": {
+          "controlClassName": "w-[160px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "资产",
+        "value": "search.asset_id",
+        "mode": "search",
+        "option": {
+          "model": "record.NewAssetModel",
+          "order": "chain_type asc,sort asc,id asc"
+        },
+        "meta": {
+          "controlClassName": "w-[150px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "记录类型",
+        "value": "search.record_type",
+        "mode": "search",
+        "option": "option.record_type",
+        "meta": {
+          "controlClassName": "w-[140px]"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "搜索",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "searchSubmit": true,
+          "searchLayoutId": "toolbar-row",
+          "loadingText": "搜索中..."
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "重置",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "searchLayoutId": "toolbar-row",
+          "to": "/record/account_record/list"
+        }
+      }
+    ],
+    "table-row": [
+      {
+        "type": "show-table",
+        "value": "table.list",
+        "meta": {
+          "pagePath": "data.table.page",
+          "pageSizePath": "data.table.pageSize",
+          "totalPath": "data.table.total",
+          "remote": true,
+          "externalPagination": true,
+          "rowKey": "id",
+          "columns": [
+            {
+              "name": "ID",
+              "value": "id",
+              "type": "show-base"
+            },
+            {
+              "value": "account_name",
+              "type": "show-base"
+            },
+            {
+              "value": "category_name",
+              "type": "show-base"
+            },
+            {
+              "value": "asset_symbol",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "chain_type",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "record_type",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "peer_address",
+              "type": "show-base"
+            },
+            {
+              "value": "amount",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "balance_before",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "balance_after",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "remark",
+              "type": "show-base"
+            },
+            {
+              "value": "created_at",
+              "type": "show-date"
+            }
+          ]
+        }
+      },
+      {
+        "type": "show-page"
+      }
+    ],
+    "feedback-shell": [
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.create",
+          "pageRoute": "/record/account_record/update",
+          "title": "录入账户记录",
+          "description": "转入会增加持仓数量，转出会减少持仓数量，失败记录不改变持仓数量。",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "size": "md",
+          "bodyClassName": "py-2"
+        }
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "title": "账户记录",
+      "description": "查看测试账户的转入、转出和失败记录。"
+    },
+    "search": {
+      "keyword": "",
+      "account_id": "",
+      "category_id": "",
+      "asset_id": "",
+      "record_type": ""
+    },
+    "table": {
+      "searchFields": [
+        "account_name",
+        "asset_symbol",
+        "peer_address",
+        "remark"
+      ],
+      "filterFields": [
+        "account_id",
+        "category_id",
+        "asset_id",
+        "record_type"
+      ],
+      "order": "id desc"
+    }
+  },
+  "state": {
+    "dialog": {
+      "create": false
+    }
+  },
+  "action": {}
+}

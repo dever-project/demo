@@ -1,0 +1,266 @@
+{
+  "page": {
+    "name": "账户资产",
+    "icon": "coins",
+    "parent": "record-account",
+    "sort": 2
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4",
+        "children": {
+          "header-actions": {
+            "type": "row",
+            "className": "ms-auto shrink-0 flex-nowrap items-center gap-2"
+          }
+        }
+      },
+      "page-main": {
+        "type": "main",
+        "className": "flex flex-1 flex-col gap-5 sm:gap-6",
+        "children": {
+          "toolbar-row": {
+            "type": "row",
+            "className": "flex-wrap items-center gap-2.5"
+          },
+          "table-row": {
+            "type": "container",
+            "className": "overflow-hidden rounded-md border bg-background"
+          },
+          "feedback-shell": {
+            "type": "container"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-title",
+        "value": "page",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "header-actions": [
+      {
+        "type": "show-button",
+        "name": "新增资产",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "icon": "plus"
+        },
+        "action": {
+          "click": {
+            "type": "modal",
+            "key": "dialog.create",
+            "value": true
+          }
+        }
+      }
+    ],
+    "toolbar-row": [
+      {
+        "type": "form-input",
+        "placeholder": "筛选资产符号或名称...",
+        "value": "search.keyword",
+        "mode": "search"
+      },
+      {
+        "type": "form-select",
+        "placeholder": "链类型",
+        "value": "search.chain_type",
+        "mode": "search",
+        "option": "option.chain_type",
+        "meta": {
+          "controlClassName": "w-[140px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "状态",
+        "value": "search.status",
+        "mode": "search",
+        "option": "option.status",
+        "meta": {
+          "controlClassName": "w-[140px]"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "搜索",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "searchSubmit": true,
+          "searchLayoutId": "toolbar-row",
+          "loadingText": "搜索中..."
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "重置",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "searchLayoutId": "toolbar-row",
+          "to": "/record/asset/list"
+        }
+      }
+    ],
+    "table-row": [
+      {
+        "type": "show-table",
+        "value": "table.list",
+        "meta": {
+          "pagePath": "data.table.page",
+          "pageSizePath": "data.table.pageSize",
+          "totalPath": "data.table.total",
+          "remote": true,
+          "externalPagination": true,
+          "rowKey": "id",
+          "columns": [
+            {
+              "name": "ID",
+              "value": "id",
+              "type": "show-base"
+            },
+            {
+              "value": "chain_type",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "icon",
+              "type": "show-base"
+            },
+            {
+              "value": "symbol",
+              "type": "show-base"
+            },
+            {
+              "value": "name",
+              "type": "show-base"
+            },
+            {
+              "value": "status",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "sort",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "created_at",
+              "type": "show-date"
+            },
+            {
+              "name": "操作",
+              "type": "show-button",
+              "className": "w-[1%] whitespace-nowrap px-3 text-center",
+              "meta": {
+                "buttons": [
+                  {
+                    "icon": "square-pen",
+                    "variant": "outline",
+                    "size": "sm",
+                    "description": "编辑当前资产",
+                    "action": {
+                      "click": [
+                        {
+                          "type": "data",
+                          "key": "actionTarget.editAssetId",
+                          "value": "$row.id"
+                        },
+                        {
+                          "type": "modal",
+                          "key": "dialog.open",
+                          "value": true
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "show-page"
+      }
+    ],
+    "feedback-shell": [
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.create",
+          "pageRoute": "/record/asset/update",
+          "title": "新增账户资产",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "size": "md",
+          "bodyClassName": "py-2"
+        }
+      },
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.open",
+          "pageRoute": "/record/asset/update",
+          "title": "编辑账户资产",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "pageRouteQuery": {
+            "id": "data.actionTarget.editAssetId"
+          },
+          "size": "md",
+          "bodyClassName": "py-2"
+        }
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "title": "账户资产",
+      "description": "维护账户流水可选择的链资产，例如 TRX、USDT、BTC。"
+    },
+    "search": {
+      "keyword": "",
+      "chain_type": "",
+      "status": ""
+    },
+    "table": {
+      "searchFields": [
+        "symbol",
+        "name"
+      ],
+      "filterFields": [
+        "chain_type",
+        "status"
+      ],
+      "order": "chain_type asc,sort asc,id asc"
+    },
+    "actionTarget": {
+      "editAssetId": ""
+    }
+  },
+  "state": {
+    "dialog": {
+      "open": false,
+      "create": false
+    }
+  },
+  "action": {}
+}

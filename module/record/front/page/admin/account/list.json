@@ -1,0 +1,400 @@
+{
+  "page": {
+    "name": "测试账户",
+    "icon": "wallet-cards",
+    "parent": "record-account",
+    "sort": 1
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4",
+        "children": {
+          "header-actions": {
+            "type": "row",
+            "className": "ms-auto shrink-0 flex-nowrap items-center gap-2"
+          }
+        }
+      },
+      "page-main": {
+        "type": "main",
+        "className": "flex flex-1 flex-col gap-5 sm:gap-6",
+        "children": {
+          "toolbar-row": {
+            "type": "row",
+            "className": "flex-wrap items-center gap-2.5"
+          },
+          "table-row": {
+            "type": "container",
+            "className": "overflow-hidden rounded-md border bg-background"
+          },
+          "feedback-shell": {
+            "type": "container"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-title",
+        "value": "page",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "header-actions": [
+      {
+        "type": "show-button",
+        "name": "新增账户",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "icon": "plus"
+        },
+        "action": {
+          "click": {
+            "type": "modal",
+            "key": "dialog.create",
+            "value": true
+          }
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "分类管理",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "icon": "tags",
+          "to": "/record/category/list"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "资产管理",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "icon": "coins",
+          "to": "/record/asset/list"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "持仓明细",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "icon": "badge-dollar-sign",
+          "to": "/record/account_balance/list"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "全部记录",
+        "className": "shrink-0",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "icon": "receipt-text",
+          "to": "/record/account_record/list"
+        }
+      }
+    ],
+    "toolbar-row": [
+      {
+        "type": "form-input",
+        "placeholder": "筛选账户名称或介绍...",
+        "value": "search.keyword",
+        "mode": "search"
+      },
+      {
+        "type": "form-select",
+        "placeholder": "分类",
+        "value": "search.category_id",
+        "mode": "search",
+        "option": {
+          "model": "record.NewCategoryModel",
+          "order": "sort asc,id asc",
+          "filters": {
+            "status": "1"
+          }
+        },
+        "meta": {
+          "controlClassName": "w-[180px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "链类型",
+        "value": "search.chain_type",
+        "mode": "search",
+        "option": "option.chain_type",
+        "meta": {
+          "controlClassName": "w-[140px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "状态",
+        "value": "search.status",
+        "mode": "search",
+        "option": "option.status",
+        "meta": {
+          "controlClassName": "w-[140px]"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "搜索",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "searchSubmit": true,
+          "searchLayoutId": "toolbar-row",
+          "loadingText": "搜索中..."
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "重置",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "searchLayoutId": "toolbar-row",
+          "to": "/record/account/list"
+        }
+      }
+    ],
+    "table-row": [
+      {
+        "type": "show-table",
+        "value": "table.list",
+        "meta": {
+          "pagePath": "data.table.page",
+          "pageSizePath": "data.table.pageSize",
+          "totalPath": "data.table.total",
+          "remote": true,
+          "externalPagination": true,
+          "rowKey": "id",
+          "columns": [
+            {
+              "name": "ID",
+              "value": "id",
+              "type": "show-base"
+            },
+            {
+              "value": "icon",
+              "type": "show-base"
+            },
+            {
+              "value": "name",
+              "type": "show-base"
+            },
+            {
+              "value": "category.name",
+              "name": "分类",
+              "type": "show-base"
+            },
+            {
+              "value": "chain_type",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "address",
+              "type": "show-base"
+            },
+            {
+              "value": "balance",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "status",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "intro",
+              "type": "show-base"
+            },
+            {
+              "value": "created_at",
+              "type": "show-date"
+            },
+            {
+              "name": "操作",
+              "type": "show-button",
+              "className": "w-[1%] whitespace-nowrap px-3 text-center",
+              "meta": {
+                "buttons": [
+                  {
+                    "icon": "circle-plus",
+                    "variant": "outline",
+                    "size": "sm",
+                    "description": "录入账户记录",
+                    "action": {
+                      "click": [
+                        {
+                          "type": "data",
+                          "key": "actionTarget.adjustAccount",
+                          "value": "$row"
+                        },
+                        {
+                          "type": "modal",
+                          "key": "dialog.adjust",
+                          "value": true
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "icon": "receipt-text",
+                    "variant": "outline",
+                    "size": "sm",
+                    "description": "查看账户记录",
+                    "to": "/record/account_record/list",
+                    "searchParam": "account_id",
+                    "searchField": "id",
+                    "withBack": true
+                  },
+                  {
+                    "icon": "badge-dollar-sign",
+                    "variant": "outline",
+                    "size": "sm",
+                    "description": "查看账户持仓",
+                    "to": "/record/account_balance/list",
+                    "searchParam": "account_id",
+                    "searchField": "id",
+                    "withBack": true
+                  },
+                  {
+                    "icon": "square-pen",
+                    "variant": "outline",
+                    "size": "sm",
+                    "description": "编辑当前账户",
+                    "action": {
+                      "click": [
+                        {
+                          "type": "data",
+                          "key": "actionTarget.editAccountId",
+                          "value": "$row.id"
+                        },
+                        {
+                          "type": "modal",
+                          "key": "dialog.open",
+                          "value": true
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "show-page"
+      }
+    ],
+    "feedback-shell": [
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.create",
+          "pageRoute": "/record/account/update",
+          "title": "新增测试账户",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "size": "md",
+          "bodyClassName": "py-2"
+        }
+      },
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.open",
+          "pageRoute": "/record/account/update",
+          "title": "编辑测试账户",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "pageRouteQuery": {
+            "id": "data.actionTarget.editAccountId"
+          },
+          "size": "md",
+          "bodyClassName": "py-2"
+        }
+      },
+      {
+        "type": "feedback-modal",
+        "meta": {
+          "stateKey": "dialog.adjust",
+          "pageRoute": "/record/account_record/update",
+          "title": "录入账户记录",
+          "description": "转入会增加持仓数量，转出会减少持仓数量，失败记录不改变持仓数量。",
+          "footer": {
+            "confirm": true,
+            "confirmText": "保存"
+          },
+          "pageDataPatches": {
+            "form.account_id": "data.actionTarget.adjustAccount.id",
+            "form.account_name": "data.actionTarget.adjustAccount.name",
+            "form.balance": "data.actionTarget.adjustAccount.balance"
+          },
+          "size": "md",
+          "bodyClassName": "py-2"
+        }
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "title": "测试账户",
+      "description": "维护测试用账户资料、分类和当前估值，并从账户行录入转入、转出或失败记录。"
+    },
+    "search": {
+      "keyword": "",
+      "category_id": "",
+      "chain_type": "",
+      "status": ""
+    },
+    "table": {
+      "searchFields": [
+        "name",
+        "address",
+        "intro"
+      ],
+      "filterFields": [
+        "category_id",
+        "chain_type",
+        "status"
+      ],
+      "order": "sort asc,id desc"
+    },
+    "actionTarget": {
+      "editAccountId": "",
+      "adjustAccount": {}
+    }
+  },
+  "state": {
+    "dialog": {
+      "open": false,
+      "create": false,
+      "adjust": false
+    }
+  },
+  "action": {}
+}

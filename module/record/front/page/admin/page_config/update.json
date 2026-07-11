@@ -1,0 +1,82 @@
+{
+  "page": {
+    "name": "单页配置编辑",
+    "parent": "record/page_config/list",
+    "sort": 10,
+    "auth": [
+      {
+        "key": "record/page_config/create",
+        "name": "单页配置新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "record/page_config/update",
+        "name": "单页配置编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-input",
+        "name": "页面 Key",
+        "placeholder": "例如：about_us、register_agreement",
+        "value": "form.page_key",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "页面 Key 不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-editor",
+        "name": "页面内容",
+        "value": "form.content",
+        "mode": "form",
+        "meta": {
+          "formLayout": "vertical",
+          "minHeight": 360
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "page_key": "",
+      "content": ""
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form"
+    }
+  }
+}

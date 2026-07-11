@@ -1,0 +1,52 @@
+{
+  "name": "record",
+  "version": "0.1.0",
+  "description": "Testing data accounts, categories and balance records",
+  "depends": {
+    "front": ">=0.1.0"
+  },
+  "front": {
+    "public": [
+      "/record/market/assets",
+      "/record/wallet/accounts",
+      "/record/wallet/records",
+      "/record/page/content"
+    ],
+    "sites": {
+      "admin": {
+        "auth": [
+          {
+            "key": "record-center",
+            "name": "测试数据",
+            "icon": "database",
+            "type": 1,
+            "sort": 60,
+            "children": [
+              {
+                "key": "record-account",
+                "name": "账户",
+                "icon": "wallet-cards",
+                "type": 1,
+                "sort": 1
+              },
+              {
+                "key": "record-market",
+                "name": "行情",
+                "icon": "chart-candlestick",
+                "type": 1,
+                "sort": 2
+              },
+              {
+                "key": "record-config",
+                "name": "配置",
+                "icon": "settings",
+                "type": 1,
+                "sort": 3
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

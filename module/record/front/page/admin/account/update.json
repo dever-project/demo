@@ -1,0 +1,205 @@
+{
+  "page": {
+    "name": "测试账户编辑",
+    "parent": "record/account/list",
+    "sort": 10,
+    "auth": [
+      {
+        "key": "record/account/create",
+        "name": "测试账户新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "record/account/update",
+        "name": "测试账户编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-select",
+        "value": "form.category_id",
+        "mode": "form",
+        "option": {
+          "model": "record.NewCategoryModel",
+          "order": "sort asc,id asc",
+          "filters": {
+            "status": "1"
+          }
+        },
+        "validate": [
+          {
+            "type": "required",
+            "message": "账户分类不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[260px]"
+        }
+      },
+      {
+        "type": "form-radio",
+        "name": "链类型",
+        "value": "form.chain_type",
+        "mode": "form",
+        "option": "option.chain_type",
+        "validate": [
+          {
+            "type": "required",
+            "message": "链类型不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-input",
+        "placeholder": "例如：测试账户 A",
+        "value": "form.name",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "账户名称不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-input",
+        "name": "账户地址",
+        "placeholder": "例如：TJMvoGBu1Y...1vF1Dznmnr",
+        "value": "form.address",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "账户地址不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-upload",
+        "name": "账户图标",
+        "placeholder": "请上传账户图标",
+        "value": "form.icon",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "uploadType": "pic",
+          "kind": "image",
+          "saveMode": "url",
+          "ruleId": 1,
+          "bizKey": "record.account.icon",
+          "bizName": "账户图标",
+          "maxCount": 1
+        }
+      },
+      {
+        "type": "form-textarea",
+        "placeholder": "请输入账户介绍",
+        "value": "form.intro",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "rows": 3
+        }
+      },
+      {
+        "type": "form-number",
+        "value": "form.balance",
+        "mode": "form",
+        "info": "账户估值由持仓数量和行情价格自动计算；新增账户默认估值为 0。",
+        "meta": {
+          "formLayout": "horizontal",
+          "disabled": true,
+          "controlClassName": "max-w-[180px]"
+        }
+      },
+      {
+        "type": "form-number",
+        "placeholder": "例如：100",
+        "value": "form.sort",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[160px]"
+        }
+      },
+      {
+        "type": "form-radio",
+        "value": "form.status",
+        "mode": "form",
+        "option": "option.status",
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "category_id": "",
+      "chain_type": "tron",
+      "chain_name": "",
+      "address": "",
+      "name": "",
+      "icon": "",
+      "intro": "",
+      "balance": 0,
+      "status": 1,
+      "sort": 100
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form",
+      "before": {
+        "service": "record.RecordService.NormalizeAccount"
+      },
+      "data": {
+        "id": "$form.id",
+        "category_id": "$form.category_id",
+        "chain_type": "$form.chain_type",
+        "chain_name": "$form.chain_name",
+        "address": "$form.address",
+        "name": "$form.name",
+        "icon": "$form.icon",
+        "intro": "$form.intro",
+        "status": "$form.status",
+        "sort": "$form.sort"
+      }
+    }
+  }
+}

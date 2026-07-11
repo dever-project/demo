@@ -1,0 +1,157 @@
+{
+  "page": {
+    "name": "账户资产编辑",
+    "parent": "record/asset/list",
+    "sort": 10,
+    "auth": [
+      {
+        "key": "record/asset/create",
+        "name": "账户资产新增",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "record/asset/update",
+        "name": "账户资产编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-radio",
+        "name": "链类型",
+        "value": "form.chain_type",
+        "mode": "form",
+        "option": "option.chain_type",
+        "validate": [
+          {
+            "type": "required",
+            "message": "链类型不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-input",
+        "name": "资产符号",
+        "placeholder": "例如：USDT",
+        "value": "form.symbol",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "资产符号不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[180px]"
+        }
+      },
+      {
+        "type": "form-input",
+        "name": "资产名称",
+        "placeholder": "例如：Tether USD",
+        "value": "form.name",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "资产名称不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-upload",
+        "name": "资产图标",
+        "placeholder": "请上传资产图标",
+        "value": "form.icon",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "uploadType": "pic",
+          "kind": "image",
+          "saveMode": "url",
+          "ruleId": 1,
+          "bizKey": "record.asset.icon",
+          "bizName": "账户资产图标",
+          "maxCount": 1
+        }
+      },
+      {
+        "type": "form-number",
+        "placeholder": "例如：100",
+        "value": "form.sort",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[160px]"
+        }
+      },
+      {
+        "type": "form-radio",
+        "value": "form.status",
+        "mode": "form",
+        "option": "option.status",
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "chain_type": "tron",
+      "symbol": "",
+      "name": "",
+      "icon": "",
+      "status": 1,
+      "sort": 100
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form",
+      "before": {
+        "service": "record.RecordService.NormalizeAsset"
+      },
+      "data": {
+        "id": "$form.id",
+        "chain_type": "$form.chain_type",
+        "symbol": "$form.symbol",
+        "name": "$form.name",
+        "icon": "$form.icon",
+        "status": "$form.status",
+        "sort": "$form.sort"
+      }
+    }
+  }
+}

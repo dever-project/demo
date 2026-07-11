@@ -1,0 +1,187 @@
+{
+  "page": {
+    "name": "账户记录录入",
+    "parent": "record/account_record/list",
+    "type": 2,
+    "auth": [
+      {
+        "key": "record/account_record/create",
+        "name": "账户记录录入",
+        "query": {
+          "id": "empty"
+        }
+      },
+      {
+        "key": "record/account_record/update",
+        "name": "账户记录编辑",
+        "query": {
+          "id": "required"
+        }
+      }
+    ]
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-main": {
+        "type": "main",
+        "className": "p-0",
+        "children": {
+          "dialog-shell": {
+            "type": "container",
+            "className": "w-full"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "dialog-shell": [
+      {
+        "type": "form-select",
+        "name": "账户",
+        "placeholder": "请选择账户",
+        "value": "form.account_id",
+        "mode": "form",
+        "option": {
+          "model": "record.NewAccountModel",
+          "order": "sort asc,id desc",
+          "filters": {
+            "status": "1"
+          }
+        },
+        "validate": [
+          {
+            "type": "required",
+            "message": "账户不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-number",
+        "name": "账户总估值",
+        "value": "form.balance",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "disabled": true,
+          "controlClassName": "max-w-[180px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "name": "资产",
+        "placeholder": "请选择资产",
+        "value": "form.asset_id",
+        "mode": "form",
+        "option": {
+          "model": "record.NewAssetModel",
+          "order": "chain_type asc,sort asc,id asc",
+          "filters": {
+            "status": "1"
+          }
+        },
+        "validate": [
+          {
+            "type": "required",
+            "message": "资产不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-radio",
+        "name": "记录类型",
+        "value": "form.record_type",
+        "mode": "form",
+        "option": "option.record_type",
+        "validate": [
+          {
+            "type": "required",
+            "message": "请选择记录类型。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-number",
+        "name": "变动数量",
+        "placeholder": "请输入币种数量",
+        "value": "form.amount",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "变动数量不能为空。"
+          },
+          {
+            "type": "min",
+            "min": 0.01,
+            "message": "变动数量必须大于 0。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal",
+          "controlClassName": "max-w-[180px]"
+        }
+      },
+      {
+        "type": "form-input",
+        "name": "对方地址",
+        "placeholder": "例如：TYASr5...MUxHLS",
+        "value": "form.peer_address",
+        "mode": "form",
+        "validate": [
+          {
+            "type": "required",
+            "message": "对方地址不能为空。"
+          }
+        ],
+        "meta": {
+          "formLayout": "horizontal"
+        }
+      },
+      {
+        "type": "form-textarea",
+        "name": "备注",
+        "placeholder": "请输入记录备注",
+        "value": "form.remark",
+        "mode": "form",
+        "meta": {
+          "formLayout": "horizontal",
+          "rows": 3
+        }
+      }
+    ]
+  },
+  "data": {
+    "form": {
+      "id": "",
+      "account_id": "",
+      "account_name": "",
+      "asset_id": "",
+      "balance": 0,
+      "record_type": "transfer_in",
+      "amount": 1,
+      "peer_address": "",
+      "remark": ""
+    }
+  },
+  "state": {},
+  "action": {
+    "submit": {
+      "type": "save",
+      "params": "form",
+      "before": {
+        "service": "record.RecordService.AdjustBalance"
+      }
+    }
+  }
+}

@@ -1,0 +1,199 @@
+{
+  "page": {
+    "name": "账户持仓",
+    "icon": "badge-dollar-sign",
+    "parent": "record-account",
+    "sort": 3
+  },
+  "layout": {
+    "type": "container",
+    "children": {
+      "page-header": {
+        "type": "header",
+        "className": "gap-4",
+        "children": {
+          "header-actions": {
+            "type": "row",
+            "className": "ms-auto shrink-0 flex-nowrap items-center gap-2"
+          }
+        }
+      },
+      "page-main": {
+        "type": "main",
+        "className": "flex flex-1 flex-col gap-5 sm:gap-6",
+        "children": {
+          "toolbar-row": {
+            "type": "row",
+            "className": "flex-wrap items-center gap-2.5"
+          },
+          "table-row": {
+            "type": "container",
+            "className": "overflow-hidden rounded-md border bg-background"
+          }
+        }
+      }
+    }
+  },
+  "nodes": {
+    "page-header": [
+      {
+        "type": "show-title",
+        "value": "page",
+        "className": "min-w-0 flex-1"
+      }
+    ],
+    "header-actions": [
+      {
+        "type": "show-button",
+        "name": "返回上一页",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "back": true,
+          "fallback": "/record/account/list"
+        }
+      }
+    ],
+    "toolbar-row": [
+      {
+        "type": "form-input",
+        "placeholder": "筛选账户或资产...",
+        "value": "search.keyword",
+        "mode": "search"
+      },
+      {
+        "type": "form-select",
+        "placeholder": "账户",
+        "value": "search.account_id",
+        "mode": "search",
+        "option": {
+          "model": "record.NewAccountModel",
+          "order": "sort asc,id desc"
+        },
+        "meta": {
+          "controlClassName": "w-[180px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "资产",
+        "value": "search.asset_id",
+        "mode": "search",
+        "option": {
+          "model": "record.NewAssetModel",
+          "order": "chain_type asc,sort asc,id asc"
+        },
+        "meta": {
+          "controlClassName": "w-[160px]"
+        }
+      },
+      {
+        "type": "form-select",
+        "placeholder": "链类型",
+        "value": "search.chain_type",
+        "mode": "search",
+        "option": "option.chain_type",
+        "meta": {
+          "controlClassName": "w-[140px]"
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "搜索",
+        "meta": {
+          "variant": "default",
+          "size": "sm",
+          "searchSubmit": true,
+          "searchLayoutId": "toolbar-row",
+          "loadingText": "搜索中..."
+        }
+      },
+      {
+        "type": "show-button",
+        "name": "重置",
+        "meta": {
+          "variant": "outline",
+          "size": "sm",
+          "searchLayoutId": "toolbar-row",
+          "to": "/record/account_balance/list"
+        }
+      }
+    ],
+    "table-row": [
+      {
+        "type": "show-table",
+        "value": "table.list",
+        "meta": {
+          "pagePath": "data.table.page",
+          "pageSizePath": "data.table.pageSize",
+          "totalPath": "data.table.total",
+          "remote": true,
+          "externalPagination": true,
+          "rowKey": "id",
+          "columns": [
+            {
+              "name": "ID",
+              "value": "id",
+              "type": "show-base"
+            },
+            {
+              "value": "account_name",
+              "type": "show-base"
+            },
+            {
+              "value": "asset_symbol",
+              "type": "show-base"
+            },
+            {
+              "value": "chain_type",
+              "type": "show-tag",
+              "className": "text-center"
+            },
+            {
+              "value": "balance",
+              "type": "show-base",
+              "className": "text-center"
+            },
+            {
+              "value": "updated_at",
+              "type": "show-date"
+            },
+            {
+              "value": "created_at",
+              "type": "show-date"
+            }
+          ]
+        }
+      },
+      {
+        "type": "show-page"
+      }
+    ]
+  },
+  "data": {
+    "page": {
+      "title": "账户持仓",
+      "description": "只读展示由账户流水生成的账户资产持仓数量。"
+    },
+    "search": {
+      "keyword": "",
+      "account_id": "",
+      "asset_id": "",
+      "chain_type": ""
+    },
+    "table": {
+      "searchFields": [
+        "account_name",
+        "asset_symbol"
+      ],
+      "filterFields": [
+        "account_id",
+        "asset_id",
+        "chain_type"
+      ],
+      "order": "account_id asc,asset_id asc"
+    }
+  },
+  "state": {},
+  "action": {}
+}
