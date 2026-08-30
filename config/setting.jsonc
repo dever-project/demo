@@ -125,5 +125,18 @@
     "writeTimeout": "1s",
     "pingTimeout": "1s",
     "useTLS": false
+  },
+  "bot": {
+    "knowledge": {
+      // 知识库 multipart 上传总上限（MB）；进程启动时读取。
+      "maxUploadMB": 2048
+    },
+    "energon": {
+      // 进程启动时读取；修改后需要重启后端。
+      "workerConcurrency": 16,
+      "queueCapacity": 256,
+      "maxResponseMB": 128,
+      "ffmpegMaxTranscodes": 1
+    }
   }
 }

@@ -48,3 +48,9 @@ coverage.out
 .DS_Store
 Thumbs.db
 *.swp
+.codex
+.agents/
+.trellis/
+AGENTS.md
+CLAUDE.md
+server

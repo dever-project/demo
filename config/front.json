@@ -7,6 +7,9 @@
       "logo": "config/assets/admin/images/logo.svg",
       "favicon": "config/assets/admin/images/favicon.svg",
       "url": ["https://admin.dever.com"]
+    },
+    "body": {
+      "url": ["https://bot.dever.com"]
     }
   }
 }
