@@ -68,7 +68,7 @@ go run .
 就要执行：
 
 ```bash
-go run github.com/shemic/dever/cmd/dever@main init --skip-tidy
+go run github.com/shemic/dever/cmd/dever-go@main init --skip-tidy
 ```
 
 它会更新：
@@ -242,7 +242,7 @@ NewOrderModel().Label("name")
 1. 建 model
 2. 建 page JSON
 3. 有特殊逻辑再补 service
-4. 执行 `dever init --skip-tidy`
+4. 执行 `dever-go init --skip-tidy`
 
 如果只是普通列表 + 编辑，很多时候**不需要额外 API**。
 
@@ -602,7 +602,7 @@ func NewOrderModel() *orm.Model[Order] {
 然后执行：
 
 ```bash
-go run github.com/shemic/dever/cmd/dever@main init --skip-tidy
+go run github.com/shemic/dever/cmd/dever-go@main init --skip-tidy
 ```
 
 ---
@@ -660,7 +660,7 @@ go run github.com/shemic/dever/cmd/dever@main init --skip-tidy
 改完 `module` 代码后，执行：
 
 ```bash
-go run github.com/shemic/dever/cmd/dever@main init --skip-tidy
+go run github.com/shemic/dever/cmd/dever-go@main init --skip-tidy
 ```
 
 ---
